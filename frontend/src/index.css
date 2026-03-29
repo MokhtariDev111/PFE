@@ -1,0 +1,572 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 25% 97%;
+    --foreground: 224 40% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 224 40% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 40% 10%;
+    --primary: 235 80% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 20% 92%;
+    --secondary-foreground: 224 40% 20%;
+    --muted: 220 20% 92%;
+    --muted-foreground: 220 15% 50%;
+    --accent: 280 75% 60%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 20% 88%;
+    --input: 220 20% 88%;
+    --ring: 235 80% 60%;
+    --radius: 1rem;
+    --glass: 0 0% 100%;
+    --glass-border: 220 20% 88%;
+    --navy-deep: 224 45% 8%;
+  }
+
+  .dark {
+    --background: 224 35% 5%;
+    --foreground: 220 20% 94%;
+    --card: 224 32% 8%;
+    --card-foreground: 220 20% 94%;
+    --popover: 224 32% 8%;
+    --popover-foreground: 220 20% 94%;
+    --primary: 235 85% 65%;
+    --primary-foreground: 224 35% 5%;
+    --secondary: 224 25% 14%;
+    --secondary-foreground: 220 20% 85%;
+    --muted: 224 25% 11%;
+    --muted-foreground: 220 15% 50%;
+    --accent: 280 75% 65%;
+    --accent-foreground: 224 35% 5%;
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 224 25% 16%;
+    --input: 224 25% 12%;
+    --ring: 235 85% 65%;
+    --glass: 224 32% 9%;
+    --glass-border: 224 25% 18%;
+    --navy-deep: 224 45% 4%;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'DM Sans', sans-serif;
+  }
+  h1, h2, h3, h4 { font-family: 'Syne', sans-serif; }
+}
+
+@layer utilities {
+  .glass-card {
+    @apply bg-card/70 backdrop-blur-2xl border border-glass-border rounded-2xl;
+    box-shadow: 0 4px 24px -4px rgba(0,0,0,0.08);
+  }
+  .glass-card-hover {
+    @apply glass-card transition-all duration-300 cursor-pointer;
+  }
+  .glass-card-hover:hover {
+    @apply bg-card/90 border-primary/25;
+    box-shadow: 0 8px 32px -4px rgba(0,0,0,0.14), 0 0 0 1px hsl(var(--primary)/0.12);
+    transform: translateY(-2px);
+  }
+  .gradient-primary {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)));
+  }
+  .gradient-text {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)));
+  }
+  .glow-border {
+    box-shadow: 0 0 0 1px hsl(var(--primary)/0.35), 0 0 32px -4px hsl(var(--primary)/0.2);
+  }
+  .bg-navy-deep { background: hsl(var(--navy-deep)); }
+  .tag { @apply inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full; }
+  .tag-primary { @apply tag bg-primary/10 text-primary border border-primary/20; }
+  .tag-accent { @apply tag bg-accent/10 text-accent border border-accent/20; }
+  .tag-muted { @apply tag bg-secondary text-muted-foreground border border-glass-border; }
+  .dot-grid {
+    background-image: radial-gradient(hsl(var(--border)) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-border rounded-full; }
+
+  @keyframes pulse-glow {
+    0%, 100% { opacity: 1; filter: drop-shadow(0 0 6px hsl(var(--accent))); }
+    50% { opacity: 0.6; filter: drop-shadow(0 0 14px hsl(var(--accent))); }
+  }
+  .animate-pulse-glow { animation: pulse-glow 2.5s ease-in-out infinite; }
+
+  @keyframes shimmer {
+    from { background-position: -200% center; }
+    to { background-position: 200% center; }
+  }
+  .shimmer-text {
+    background: linear-gradient(90deg, hsl(var(--primary)), hsl(var(--accent)), hsl(var(--primary)));
+    background-size: 200% auto;
+    @apply bg-clip-text text-transparent;
+    animation: shimmer 4s linear infinite;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-6px); }
+  }
+  .animate-float { animation: float 4s ease-in-out infinite; }
+}
+/* ═══════════════════════════════════════════════════════════════════════════
+   TEKUP AI — Enhanced Slide Preview Styles
+   Add these to your index.css or create a separate preview.css
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SLIDE CARD
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.slide-card {
+  @apply relative bg-card border rounded-2xl shadow-2xl overflow-hidden;
+  background: linear-gradient(
+    135deg,
+    hsl(var(--card)) 0%,
+    hsl(var(--card) / 0.95) 100%
+  );
+}
+
+.slide-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    hsl(var(--primary)),
+    hsl(280, 100%, 70%),
+    hsl(var(--primary))
+  );
+  background-size: 200% 100%;
+  animation: gradient-shift 3s ease infinite;
+}
+
+@keyframes gradient-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* Subtle glow effect */
+.slide-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    ellipse at 30% 0%,
+    hsl(var(--primary) / 0.08),
+    transparent 50%
+  );
+  pointer-events: none;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PROGRESS BAR
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.progress-track {
+  @apply h-1.5 bg-secondary rounded-full overflow-hidden;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.progress-fill {
+  @apply h-full rounded-full;
+  background: linear-gradient(
+    90deg,
+    hsl(var(--primary)),
+    hsl(280, 100%, 65%),
+    hsl(var(--primary))
+  );
+  background-size: 200% 100%;
+  animation: gradient-shift 2s ease infinite;
+  transition: width 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+/* Slide dots */
+.slide-dot {
+  @apply w-2 h-2 rounded-full transition-all duration-300;
+}
+
+.slide-dot.active {
+  @apply w-6 bg-primary;
+}
+
+.slide-dot.completed {
+  @apply bg-primary/50;
+}
+
+.slide-dot.pending {
+  @apply bg-secondary hover:bg-muted-foreground/30;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   BULLET STYLES
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.bullet-item {
+  @apply flex gap-3 py-3 rounded-lg transition-all duration-200;
+}
+
+.bullet-item:hover {
+  @apply bg-secondary/30;
+}
+
+/* Priority levels */
+.bullet-high {
+  @apply border-l-4 border-primary pl-4 -ml-1;
+  background: linear-gradient(
+    90deg,
+    hsl(var(--primary) / 0.1),
+    transparent 50%
+  );
+}
+
+.bullet-high .bullet-icon {
+  @apply text-primary;
+}
+
+.bullet-high .bullet-text {
+  @apply font-medium;
+}
+
+.bullet-medium {
+  @apply border-l-2 border-muted-foreground/30 pl-4;
+}
+
+.bullet-medium .bullet-icon {
+  @apply text-muted-foreground/60;
+}
+
+.bullet-low {
+  @apply pl-5 opacity-80;
+}
+
+.bullet-low .bullet-icon {
+  @apply text-muted-foreground/40;
+}
+
+/* Bullet icon */
+.bullet-icon {
+  @apply mt-0.5 shrink-0 transition-colors;
+}
+
+/* Bullet text */
+.bullet-text {
+  @apply text-foreground/90 leading-relaxed;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SLIDE TYPE BADGES
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.slide-badge {
+  @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border;
+  backdrop-filter: blur(4px);
+}
+
+.slide-badge-title {
+  @apply bg-violet-500/15 text-violet-400 border-violet-500/25;
+}
+
+.slide-badge-intro {
+  @apply bg-blue-500/15 text-blue-400 border-blue-500/25;
+}
+
+.slide-badge-definition {
+  @apply bg-cyan-500/15 text-cyan-400 border-cyan-500/25;
+}
+
+.slide-badge-concept {
+  @apply bg-yellow-500/15 text-yellow-400 border-yellow-500/25;
+}
+
+.slide-badge-example {
+  @apply bg-green-500/15 text-green-400 border-green-500/25;
+}
+
+.slide-badge-comparison {
+  @apply bg-purple-500/15 text-purple-400 border-purple-500/25;
+}
+
+.slide-badge-process {
+  @apply bg-orange-500/15 text-orange-400 border-orange-500/25;
+}
+
+.slide-badge-summary {
+  @apply bg-emerald-500/15 text-emerald-400 border-emerald-500/25;
+}
+
+.slide-badge-content {
+  @apply bg-slate-500/15 text-slate-400 border-slate-500/25;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   DIAGRAM CONTAINER
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.diagram-container {
+  @apply relative p-6 rounded-xl border border-border/50 overflow-hidden;
+  background: linear-gradient(
+    135deg,
+    hsl(var(--secondary) / 0.5),
+    hsl(var(--secondary) / 0.3)
+  );
+  backdrop-filter: blur(8px);
+}
+
+.diagram-container::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    circle at 20% 20%,
+    hsl(var(--primary) / 0.08),
+    transparent 50%
+  );
+  pointer-events: none;
+}
+
+/* Diagram loading state */
+.diagram-loading {
+  @apply flex items-center justify-center min-h-[150px];
+}
+
+.diagram-loading-spinner {
+  @apply w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin;
+}
+
+/* Diagram error state */
+.diagram-error {
+  @apply p-4 bg-secondary/30 rounded-xl border border-dashed border-muted-foreground/30;
+}
+
+.diagram-error-header {
+  @apply flex items-center gap-2 text-muted-foreground text-sm mb-3;
+}
+
+.diagram-error-nodes {
+  @apply flex flex-wrap gap-2;
+}
+
+.diagram-error-node {
+  @apply px-3 py-1.5 bg-secondary rounded-lg text-sm text-foreground/80 border border-border;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SLIDE TRANSITIONS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.slide-enter {
+  animation: slide-in 0.4s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+}
+
+.slide-exit {
+  animation: slide-out 0.3s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(40px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes slide-out {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-40px) scale(0.98);
+  }
+}
+
+/* Bullet stagger animation */
+.bullet-stagger {
+  animation: bullet-fade-in 0.4s ease-out forwards;
+  opacity: 0;
+}
+
+@keyframes bullet-fade-in {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.bullet-stagger:nth-child(1) { animation-delay: 0.1s; }
+.bullet-stagger:nth-child(2) { animation-delay: 0.18s; }
+.bullet-stagger:nth-child(3) { animation-delay: 0.26s; }
+.bullet-stagger:nth-child(4) { animation-delay: 0.34s; }
+.bullet-stagger:nth-child(5) { animation-delay: 0.42s; }
+.bullet-stagger:nth-child(6) { animation-delay: 0.50s; }
+.bullet-stagger:nth-child(7) { animation-delay: 0.58s; }
+.bullet-stagger:nth-child(8) { animation-delay: 0.66s; }
+
+/* Title animation */
+.slide-title {
+  @apply text-3xl md:text-4xl font-bold tracking-tight;
+  background: linear-gradient(
+    135deg,
+    hsl(var(--foreground)),
+    hsl(var(--foreground) / 0.7)
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Divider animation */
+.slide-divider {
+  @apply h-0.5 w-24 origin-left;
+  background: linear-gradient(
+    90deg,
+    hsl(var(--primary)),
+    transparent
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   NAVIGATION BUTTONS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.nav-button {
+  @apply flex items-center gap-2 px-4 py-2 rounded-lg border transition-all duration-200;
+  @apply border-border bg-card hover:bg-secondary;
+  @apply disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-card;
+}
+
+.nav-button:not(:disabled):hover {
+  @apply border-primary/50;
+}
+
+.launch-button {
+  @apply flex items-center gap-2 px-6 py-2.5 rounded-lg font-semibold text-white;
+  @apply transition-all duration-300;
+  background: linear-gradient(
+    135deg,
+    hsl(var(--primary)),
+    hsl(280, 100%, 60%)
+  );
+  box-shadow: 0 4px 20px hsl(var(--primary) / 0.3);
+}
+
+.launch-button:hover {
+  transform: scale(1.02);
+  box-shadow: 0 6px 30px hsl(var(--primary) / 0.4);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   KEYBOARD HINTS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.kbd {
+  @apply inline-flex items-center justify-center px-1.5 py-0.5 rounded;
+  @apply bg-secondary text-muted-foreground text-[10px] font-mono;
+  @apply border border-border shadow-sm;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   EMPTY STATE
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.empty-state {
+  @apply flex flex-col items-center justify-center py-24 text-muted-foreground;
+}
+
+.empty-state-icon {
+  @apply w-12 h-12 mb-4 opacity-20;
+}
+
+.empty-state-spinner {
+  @apply relative;
+}
+
+.empty-state-spinner::before {
+  content: '';
+  @apply absolute inset-0 w-16 h-16 rounded-full;
+  @apply border-2 border-primary/30 border-t-primary animate-spin;
+}
+
+.empty-state-title {
+  @apply text-lg font-medium;
+  background: linear-gradient(
+    90deg,
+    hsl(var(--primary)),
+    hsl(280, 100%, 70%)
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.empty-state-subtitle {
+  @apply text-sm text-muted-foreground/50 mt-1;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MERMAID SVG OVERRIDES
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.diagram-container svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.diagram-container .node rect,
+.diagram-container .node circle,
+.diagram-container .node ellipse,
+.diagram-container .node polygon {
+  fill: hsl(var(--secondary)) !important;
+  stroke: hsl(var(--primary) / 0.5) !important;
+  stroke-width: 1.5px !important;
+}
+
+.diagram-container .node .label {
+  fill: hsl(var(--foreground)) !important;
+  font-family: 'DM Sans', sans-serif !important;
+}
+
+.diagram-container .edgePath path {
+  stroke: hsl(var(--muted-foreground) / 0.5) !important;
+  stroke-width: 1.5px !important;
+}
+
+.diagram-container .edgeLabel {
+  background-color: hsl(var(--card)) !important;
+  fill: hsl(var(--muted-foreground)) !important;
+}
+
+.diagram-container marker path {
+  fill: hsl(var(--muted-foreground) / 0.5) !important;
+}
+
