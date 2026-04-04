@@ -43,7 +43,9 @@ from modules.context_manager import prepare_context_for_slides
 from modules.llm_cache import clear_cache, cache_stats
 from modules.evaluation import RAGEvaluator
 from modules.health import full_health_check, quick_status
+from dotenv import load_dotenv
 
+load_dotenv()
 log = logging.getLogger("api")
 logging.basicConfig(level=logging.INFO)
 
@@ -78,12 +80,12 @@ _index_cache: dict[str, dict] = {}
 _session_store: dict[str, dict] = {}
 
 
-def _files_hash(raw_dir: Path) -> str:
+def _files_hash_from_content(files_data: list[tuple[str, bytes]]) -> str:
+    """Compute hash from file content BEFORE writing to disk."""
     h = hashlib.sha1()
-    for p in sorted(raw_dir.iterdir()):
-        if p.is_file():
-            h.update(p.name.encode())
-            h.update(p.read_bytes())
+    for name, content in sorted(files_data, key=lambda x: x[0]):
+        h.update(name.encode())
+        h.update(content)
     return h.hexdigest()
 
 
@@ -218,22 +220,26 @@ async def generate_stream(
 
             yield _emit("status", {"step": "ingesting", "message": "Analyzing documents…"})
 
-            # 1. Save Files
+            # 1. Read files into memory FIRST (for hashing BEFORE writing)
+            files_data: list[tuple[str, bytes]] = []
             if files:
                 for f in files:
                     content = await f.read()
-                    (raw_dir / Path(f.filename).name.replace("..", "")).write_bytes(content)
+                    safe_name = Path(f.filename).name.replace("..", "")
+                    files_data.append((safe_name, content))
             else:
                 src = ROOT_DIR / CONFIG["paths"]["data_raw"]
                 if src.exists():
                     for p in src.iterdir():
-                        shutil.copy(p, raw_dir / p.name)
+                        if p.is_file():
+                            files_data.append((p.name, p.read_bytes()))
 
-            # 2. Index
-            file_hash = _files_hash(raw_dir)
+            # 2. Compute hash from content (BEFORE writing to disk)
+            file_hash = _files_hash_from_content(files_data) if files_data else "empty"
             cached = _index_cache.get(file_hash)
 
             if cached:
+                print(f"♻️ CACHE HIT: Using cached index (hash: {file_hash[:12]}...)", flush=True)
                 chunks = cached["chunks"]
                 isolated_index = Path(cached["index_path"])
                 pdf_images = cached.get("pdf_images", {})
@@ -241,6 +247,12 @@ async def generate_stream(
                 image_contexts = cached.get("image_contexts", {})
                 yield _emit("status", {"step": "indexing", "message": "Using cached index…"})
             else:
+                print(f"🆕 CACHE MISS: Building new index (hash: {file_hash[:12]}...)", flush=True)
+                
+                # Write files to disk ONLY on cache miss
+                for filename, content in files_data:
+                    (raw_dir / filename).write_bytes(content)
+                
                 yield _emit("status", {"step": "indexing", "message": "Building knowledge base…"})
                 
                 def _process_sync():
@@ -264,16 +276,14 @@ async def generate_stream(
                     "available_image_ids": available_image_ids,
                     "image_contexts": image_contexts,
                 }
+                print(f"💾 Cached index for future requests", flush=True)
                 yield _emit("status", {"step": "indexing", "message": "Index built successfully…"})
 
             # 3. Retrieve
             yield _emit("status", {"step": "retrieving", "message": "Retrieving context…"})
             retriever = Retriever(index_path=isolated_index)
-            # Use expanded search for better retrieval coverage
             results = retriever.search_expanded(prompt, top_k=top_k)
             
-            # Build context text
-            # Smart context preparation with sentence-boundary truncation
             context_text = prepare_context_for_slides(
                 chunks=results,
                 num_slides=num_slides,
@@ -289,9 +299,6 @@ async def generate_stream(
             slides_raw = []
             
             if use_batch_mode:
-                # ══════════════════════════════════════════════════════════════
-                # BATCH MODE: Single LLM call for all slides (5x faster)
-                # ══════════════════════════════════════════════════════════════
                 print("⚡ Using BATCH generation mode", flush=True)
                 
                 slides_raw = await llm.generate_all_slides_batch(
@@ -303,7 +310,6 @@ async def generate_stream(
                     image_contexts=image_contexts,
                 )
                 
-                # Stream each slide for UI feedback
                 for i, slide in enumerate(slides_raw):
                     yield _emit("slide", {
                         "index": i,
@@ -316,9 +322,6 @@ async def generate_stream(
                     print(f"✅ Slide {i+1}: '{slide.get('title', '')}'", flush=True)
             
             else:
-                # ══════════════════════════════════════════════════════════════
-                # SEQUENTIAL MODE: One LLM call per slide (original behavior)
-                # ══════════════════════════════════════════════════════════════
                 print("🐢 Using SEQUENTIAL generation mode", flush=True)
                 
                 from modules.pedagogical_engine import (
@@ -441,7 +444,6 @@ async def generate_stream(
             yield _emit("error", {"detail": str(e)})
 
     return StreamingResponse(_stream(), media_type="text/event-stream")
-
 
 @app.get("/view/{session_id}")
 async def view_presentation(session_id: str):
