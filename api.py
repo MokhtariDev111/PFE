@@ -44,6 +44,7 @@ from modules.llm_cache import clear_cache, cache_stats
 from modules.evaluation import RAGEvaluator
 from modules.health import full_health_check, quick_status
 from dotenv import load_dotenv
+import time
 
 load_dotenv()
 log = logging.getLogger("api")
@@ -78,7 +79,15 @@ app.add_middleware(
 # ── Caches ───────────────────────────────────────────────────────────────────
 _index_cache: dict[str, dict] = {}
 _session_store: dict[str, dict] = {}
+_llm_engine = None
 
+def _get_llm_engine():
+    """Get or create cached LLM engine instance."""
+    global _llm_engine
+    if _llm_engine is None:
+        from modules.llm import LLMEngine
+        _llm_engine = LLMEngine()
+    return _llm_engine
 
 def _files_hash_from_content(files_data: list[tuple[str, bytes]]) -> str:
     """Compute hash from file content BEFORE writing to disk."""
@@ -89,10 +98,14 @@ def _files_hash_from_content(files_data: list[tuple[str, bytes]]) -> str:
     return h.hexdigest()
 
 
-def _build_image_registry(pages: list, chunks: list) -> tuple[dict, list, dict]:
-    """Create simple image IDs (IMG_001) with context descriptions."""
+def _build_image_registry(pages: list, chunks: list) -> tuple[dict, list, dict, dict]:
+    """
+    Create simple image IDs (IMG_001) with context descriptions and captions.
+    Returns: (pdf_images, available_image_ids, image_contexts, image_captions)
+    """
     pdf_images = {}
     image_contexts = {}
+    image_captions = {}
     
     pdf_img_pages = [p for p in pages if p.type == "pdf_image" and isinstance(p.image, str)]
     
@@ -100,15 +113,21 @@ def _build_image_registry(pages: list, chunks: list) -> tuple[dict, list, dict]:
         simple_id = f"IMG_{idx + 1:03d}"
         pdf_images[simple_id] = page.image
         
+        # Store caption if available
+        caption = getattr(page, 'caption', '') or ''
+        if caption:
+            image_captions[simple_id] = caption
+        
+        # Build context from nearby text chunks
         match = re.match(r"^(.+?)\s*\(.*?page\s*(\d+).*\)$", page.source, re.IGNORECASE)
         if match:
             base_name, pg_num = match.group(1).strip(), int(match.group(2))
             context_chunks = [c.text[:200] for c in chunks if c.source == base_name and c.page == pg_num]
             image_contexts[simple_id] = " ".join(context_chunks)[:400] if context_chunks else f"Image from {base_name}, page {pg_num}"
         else:
-            image_contexts[simple_id] = f"Image: {page.source[:100]}"
+            image_contexts[simple_id] = caption or f"Image: {page.source[:100]}"
     
-    return pdf_images, list(pdf_images.keys()), image_contexts
+    return pdf_images, list(pdf_images.keys()), image_contexts, image_captions
 
 
 def _assign_fallback_images(slides: list, pdf_images: dict, image_contexts: dict) -> dict:
@@ -168,8 +187,7 @@ async def startup_event():
 
 @app.get("/")
 async def root():
-    from modules.llm import LLMEngine
-    engine = LLMEngine()
+    engine = _get_llm_engine()
     return {"status": "ok", "version": "4.0-optimized", "backend": engine.backend}
 
 
@@ -209,7 +227,7 @@ async def generate_stream(
             return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
         try:
-            import time
+            
             start_time = time.time()
             
             print(f"\n{'='*60}", flush=True)
@@ -245,6 +263,7 @@ async def generate_stream(
                 pdf_images = cached.get("pdf_images", {})
                 available_image_ids = cached.get("available_image_ids", [])
                 image_contexts = cached.get("image_contexts", {})
+                image_captions = cached.get("image_captions", {})
                 yield _emit("status", {"step": "indexing", "message": "Using cached index…"})
             else:
                 print(f"🆕 CACHE MISS: Building new index (hash: {file_hash[:12]}...)", flush=True)
@@ -281,9 +300,10 @@ async def generate_stream(
                 
                 chunks, pages = await asyncio.to_thread(_process_sync)
                 
-                pdf_images, available_image_ids, image_contexts = {}, [], {}
                 if use_pdf_images:
-                    pdf_images, available_image_ids, image_contexts = _build_image_registry(pages, chunks)
+                    pdf_images, available_image_ids, image_contexts, image_captions = _build_image_registry(pages, chunks)
+                else:
+                    pdf_images, available_image_ids, image_contexts, image_captions = {}, [], {}, {}
                 
                 isolated_index = tmp_dir / "faiss"
                 build_vector_db(chunks, index_path=isolated_index)
@@ -294,6 +314,7 @@ async def generate_stream(
                     "pdf_images": pdf_images,
                     "available_image_ids": available_image_ids,
                     "image_contexts": image_contexts,
+                    "image_captions": image_captions,
                 }
                 print(f"💾 Cached index for future requests", flush=True)
                 yield _emit("status", {"step": "indexing", "message": "Index built successfully…"})
@@ -431,6 +452,16 @@ async def generate_stream(
             render_images = _assign_fallback_images(html_slides, pdf_images, image_contexts)
             print(f"🖼️ Assigned {len(render_images)} images", flush=True)
 
+            # Build image captions for renderer
+            render_captions = {}
+            for slide_idx, img_data in render_images.items():
+                # Find which IMG_XXX was assigned to this slide
+                for img_id, b64 in pdf_images.items():
+                    if b64 in img_data:
+                        if img_id in image_captions:
+                            render_captions[slide_idx] = image_captions[img_id]
+                        break
+
             # 9. Render HTML
             yield _emit("status", {"step": "rendering", "message": "Rendering presentation…"})
             html_path = render_html(
@@ -440,6 +471,7 @@ async def generate_stream(
                 output_dir=str(tmp_dir / "html"),
                 images=render_images,
                 theme_name=theme,
+                captions=render_captions,
             )
 
             _session_store[session_id] = {"html_path": html_path, "tmp_dir": str(tmp_dir)}

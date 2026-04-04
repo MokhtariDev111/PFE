@@ -212,7 +212,7 @@ def _slide_cover(s: dict, i: int, tot: int, t: dict, img: any) -> tuple:
         f'</section>'
     ), ""
 
-def _slide_intro(s: dict, i: int, tot: int, t: dict, img: any) -> tuple:
+def _slide_intro(s: dict, i: int, tot: int, t: dict, img: any, caption: str = "") -> tuple:
     title = _esc(s.get("title", ""))
     bullets = s.get("bullets", [])
     para = " ".join([_esc(b) for b in bullets])
@@ -236,7 +236,7 @@ def _slide_intro(s: dict, i: int, tot: int, t: dict, img: any) -> tuple:
         f'</section>'
     ), ""
 
-def _slide_content(s: dict, i: int, tot: int, t: dict, img: any) -> tuple:
+def _slide_content(s: dict, i: int, tot: int, t: dict, img: any, caption: str = "") -> tuple:
     title   = _esc(s.get("title", ""))
     bullets = s.get("bullets", [])
     notes   = _esc(s.get("speaker_notes", ""))
@@ -269,7 +269,8 @@ def _slide_content(s: dict, i: int, tot: int, t: dict, img: any) -> tuple:
         src = img.get("url") if isinstance(img, dict) else img
         if src:
             safe = src.replace("'", "%27").replace('"', '&quot;')
-            img_html = f'<div class="inline-image-box"><img src="{safe}" class="inline-content-img" alt="Slide Image" /></div>'
+            caption_html = f'<div class="img-caption">{_esc(caption)}</div>' if caption else ''
+            img_html = f'<div class="inline-image-box"><img src="{safe}" class="inline-content-img" alt="Slide Image" />{caption_html}</div>'
 
     layout_class = "content-layout-split" if img_html else "content-layout-single"
 
@@ -295,60 +296,7 @@ def _slide_content(s: dict, i: int, tot: int, t: dict, img: any) -> tuple:
         f'</section>'
     ), ""
 
-def _slide_stats(s: dict, i: int, tot: int, t: dict, img: any) -> tuple:
-    title   = _esc(s.get("title", ""))
-    bullets = s.get("bullets", [])
-    cdata   = s.get("chart_data")
-    notes   = _esc(s.get("speaker_notes", ""))
-    num     = f"{i+1:02d}/{tot:02d}"
-    bs, bo  = _img_style(img)
-    a, a2, a3 = t["a"], t["a2"], t["a3"]
-    cid     = f"ch{i}"
-
-    cards = ""
-    for j, bull in enumerate(bullets[:4]):
-        parts = bull.split(":", 1)
-        kw    = parts[0].strip()
-        rest  = parts[1].strip() if len(parts) > 1 else ""
-        ac    = [a, a2, a3, a2][j % 4]
-        ra, ga, ba = _rgb(ac)
-        d = 0.15 + j * 0.09
-        cards += (
-            f'<div class="scard" style="--d:{d:.2f}s;border-color:rgba({ra},{ga},{ba},.25)">'
-            f'<div class="scglow" style="background:radial-gradient(circle at top left,rgba({ra},{ga},{ba},.15),transparent 65%)"></div>'
-            f'<div class="scnum" style="color:{ac}">{j+1:02d}</div>'
-            f'<div class="sclbl" style="color:{ac}">{_esc(kw)}</div>'
-            f'<div class="scval">{_esc(rest or kw)}</div>'
-            f'</div>'
-        )
-
-    chart_html = js_chunk = ""
-    if cdata:
-        js_chunk = _chart_js(cdata, cid, t)
-        chart_html = (
-            f'<div class="cshell">'
-            f'<div class="cglow" style="background:radial-gradient(circle,rgba({_rgb(a)[0]},{_rgb(a)[1]},{_rgb(a)[2]},.12),transparent 70%)"></div>'
-            f'<canvas id="{cid}" class="ccanvas"></canvas>'
-            f'</div>'
-        )
-
-    return (
-        f'<section class="slide s-stats" data-idx="{i}" data-ac="{a}" style="--a:{a};--a2:{a2};--a3:{a3}">'
-        f'<div class="mesh subtle" style="--c1:{a};--c2:{a2};--c3:{a3}"></div>'
-        f'{_particles(i, a)}'
-        f'<div class="imgwrap"{bs}>{bo}</div>'
-        f'<div class="inner">'
-        f'  <div class="eyebrow"><span class="etag" style="background:{a}18;border-color:{a}30;color:{a}">DATA &amp; STATS</span></div>'
-        f'  <h2 class="stitle">{title}</h2>'
-        f'  <div class="rule" style="background:linear-gradient(90deg,{a},{a2}88,transparent)"></div>'
-        f'  <div class="stats-layout"><div class="sgrid">{cards}</div>{chart_html}</div>'
-        f'</div>'
-        f'<div class="notes" data-n="{notes}">{s.get("speaker_notes","")}</div>'
-        f'<div class="snum">{num}</div>'
-        f'</section>'
-    ), js_chunk
-
-def _slide_comparison(s: dict, i: int, tot: int, t: dict, img: any) -> tuple:
+def _slide_comparison(s: dict, i: int, tot: int, t: dict, img: any, caption: str = "") -> tuple:
     title  = _esc(s.get("title", ""))
     notes  = _esc(s.get("speaker_notes", ""))
     bullets = s.get("bullets", [])
@@ -434,6 +382,63 @@ def _slide_outro(s: dict, i: int, tot: int, t: dict, img: any, topic: str) -> tu
         f'<div class="snum">{num}</div>'
         f'</section>'
     ), ""
+
+def _slide_stats(s: dict, i: int, tot: int, t: dict, img: any, caption: str = "") -> tuple:
+    title   = _esc(s.get("title", ""))
+    bullets = s.get("bullets", [])
+    notes   = _esc(s.get("speaker_notes", ""))
+    num     = f"{i+1:02d}/{tot:02d}"
+    a, a2, a3 = t["a"], t["a2"], t["a3"]
+    r, g, b = _rgb(a)
+
+    bhtml = ""
+    for j, bu in enumerate(bullets):
+        bull = bu.get("text", "") or bu.get("content", "") if isinstance(bu, dict) else str(bu)
+        parts = bull.split(":", 1)
+        kw    = parts[0].strip()
+        rest  = parts[1].strip() if len(parts) > 1 else ""
+        ac    = a2 if j % 2 else a
+        ra, ga, ba = _rgb(ac)
+        d  = 0.15 + j * 0.10
+        bhtml += (
+            f'<div class="brow" style="--d:{d:.2f}s">'
+            f'<div class="bidx" style="background:rgba({ra},{ga},{ba},.15);border-color:rgba({ra},{ga},{ba},.35);color:{ac}">{j+1:02d}</div>'
+            f'<div class="bbody"><span class="bkw" style="color:{ac}">{_esc(kw)}</span>'
+            + (f'<span class="brest">{_esc(rest)}</span>' if rest else '')
+            + f'</div></div>'
+        )
+
+    chart_html = ""
+    cdata = s.get("chart_data")
+    if cdata and isinstance(cdata, dict) and cdata.get("labels") and cdata.get("values"):
+        cid = f"chart_{i}"
+        chart_html = (
+            f'<div class="chart-box" style="margin-top:25px;background:rgba(255,255,255,.03);'
+            f'border:1px solid rgba({r},{g},{b},.1);border-radius:12px;padding:20px;'
+            f'height:300px;opacity:0;animation:fup .6s both .6s">'
+            f'<canvas id="{cid}"></canvas></div>'
+        )
+        js = _chart_js(cdata, cid, t)
+    else:
+        js = ""
+
+    return (
+        f'<section class="slide s-content s-stats" data-idx="{i}" data-ac="{a}" style="--a:{a};--a2:{a2};--a3:{a3}">'
+        f'<div class="mesh subtle" style="--c1:{a};--c2:{a2};--c3:{a3}"></div>'
+        f'{_particles(i, a)}'
+        f'<div class="rail" style="background:linear-gradient(180deg,{a},{a2}66,transparent)"></div>'
+        f'<div class="inner">'
+        f'  <div class="eyebrow"><span class="etag" style="background:{a}18;border-color:{a}30;color:{a}">STATISTICS</span></div>'
+        f'  <h2 class="stitle">{title}</h2>'
+        f'  <div class="rule" style="background:linear-gradient(90deg,{a},{a2}88,transparent)"></div>'
+        f'  <div class="bullets">{bhtml}</div>'
+        f'  {chart_html}'
+        f'</div>'
+        f'<div class="orb oa sm" style="background:radial-gradient(circle,{a}20,transparent 65%)"></div>'
+        f'<div class="notes" data-n="{notes}">{s.get("speaker_notes","")}</div>'
+        f'<div class="snum">{num}</div>'
+        f'</section>'
+    ), js
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
 def _css(t: dict) -> str:
@@ -628,24 +633,27 @@ def render(
     output_dir: str,
     images:     dict = None,
     theme_name: str = None,
+    captions:   dict = None,
 ) -> str:
     html_theme = _PPTX_TO_HTML_THEME.get(theme_name, theme_name)
     theme = THEMES.get(html_theme) or THEMES[_auto_theme(session_id)]
     total = len(slides)
     sections = []
     charts = []
+    captions = captions or {}
 
     for i, s in enumerate(slides):
         stype = s.get("slide_type") or s.get("type") or "content"
         img = (images or {}).get(i) or (images or {}).get(s.get("image_id"))
+        cap = captions.get(i, "")
         
         js_chart = ""
         if i == 0:     h, js_chart = _slide_cover(s, i, total, theme, img)
         elif i == total-1: h, js_chart = _slide_outro(s, i, total, theme, img, topic)
-        elif stype == "comparison": h, js_chart = _slide_comparison(s, i, total, theme, img)
-        elif stype == "stats" or s.get("chart_data"): h, js_chart = _slide_stats(s, i, total, theme, img)
-        elif stype == "intro": h, js_chart = _slide_intro(s, i, total, theme, img)
-        else:          h, js_chart = _slide_content(s, i, total, theme, img)
+        elif stype == "comparison": h, js_chart = _slide_comparison(s, i, total, theme, img, cap)
+        elif stype == "stats" or s.get("chart_data"): h, js_chart = _slide_stats(s, i, total, theme, img, cap)
+        elif stype == "intro": h, js_chart = _slide_intro(s, i, total, theme, img, cap)
+        else:          h, js_chart = _slide_content(s, i, total, theme, img, cap)
         
         sections.append(h)
         if js_chart: charts.append(js_chart)

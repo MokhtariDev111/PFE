@@ -98,17 +98,40 @@ class OCREngine:
             return self._reader.image_to_string(pil_image, lang=tess_lang).strip()
 
 
-def run_ocr(pages: list) -> list:
-    needs_ocr = [p for p in pages if p.type == "image" and p.image is not None]
+def run_ocr(pages: list = None, *, b64_image: str = None) -> list | str:
+    """
+    Run OCR on pages list OR a single base64 image.
+    
+    Usage:
+        run_ocr(pages)              → process list of DocumentPage
+        run_ocr(b64_image="...")    → process single base64 image, returns text
+    """
+    # Mode 1: Single base64 image
+    if b64_image is not None:
+        engine = OCREngine()
+        result = engine.process_image(b64_image).strip()
+        log.info(f"OCR on base64 image: extracted {len(result)} chars")
+        return result
+    
+    # Mode 2: List of pages
+    if pages is None:
+        return []
+    
+    # Find pages needing OCR (both "image" and "pdf_image" types)
+    needs_ocr = [p for p in pages if p.type in ("image", "pdf_image") and p.image is not None]
+    
     if not needs_ocr:
-        log.info("No standalone images — skipping OCR.")
+        log.info("No images requiring OCR.")
         return pages
-    log.info(f"Found {len(needs_ocr)} image(s) requiring OCR.")
-    engine    = OCREngine()
+    
+    log.info(f"Running OCR on {len(needs_ocr)} image(s)...")
+    engine = OCREngine()
     processed = 0
+    
     for page in pages:
-        if page.type == "image" and page.image is not None:
-            page.text  = engine.process_image(page.image).strip()
+        if page.type in ("image", "pdf_image") and page.image is not None:
+            page.text = engine.process_image(page.image).strip()
             processed += 1
+    
     log.info(f"OCR complete — {processed} image(s) processed.")
     return pages

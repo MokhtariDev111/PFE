@@ -15,7 +15,7 @@ interface GeneratePanelProps {
   isGenerating: boolean;
   generationSteps: GenerationStep[];
   onGenerate: (topic: string, prompt: string, options?: {
-    theme?: string; language?: string; numSlides?: number;
+    theme?: string; language?: string; numSlides?: number; usePdfImages?: boolean;
   }) => void;
   onGenerationComplete?: boolean;
 }
@@ -115,8 +115,31 @@ export function GeneratePanel({
   const [eta, setEta] = useState(0);
 
   useEffect(() => {
-    fetchThemes().then(t => { if (t.length > 0) setThemes(t); }).catch(() => {});
-  }, []);
+  // Check localStorage cache first
+  const cached = localStorage.getItem('themes_cache');
+  if (cached) {
+    try {
+      const { themes: cachedThemes, timestamp } = JSON.parse(cached);
+      const ONE_HOUR = 60 * 60 * 1000;
+      if (Date.now() - timestamp < ONE_HOUR && cachedThemes.length > 0) {
+        setThemes(cachedThemes);
+        return;
+      }
+    } catch {}
+  }
+  
+  // Fetch from API and cache
+  fetchThemes().then(t => {
+    if (t.length > 0) {
+      setThemes(t);
+      localStorage.setItem('themes_cache', JSON.stringify({
+        themes: t,
+        timestamp: Date.now()
+      }));
+    }
+  }).catch(() => {});
+}, []);
+
 
   useEffect(() => {
     if (isGenerating) {

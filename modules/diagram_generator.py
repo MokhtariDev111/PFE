@@ -1,9 +1,11 @@
 """
-diagram_generator.py  — v2: visual_hint-driven diagram selection
-================================================================
-Fix: reads slide.visual_hint from PedagogicalEngine output and
-     generates the matching Mermaid diagram type instead of
-     blindly alternating flow/mindmap by index.
+diagram_generator.py  — v3: Improved keyword extraction + better labels
+========================================================================
+Fixes:
+  1. Smart keyword extraction from bullet text
+  2. Better label length (25 chars, no mid-word cuts)
+  3. Stop words removal for cleaner labels
+  4. Title extraction for root nodes
 
 Supported visual_hint values:
   flowchart  → Mermaid flowchart TD
@@ -17,6 +19,7 @@ Supported visual_hint values:
 
 import logging
 import tempfile
+import re
 from pathlib import Path
 import sys
 
@@ -38,13 +41,33 @@ if not log.hasHandlers():
                         datefmt="%H:%M:%S")
 
 
-# ── Mermaid generators ────────────────────────────────────────────────────────
+# ── Stop words for keyword extraction ─────────────────────────────────────────
 
-def _safe(text: str, max_len: int = 120) -> str:
+STOP_WORDS = {
+    'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+    'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+    'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'dare',
+    'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'as',
+    'into', 'through', 'during', 'before', 'after', 'above', 'below',
+    'between', 'under', 'again', 'further', 'then', 'once', 'here',
+    'there', 'when', 'where', 'why', 'how', 'all', 'each', 'few',
+    'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not',
+    'only', 'own', 'same', 'so', 'than', 'too', 'very', 'just',
+    'and', 'but', 'if', 'or', 'because', 'until', 'while', 'that',
+    'which', 'who', 'whom', 'this', 'these', 'those', 'what', 'its',
+    'it', 'they', 'them', 'their', 'we', 'us', 'our', 'you', 'your',
+    'he', 'him', 'his', 'she', 'her', 'use', 'uses', 'used', 'using',
+    'also', 'well', 'back', 'even', 'still', 'way', 'take', 'come',
+    'make', 'like', 'get', 'go', 'see', 'know', 'think', 'look',
+}
+
+
+# ── Helper functions ──────────────────────────────────────────────────────────
+
+def _safe(text: str, max_len: int = 30) -> str:
     """Escape special characters and truncate for Mermaid labels."""
     if not text:
         return ""
-    # Remove/replace characters that break Mermaid syntax
     result = str(text)
     result = result.replace('"', "'")
     result = result.replace('\n', ' ')
@@ -58,158 +81,311 @@ def _safe(text: str, max_len: int = 120) -> str:
     result = result.replace('|', '-')
     result = result.replace('#', '')
     result = result.replace('&', 'and')
-    # Clean up multiple spaces
+    result = result.replace(';', '')
     result = ' '.join(result.split())
-    return result[:max_len].strip()
+    
+    # Truncate at word boundary
+    if len(result) > max_len:
+        truncated = result[:max_len]
+        # Don't cut mid-word
+        if ' ' in truncated:
+            truncated = truncated.rsplit(' ', 1)[0]
+        result = truncated.strip()
+    
+    return result
 
 
-def _to_diagram_labels(bullets: list[str], max_len: int = 20) -> list[str]:
+def _extract_keyword(text: str, max_len: int = 28) -> str:
     """
-    Convert bullet text into SHORT diagram labels.
-    Extracts only the keyword/concept part for clean node labels.
+    Extract a clean keyword/concept from bullet text.
+    """
+    if not text:
+        return ""
+    
+    s = str(text).strip()
+    
+    # Remove markdown formatting
+    s = s.replace("**", "").replace("*", "").replace("`", "")
+    
+    # Split into words
+    words = s.split()
+    if not words:
+        return ""
+    
+    # Strategy 1: Look for quoted terms or terms in parentheses
+    quoted = re.findall(r'"([^"]+)"|\'([^\']+)\'|\(([^)]+)\)', s)
+    if quoted:
+        for match in quoted:
+            term = next((m for m in match if m), None)
+            if term and 3 < len(term) <= 30:
+                return term.title()
+    
+    # Strategy 2: If has colon, extract the KEY part
+    if ':' in s:
+        before_colon = s.split(':', 1)[0].strip()
+        after_colon = s.split(':', 1)[1].strip()
+        
+        # Clean both parts
+        before_words = [w for w in before_colon.split() if w.lower() not in STOP_WORDS and len(w) > 2]
+        after_words = [w for w in after_colon.split() if w.lower() not in STOP_WORDS and len(w) > 2]
+        
+        # Prefer before_colon if it's short (likely the label)
+        if 1 <= len(before_words) <= 3:
+            return ' '.join(before_words).title()
+        elif 1 <= len(after_words) <= 4:
+            return ' '.join(after_words[:4]).title()
+    
+    # Strategy 3: Find capitalized compound terms (e.g., "Decision Tree", "K-Means")
+    caps_pattern = r'\b[A-Z][a-z]*(?:[-\s][A-Z][a-z]*)*\b'
+    caps_matches = re.findall(caps_pattern, s)
+    # Filter out single common words
+    good_caps = [m for m in caps_matches if len(m) > 3 and m.lower() not in STOP_WORDS]
+    if good_caps:
+        # Take the longest match
+        best = max(good_caps, key=len)
+        if len(best) <= max_len:
+            return best
+    
+    # Strategy 4: Remove ALL stop words, take first 2-4 meaningful words
+    meaningful = []
+    for w in words:
+        # Clean the word
+        clean_w = re.sub(r'[^\w\-]', '', w)
+        if clean_w.lower() not in STOP_WORDS and len(clean_w) > 2:
+            meaningful.append(clean_w)
+    
+    if not meaningful:
+        # Last resort: take first non-trivial word
+        for w in words:
+            clean_w = re.sub(r'[^\w\-]', '', w)
+            if len(clean_w) > 3:
+                return clean_w.title()
+        return ""
+    
+    # Take 2-4 meaningful words
+    keyword = ' '.join(meaningful[:3])
+    
+    # Title case
+    keyword = keyword.title()
+    
+    # Truncate at word boundary if too long
+    if len(keyword) > max_len:
+        parts = keyword.split()
+        keyword = ''
+        for w in parts:
+            if len(keyword) + len(w) + 1 <= max_len:
+                keyword = f"{keyword} {w}".strip()
+            else:
+                break
+    
+    return keyword.strip()
+
+
+def _to_diagram_labels(bullets: list[str], max_len: int = 28) -> list[str]:
+    """
+    Convert bullet texts into SHORT diagram labels.
+    Returns unique, clean keywords for diagram nodes.
     """
     out = []
     seen = set()
+    
     for b in bullets:
-        s = (b if isinstance(b, str) else str(b)).strip()
-        if not s:
+        text = (b if isinstance(b, str) else str(b)).strip()
+        if not text:
             continue
         
-        # Remove bold/italic markdown
-        s = s.replace("**", "").replace("*", "")
+        keyword = _extract_keyword(text, max_len)
         
-        # Extract keyword before colon or hyphen
-        if ':' in s:
-            keyword = s.split(':', 1)[0].strip()
-        elif '-' in s:
-            keyword = s.split('-', 1)[0].strip()
-        else:
-            # Take first 3-4 words as the concept
-            words = s.split()
-            keyword = " ".join(words[:4])
-        
-        # Clean and limit length for diagram nodes
-        keyword = _safe(keyword, max_len)
+        # Final filter: skip if it's just a stop word or too short
+        if not keyword or len(keyword) < 3:
+            continue
+        if keyword.lower() in STOP_WORDS:
+            continue
         
         # Skip duplicates
-        key = keyword.lower()
-        if key and key not in seen and len(keyword) > 2:
-            seen.add(key)
+        key_lower = keyword.lower()
+        if key_lower not in seen:
+            seen.add(key_lower)
             out.append(keyword)
+    
     return out
 
 
+def _extract_title_keyword(title: str, max_len: int = 25) -> str:
+    """Extract a short keyword from slide title for diagram root."""
+    if not title:
+        return "Topic"
+    
+    # Remove common prefixes
+    prefixes = ['introduction to ', 'overview of ', 'understanding ', 'what is ', 
+                'how to ', 'guide to ', 'basics of ', 'summary of ', 'comparison of ']
+    lower = title.lower()
+    for prefix in prefixes:
+        if lower.startswith(prefix):
+            title = title[len(prefix):]
+            break
+    
+    # If title has colon, take the part that's more specific
+    if ':' in title:
+        parts = title.split(':', 1)
+        title = parts[1].strip() if len(parts[1].strip()) > 3 else parts[0].strip()
+    
+    return _safe(title.strip().title(), max_len)
+
+
+# ── Mermaid generators ────────────────────────────────────────────────────────
+
 def _mermaid_flowchart(title: str, steps: list[str]) -> str:
-    labels = _to_diagram_labels(steps, max_len=20) if steps else steps
+    labels = _to_diagram_labels(steps, max_len=28)
+    if not labels:
+        return ""
+    
     lines = ["flowchart TD"]
-    ids   = [chr(65 + i) for i in range(min(len(labels), 7))]
+    ids = [chr(65 + i) for i in range(min(len(labels), 7))]
+    
     for nid, step in zip(ids, labels):
-        lines.append(f'  {nid}["{_safe(step, 20)}"]')
+        lines.append(f'  {nid}["{_safe(step, 28)}"]')
+    
     for i in range(len(ids) - 1):
         lines.append(f"  {ids[i]} --> {ids[i+1]}")
+    
     return "\n".join(lines)
 
 
 def _mermaid_mindmap(title: str, items: list[str], key_message: str = "") -> str:
     # Use key_message or extract keyword from title
-    root = key_message.strip() if key_message.strip() else (title.split(':')[0].strip() if ':' in title else title)
-    root = _safe(root, 20)
+    root = key_message.strip() if key_message.strip() else _extract_title_keyword(title)
+    root = _safe(root, 25)
+    
+    labels = _to_diagram_labels(items, max_len=25)
+    if not labels:
+        return ""
+    
     lines = ["mindmap", f'  root(("{root}"))']
-    labels = _to_diagram_labels(items, max_len=20)
     for item in labels[:6]:
-        lines.append(f'    ("{_safe(item, 20)}")')
+        lines.append(f'    ("{_safe(item, 25)}")')
+    
     return "\n".join(lines)
 
 
 def _mermaid_timeline(title: str, items: list[str]) -> str:
-    labels = _to_diagram_labels(items, max_len=20)
-    # Extract short title
-    short_title = title.split(':')[0].strip() if ':' in title else title[:30]
-    lines = ["timeline", f"  title {_safe(short_title, 30)}"]
-    for i, item in enumerate(labels[:5]):
-        lines.append(f"  Phase {i+1} : {_safe(item, 20)}")
+    labels = _to_diagram_labels(items, max_len=25)
+    if not labels:
+        return ""
+    
+    short_title = _extract_title_keyword(title, 30)
+    lines = ["timeline", f"  title {short_title}"]
+    
+    for i, item in enumerate(labels[:6]):
+        lines.append(f"  Step {i+1} : {_safe(item, 25)}")
+    
     return "\n".join(lines)
 
 
 def _mermaid_comparison(title: str, items: list[str]) -> str:
-    """Two-branch flowchart — split by logical pairs (e.g. A vs B)."""
-    if len(items) < 2:
+    """Two-branch flowchart — split items into two groups."""
+    labels = _to_diagram_labels(items, max_len=25)
+    if len(labels) < 2:
         return _mermaid_flowchart(title, items)
-    labels = _to_diagram_labels(items, max_len=20)
-    mid   = (len(labels) + 1) // 2
-    left  = labels[:mid]
+    
+    mid = (len(labels) + 1) // 2
+    left = labels[:mid]
     right = labels[mid:]
-    # Extract short title
-    short_title = title.split(':')[0].strip() if ':' in title else title[:25]
-    lines = ["flowchart TD", f'  ROOT["{_safe(short_title, 20)}"]']
-    lines.append(f'  L["{_safe(left[0], 20)}"]')
-    lines.append(f'  R["{_safe(right[0] if right else "Option B", 20)}"]')
+    
+    root = _extract_title_keyword(title, 22)
+    
+    lines = ["flowchart TD", f'  ROOT["{root}"]']
+    lines.append(f'  L["{_safe(left[0], 22)}"]')
+    lines.append(f'  R["{_safe(right[0] if right else "Option B", 22)}"]')
     lines.append("  ROOT --> L")
     lines.append("  ROOT --> R")
-    for i, item in enumerate(left[1:], 1):
-        lines.append(f'  L{i}["{_safe(item, 20)}"]')
+    
+    for i, item in enumerate(left[1:4], 1):  # Limit to 3 sub-items
+        lines.append(f'  L{i}["{_safe(item, 22)}"]')
         lines.append(f"  L --> L{i}")
-    for i, item in enumerate(right[1:], 1):
-        lines.append(f'  R{i}["{_safe(item, 20)}"]')
+    
+    for i, item in enumerate(right[1:4], 1):
+        lines.append(f'  R{i}["{_safe(item, 22)}"]')
         lines.append(f"  R --> R{i}")
+    
     return "\n".join(lines)
 
 
 def _mermaid_process(title: str, steps: list[str]) -> str:
     """Cyclical process — flowchart with return arrow."""
-    labels = _to_diagram_labels(steps, max_len=20) if steps else steps
+    labels = _to_diagram_labels(steps, max_len=25)
+    if not labels:
+        return ""
+    
     lines = ["flowchart TD"]
-    ids   = [chr(65 + i) for i in range(min(len(labels), 6))]
+    ids = [chr(65 + i) for i in range(min(len(labels), 6))]
+    
     for nid, step in zip(ids, labels):
-        lines.append(f'  {nid}["{_safe(step, 20)}"]')
+        lines.append(f'  {nid}["{_safe(step, 25)}"]')
+    
     for i in range(len(ids) - 1):
         lines.append(f"  {ids[i]} --> {ids[i+1]}")
+    
     if len(ids) >= 2:
         lines.append(f"  {ids[-1]} -.->|repeat| {ids[0]}")
+    
     return "\n".join(lines)
 
 
 def _mermaid_hierarchy(title: str, items: list[str], key_message: str = "") -> str:
     """Tree hierarchy — root fans out to children."""
-    # Use key_message or extract keyword from title
-    root = key_message.strip() if key_message.strip() else (title.split(':')[0].strip() if ':' in title else title)
-    root = _safe(root, 20)
+    root = key_message.strip() if key_message.strip() else _extract_title_keyword(title)
+    root = _safe(root, 25)
+    
+    labels = _to_diagram_labels(items, max_len=25)
+    if not labels:
+        return ""
+    
     lines = ["flowchart TD", f'  ROOT["{root}"]']
-    labels = _to_diagram_labels(items, max_len=20)
+    
     for i, item in enumerate(labels[:6]):
         nid = f"N{i}"
-        lines.append(f'  {nid}["{_safe(item, 20)}"]')
+        lines.append(f'  {nid}["{_safe(item, 25)}"]')
         lines.append(f"  ROOT --> {nid}")
+    
     return "\n".join(lines)
 
 
 # ── PNG fallback (matplotlib) ─────────────────────────────────────────────────
 
 def _flow_png(title: str, steps: list[str], color: str, out_path: str) -> str:
-    n   = min(len(steps), 6)
-    fig, ax = plt.subplots(figsize=(5.5, 3.2))
+    labels = _to_diagram_labels(steps, max_len=40)  # Longer for PNG
+    n = min(len(labels), 6)
+    
+    if n == 0:
+        return out_path
+    
+    fig, ax = plt.subplots(figsize=(6, 3.5))
     ax.set_xlim(0, 10)
     ax.set_ylim(0, n + 1)
     ax.axis("off")
     fig.patch.set_facecolor("#0D1B2A")
     ax.set_facecolor("#0D1B2A")
-    for i, step in enumerate(steps[:n]):
-        y    = n - i
+    
+    for i, step in enumerate(labels[:n]):
+        y = n - i
         rect = mpatches.FancyBboxPatch(
             (0.5, y - 0.35), 9, 0.7,
             boxstyle="round,pad=0.1",
             facecolor=color, edgecolor="#FFFFFF", linewidth=0.8
         )
         ax.add_patch(rect)
-        ax.text(5, y, step[:55], ha="center", va="center",
-                color="white", fontsize=8.5, fontweight="bold")
+        ax.text(5, y, step[:45], ha="center", va="center",
+                color="white", fontsize=9, fontweight="bold")
         if i < n - 1:
             ax.annotate("", xy=(5, n - i - 1.35), xytext=(5, n - i - 0.65),
                         arrowprops=dict(arrowstyle="->", color="white", lw=1.5))
-    ax.set_title(title[:50], color="white", fontsize=10, fontweight="bold", y=1.01)
+    
+    short_title = _extract_title_keyword(title, 40)
+    ax.set_title(short_title, color="white", fontsize=11, fontweight="bold", y=1.01)
+    
     plt.tight_layout()
-    plt.savefig(out_path, dpi=110, bbox_inches="tight",
-                facecolor=fig.get_facecolor())
+    plt.savefig(out_path, dpi=120, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close(fig)
     return out_path
 
@@ -217,7 +393,7 @@ def _flow_png(title: str, steps: list[str], color: str, out_path: str) -> str:
 # ── Main generator ────────────────────────────────────────────────────────────
 
 def generate_all_diagrams(slides, theme_color: str = "#1F6FEB",
-                           tmp_dir: str = None) -> dict[int, dict]:
+                          tmp_dir: str = None) -> dict[int, dict]:
     """
     For each content slide, generate a diagram using slide.visual_hint.
     Returns: { slide_index: {"mermaid": str, "png": str|None} }
@@ -226,8 +402,6 @@ def generate_all_diagrams(slides, theme_color: str = "#1F6FEB",
     tmp.mkdir(parents=True, exist_ok=True)
     diagrams: dict[int, dict] = {}
 
-    # Cycle through hint types for slides that have hint="none" or repeat,
-    # so consecutive slides never share the same diagram type.
     _fallback_cycle = ["flowchart", "mindmap", "timeline", "comparison", "process", "hierarchy"]
     _used_hints: list[str] = []
 
@@ -241,30 +415,37 @@ def generate_all_diagrams(slides, theme_color: str = "#1F6FEB",
 
         hint = (getattr(slide, 'visual_hint', 'none') or 'none').lower().strip()
 
-        # If hint is "none", skip — don't force a diagram on every slide
+        # If hint is "none", skip
         if hint == "none":
             continue
 
-        # If this hint was already used by the previous slide, rotate to next available
+        # If this hint was already used by the previous slide, rotate
         if _used_hints and hint == _used_hints[-1]:
             for candidate in _fallback_cycle:
                 if candidate != hint:
                     hint = candidate
                     break
 
-        # Extract bullet texts — use full text for uniqueness
+        # Extract bullet texts
+        # Extract bullet texts
         steps = []
         for b in slide.bullets[:6]:
             txt = b.get("text", "") if isinstance(b, dict) else str(b)
             if txt:
                 steps.append(txt)
 
+        # DEBUG
+        labels = _to_diagram_labels(steps)
+        print(f"🔍 Slide {i} '{slide.title[:30]}': {len(steps)} bullets → {len(labels)} labels")
+        print(f"   Bullet[0]: {steps[0][:60] if steps else 'N/A'}...")
+        print(f"   Labels: {labels}")
+
         if len(steps) < 2:
             continue
 
-        title       = slide.title
+        title = slide.title
         key_message = getattr(slide, "key_message", "") or ""
-        out_png  = str(tmp / f"slide_{i}.png")
+        out_png = str(tmp / f"slide_{i}.png")
         mermaid_src: str | None = None
         png_path: str | None = None
 
