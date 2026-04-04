@@ -257,8 +257,27 @@ async def generate_stream(
                 
                 def _process_sync():
                     pages = ingest_directory(raw_dir)
-                    pages = run_ocr(pages)
-                    return process_pages(pages), pages
+                    MAX_OCR_IMAGES = CONFIG.get("pdf_images", {}).get("max_per_doc", 30)
+                    text_pages = [p for p in pages if p.type != "pdf_image"]
+                    image_pages = [p for p in pages if p.type == "pdf_image"]
+                    if len(image_pages) > MAX_OCR_IMAGES:
+                        print(f"⚠️ Limiting OCR: {MAX_OCR_IMAGES}/{len(image_pages)} images", flush=True)
+                        image_pages_to_ocr = image_pages[:MAX_OCR_IMAGES]
+                        image_pages_skipped = image_pages[MAX_OCR_IMAGES:]
+                    else:
+                        image_pages_to_ocr = image_pages
+                        image_pages_skipped = []
+    
+    # Run OCR on limited set
+                    if image_pages_to_ocr:
+                        image_pages_to_ocr = run_ocr(image_pages_to_ocr)
+                        print(f"🔍 OCR processed {len(image_pages_to_ocr)} images", flush=True)
+    
+    # Combine: text + OCR'd images + skipped images (without OCR text)
+                    all_pages = text_pages + image_pages_to_ocr + image_pages_skipped
+    
+                    return process_pages(all_pages), all_pages
+                    
                 
                 chunks, pages = await asyncio.to_thread(_process_sync)
                 
