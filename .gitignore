@@ -25,6 +25,7 @@ outputs/*.pptx
 outputs/*.json
 logs/*.log
 data/raw/**
+data/cache/**
 data/processed/*.index
 data/processed/*.pkl
 !data/raw/.gitkeep
