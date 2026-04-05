@@ -90,6 +90,139 @@ def _subquery_for_slide(query: str, slide_type: str, prior_titles: list[str]) ->
     return base
 
 
+# ── Bug F fix: PDF-structure-aware slide planning ─────────────────────────────
+
+def _extract_pdf_sections(chunks: list, query: str) -> list[str]:
+    """
+    Extract the ordered unique section headings that are present in the
+    retrieved chunks AND are relevant to the query.
+
+    Returns a deduplicated list of sub-section headings in document order,
+    e.g. ["Building decision trees", "Controlling complexity of decision trees",
+          "Analyzing decision trees", "Feature importance in trees",
+          "Strengths, weaknesses, and parameters"]
+
+    Only the sub-heading part (after " > ") is returned so it reads naturally
+    as a slide title. Falls back to an empty list if no headings are found.
+    """
+    query_lower = query.lower()
+    seen        = set()
+    sections    = []
+
+    for chunk in chunks:
+        heading = getattr(chunk, "section_heading", "") or ""
+        if not heading:
+            continue
+
+        # Only keep headings that relate to the query topic
+        if not any(tok in heading.lower() for tok in query_lower.split() if len(tok) > 3):
+            continue
+
+        # Extract sub-section (part after " > "), or use full heading if no ">"
+        sub = heading.split(" > ", 1)[-1].strip()
+
+        if sub and sub not in seen:
+            seen.add(sub)
+            sections.append(sub)
+
+    return sections
+
+
+# Map PDF sub-section keywords → pedagogical slide type
+_SECTION_TO_SLIDE_TYPE = {
+    "introduc":   "intro",
+    "overview":   "intro",
+    "what is":    "definition",
+    "definition": "definition",
+    "building":   "process",
+    "construct":  "process",
+    "how":        "process",
+    "steps":      "process",
+    "controlling": "concept",
+    "complexity": "concept",
+    "parameter":  "concept",
+    "tuning":     "concept",
+    "analyz":     "example",
+    "visualiz":   "example",
+    "example":    "example",
+    "case":       "case_study",
+    "applicat":   "case_study",
+    "importan":   "concept",
+    "feature":    "concept",
+    "strength":   "comparison",
+    "weakness":   "comparison",
+    "advantage":  "comparison",
+    "disadvant":  "comparison",
+    "compar":     "comparison",
+    "summary":    "summary",
+    "conclusion": "summary",
+    "result":     "summary",
+}
+
+
+def _section_to_slide_type(section_name: str) -> str:
+    """Map a PDF section name to the closest pedagogical slide type."""
+    lower = section_name.lower()
+    for keyword, stype in _SECTION_TO_SLIDE_TYPE.items():
+        if keyword in lower:
+            return stype
+    return "concept"   # safe default
+
+
+def _build_slide_plan(
+    query: str,
+    pdf_sections: list[str],
+    num_slides: int,
+) -> list[dict]:
+    """
+    Bug F fix: build a slide plan from the PDF's own section headings instead
+    of the generic SLIDE_ARC.
+
+    Each entry is:
+      {"title_hint": <pdf sub-section name>, "slide_type": <pedagogical type>}
+
+    If we have fewer PDF sections than num_slides, we pad with SLIDE_ARC types.
+    If we have more sections than num_slides, we pick the most evenly spaced ones.
+
+    Returns a list of exactly num_slides plan entries.
+    """
+    if not pdf_sections:
+        # No section info — fall back to generic SLIDE_ARC
+        return [
+            {"title_hint": "", "slide_type": SLIDE_ARC[i % len(SLIDE_ARC)]}
+            for i in range(num_slides)
+        ]
+
+    # Build one plan entry per detected PDF section
+    section_plan = [
+        {
+            "title_hint": sec,
+            "slide_type": _section_to_slide_type(sec),
+        }
+        for sec in pdf_sections
+    ]
+
+    n_sec = len(section_plan)
+
+    if n_sec == num_slides:
+        return section_plan
+
+    if n_sec > num_slides:
+        # Subsample evenly — keep first, last, and spread the rest
+        indices = [round(i * (n_sec - 1) / (num_slides - 1)) for i in range(num_slides)]
+        return [section_plan[i] for i in indices]
+
+    # n_sec < num_slides — pad with SLIDE_ARC entries for the remaining slots
+    plan = list(section_plan)
+    arc_types = [t for t in SLIDE_ARC if t not in {e["slide_type"] for e in plan}]
+    for i in range(num_slides - n_sec):
+        plan.append({
+            "title_hint": "",
+            "slide_type": arc_types[i % len(arc_types)] if arc_types else "concept",
+        })
+    return plan
+
+
 # ── Prompt builder ────────────────────────────────────────────────────────────
 
 def _build_slide_prompt(
@@ -104,6 +237,7 @@ def _build_slide_prompt(
     quality_feedback: str = "",
     available_images: list[str] | None = None,
     image_contexts: dict[str, str] | None = None,
+    pdf_section: str = "",          # Bug F fix: the exact PDF sub-section to cover
 ) -> str:
     prior_str  = "\n".join(f"- {t}" for t in prior_titles[-6:]) or "(none)"
     used_hints = ", ".join(prior_hints[-4:]) or "(none)"
@@ -120,6 +254,17 @@ def _build_slide_prompt(
             f"\n\nIMPORTANT — previous attempt was rejected for low quality:\n"
             f"  Reason: {quality_feedback}\n"
             f"  Fix this specifically. Make bullets more concrete and specific.\n"
+        )
+
+    # Bug F fix: if we know the exact PDF section this slide should cover,
+    # tell the LLM explicitly — this overrides its tendency to generalise
+    section_note = ""
+    if pdf_section:
+        section_note = (
+            f"\nPDF SECTION TO COVER: This slide must cover the sub-section "
+            f'"{pdf_section}" from the document. Use the title as your slide title '
+            f"(or a close paraphrase). Extract specific facts, mechanisms, and "
+            f"examples from ONLY that sub-section in the context below.\n"
         )
 
     # PDF images: tell LLM it can embed one if it matches slide content
@@ -145,7 +290,7 @@ def _build_slide_prompt(
 Generate slide {slide_number} of {total} about: {query}
 Slide type: {slide_type}
 Language: {language}
-{quality_note}
+{section_note}{quality_note}
 JSON schema:
 {_ONE_SLIDE_SCHEMA}
 
@@ -292,14 +437,22 @@ class PedagogicalEngine:
         prior_fps: set,
         available_images: list[str] | None = None,
         image_contexts: dict[str, str] | None = None,
+        pdf_section: str = "",      # Bug F fix: the specific PDF sub-section for this slide
     ) -> dict | None:
         """
         Generates one slide with up to 3 attempts.
         Returns the slide dict, or None if all attempts failed.
         """
         if self.retriever is not None:
-            sub_q  = _subquery_for_slide(query, slide_type, prior_titles)
-            chunks = self.retriever.search(sub_q, top_k=5) or context_chunks
+            if pdf_section:
+                # Bug F fix: use section-targeted retrieval when we know the section
+                # This retrieves only chunks from the correct sub-section of the PDF
+                chunks = self.retriever.search_for_section(
+                    f"{query} {pdf_section}", pdf_section, top_k=5
+                ) or context_chunks
+            else:
+                sub_q  = _subquery_for_slide(query, slide_type, prior_titles)
+                chunks = self.retriever.search(sub_q, top_k=5) or context_chunks
         else:
             chunks = context_chunks
 
@@ -314,6 +467,7 @@ class PedagogicalEngine:
                 quality_feedback=last_quality_feedback if attempt > 0 else "",
                 available_images=available_images,
                 image_contexts=image_contexts,
+                pdf_section=pdf_section,        # Bug F fix: pass section to prompt
             )
 
             if attempt == 2:
@@ -396,32 +550,50 @@ class PedagogicalEngine:
         lang_label = "French" if language.lower() in ("fr", "french", "français") else "English"
         topic      = query[:40]
 
+        # Bug F fix: extract PDF section structure from retrieved chunks and
+        # build a slide plan that follows the document's own organisation
+        pdf_sections = _extract_pdf_sections(context_chunks, query)
+        slide_plan   = _build_slide_plan(query, pdf_sections, num_slides)
+        log.info(
+            f"Slide plan for '{query}': "
+            + ", ".join(
+                f'"{e["title_hint"] or e["slide_type"]}"' for e in slide_plan
+            )
+        )
+
         if self.parallel:
             return await self._generate_parallel(
                 query, context_chunks, num_slides, lang_label, topic,
                 available_images=available_images, image_contexts=image_contexts,
+                slide_plan=slide_plan,
             )
         else:
             return await self._generate_sequential(
                 query, context_chunks, num_slides, lang_label, topic,
                 available_images=available_images, image_contexts=image_contexts,
+                slide_plan=slide_plan,
             )
 
     async def _generate_parallel(
         self, query, context_chunks, num_slides, lang_label, topic,
-        available_images=None, image_contexts=None,
+        available_images=None, image_contexts=None, slide_plan=None,
     ) -> dict:
         log.info(f"Parallel generation: {num_slides} slides for '{query}'")
 
+        if slide_plan is None:
+            slide_plan = [
+                {"title_hint": "", "slide_type": SLIDE_ARC[i % len(SLIDE_ARC)]}
+                for i in range(num_slides)
+            ]
+
         # Each coroutine gets its own hint list snapshot to avoid race conditions
         tasks = []
-        for i in range(num_slides):
-            slide_type = SLIDE_ARC[i % len(SLIDE_ARC)]
+        for i, plan_entry in enumerate(slide_plan):
             tasks.append(
                 self._generate_one_slide(
                     query, context_chunks,
                     slide_index=i,
-                    slide_type=slide_type,
+                    slide_type=plan_entry["slide_type"],
                     num_slides=num_slides,
                     language=lang_label,
                     prior_titles=[],   # dedup runs post-gather
@@ -429,6 +601,7 @@ class PedagogicalEngine:
                     prior_fps=set(),
                     available_images=available_images,
                     image_contexts=image_contexts,
+                    pdf_section=plan_entry["title_hint"],   # Bug F fix
                 )
             )
 
@@ -457,21 +630,26 @@ class PedagogicalEngine:
 
     async def _generate_sequential(
         self, query, context_chunks, num_slides, lang_label, topic,
-        available_images=None, image_contexts=None,
+        available_images=None, image_contexts=None, slide_plan=None,
     ) -> dict:
         log.info(f"Sequential generation: {num_slides} slides for '{query}'")
+
+        if slide_plan is None:
+            slide_plan = [
+                {"title_hint": "", "slide_type": SLIDE_ARC[i % len(SLIDE_ARC)]}
+                for i in range(num_slides)
+            ]
 
         slides       = []
         prior_titles = []
         prior_fps    = set()
         prior_hints  = []
 
-        for i in range(num_slides):
-            slide_type = SLIDE_ARC[i % len(SLIDE_ARC)]
+        for i, plan_entry in enumerate(slide_plan):
             result = await self._generate_one_slide(
                 query, context_chunks,
                 slide_index=i,
-                slide_type=slide_type,
+                slide_type=plan_entry["slide_type"],
                 num_slides=num_slides,
                 language=lang_label,
                 prior_titles=prior_titles,
@@ -479,6 +657,7 @@ class PedagogicalEngine:
                 prior_fps=prior_fps,
                 available_images=available_images,
                 image_contexts=image_contexts,
+                pdf_section=plan_entry["title_hint"],   # Bug F fix
             )
             if result:
                 slides.append(result)

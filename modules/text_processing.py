@@ -45,6 +45,7 @@ class TextChunk:
     source: str
     page: int
     chunk_id: int
+    section_heading: str = ""   # Inherited from DocumentPage (Bug B fix)
 
 
 def clean_text(text: str) -> str:
@@ -229,35 +230,80 @@ def semantic_chunk(
 def process_pages(pages: list) -> list[TextChunk]:
     """
     Main pipeline: Clean and chunk all pages.
+
+    Bug B fix: pages are grouped by section_heading before chunking.
+    This guarantees that a chunk never straddles two different sections —
+    e.g. content from "Decision Trees > Building decision trees" will never
+    be merged into the same chunk as "Ensembles of Decision Trees > Random forests".
+
+    Within each section group, pages are concatenated and chunked together
+    so context flows naturally across page boundaries inside the same section.
+    Each resulting TextChunk inherits the section_heading of its group.
     """
-    log.info(f"Processing {len(pages)} pages (semantic chunking)...")
-    
-    chunk_size = CONFIG["text_processing"].get("chunk_size", 512)
+    log.info(f"Processing {len(pages)} pages (section-aware semantic chunking)...")
+
+    chunk_size    = CONFIG["text_processing"].get("chunk_size", 512)
     chunk_overlap = CONFIG["text_processing"].get("chunk_overlap", 64)
-    
+
     all_chunks: list[TextChunk] = []
     chunk_counter = 0
-    
+
+    # ── Group consecutive pages that share the same section_heading ──────────
+    # We walk in order and start a new group whenever the heading changes.
+    # Pages without text are skipped but do NOT break the group.
+    groups: list[dict] = []   # [{heading, source, first_page, texts:[str]}]
+
     for page in pages:
         if not page.text:
             continue
-        
+
+        heading = getattr(page, "section_heading", "") or ""
+
+        # Start a new group if heading changed or no group exists yet
+        if not groups or groups[-1]["heading"] != heading:
+            groups.append({
+                "heading":    heading,
+                "source":     page.source,
+                "first_page": page.page,
+                "texts":      [],
+                "pages":      [],
+            })
+
+        groups[-1]["texts"].append(page.text)
+        groups[-1]["pages"].append(page.page)
+
+    log.info(f"  → {len(groups)} section groups identified")
+
+    # ── Chunk each group independently ───────────────────────────────────────
+    for group in groups:
+        # Concatenate all pages in this section with a paragraph separator
+        combined_text = "\n\n".join(group["texts"])
+
         text_pieces = semantic_chunk(
-            page.text,
+            combined_text,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
         )
-        
+
+        # Prepend the section heading to each chunk's text so the LLM and
+        # retriever always see the context label even in short chunks
+        heading_prefix = f"[Section: {group['heading']}]\n" if group["heading"] else ""
+
         for piece in text_pieces:
             all_chunks.append(TextChunk(
-                text=piece,
-                source=page.source,
-                page=page.page,
+                text=heading_prefix + piece,
+                source=group["source"],
+                page=group["first_page"],
                 chunk_id=chunk_counter,
+                section_heading=group["heading"],
             ))
             chunk_counter += 1
-    
-    log.info(f"Created {len(all_chunks)} semantic chunks (size={chunk_size}, overlap={chunk_overlap})")
+
+    log.info(
+        f"Created {len(all_chunks)} semantic chunks "
+        f"(size={chunk_size}, overlap={chunk_overlap}, "
+        f"sections={len(groups)})"
+    )
     return all_chunks
 
 

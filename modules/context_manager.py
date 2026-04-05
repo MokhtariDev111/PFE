@@ -59,12 +59,17 @@ def truncate_to_sentence(text: str, max_chars: int) -> str:
 def format_chunk(chunk, index: int, include_metadata: bool = True) -> str:
     """
     Format a single chunk for LLM context.
+    Includes section_heading in metadata so the LLM knows which part of the
+    document this content comes from (Bug D / Bug F support).
     """
-    source = getattr(chunk, 'source', 'Unknown')
-    page = getattr(chunk, 'page', 0)
-    text = getattr(chunk, 'text', str(chunk))
-    
+    source  = getattr(chunk, 'source', 'Unknown')
+    page    = getattr(chunk, 'page', 0)
+    text    = getattr(chunk, 'text', str(chunk))
+    section = getattr(chunk, 'section_heading', '') or ''
+
     if include_metadata:
+        if section:
+            return f"[Source: {source}, Page {page}, Section: {section}]\n{text}"
         return f"[Source: {source}, Page {page}]\n{text}"
     return text
 
@@ -151,17 +156,27 @@ def prepare_context(
 def prepare_context_for_slides(
     chunks: list,
     num_slides: int,
-    tokens_per_slide: int = 400,
+    tokens_per_slide: int = 600,
 ) -> str:
     """
     Prepare context scaled to presentation size.
-    More slides = more context allowed.
+
+    Bug D fix: the old hard cap of 3500 tokens cut off large sections like
+    Decision Trees (13 pages ≈ 20 000+ chars). The new budget:
+      - Base: 2000 tokens (enough for a short topic)
+      - Per-slide addition: 600 tokens (was 400)
+      - Cap: 8000 tokens — safe for Groq llama-3.3-70b (128k context window)
+        and still well within Ollama's typical 4096-token context since the
+        context is split per-slide, not sent all at once.
+
+    The effective per-slide context (passed to _prepare_context in the engine)
+    is a 600-token window, so this cap only matters for the global retrieval
+    pool used before per-slide sub-queries.
     """
-    # Scale context budget with slide count
-    base_tokens = 1500
+    base_tokens   = 2000
     scaled_tokens = base_tokens + (num_slides * tokens_per_slide)
-    max_tokens = min(scaled_tokens, 3500)  # Cap at 3500 tokens
-    
-    log.info(f"Context budget for {num_slides} slides: {max_tokens} tokens")
-    
+    max_tokens    = min(scaled_tokens, 8000)   # was 3500 — Bug D fix
+
+    log.info(f"Context budget for {num_slides} slides: {max_tokens} tokens (cap was 3500)")
+
     return prepare_context(chunks, max_tokens=max_tokens)

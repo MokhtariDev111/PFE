@@ -161,10 +161,11 @@ class Retriever:
 
     # ── Reciprocal Rank Fusion ────────────────────────────────────────────────
     
-    def search_expanded(self, query: str, top_k: int = 5) -> list:
+    def search_expanded(self, query: str, top_k: int = 5, section_filter: str = "") -> list:
         """
         Multi-query retrieval: expands the query and merges results.
         Improves recall by ~30-40% compared to single-query search.
+        section_filter is forwarded to each sub-search (Bug C fix).
         """
         if self.index is None:
             log.error("Cannot search: FAISS index not loaded.")
@@ -179,7 +180,7 @@ class Retriever:
         seen_ids = set()
         
         for q in queries:
-            results = self.search(q, top_k=top_k)
+            results = self.search(q, top_k=top_k, section_filter=section_filter)
             for r in results:
                 chunk_id = getattr(r, 'chunk_id', None) or hash(r.text[:100])
                 if chunk_id not in seen_ids:
@@ -241,18 +242,76 @@ class Retriever:
             log.warning(f"  Reranker scoring failed ({e}) — using original order.")
             return candidates
 
+    # ── Section boosting (Bug C fix) ─────────────────────────────────────────
+
+    @staticmethod
+    def _section_boost(query: str, candidates: list, boost: float = 2.0) -> list:
+        """
+        Bug C fix: re-sort candidates so that chunks whose section_heading
+        contains the query keywords rank higher.
+
+        Strategy:
+          - Tokenise the query into lowercase keywords (stop-words removed).
+          - For each candidate, count how many keywords appear in its
+            section_heading (case-insensitive).
+          - Assign a boost multiplier: chunks with ≥1 match get `boost` added
+            to their rank score; chunks with 0 matches stay where they are.
+          - Re-sort by (match_count DESC, original_rank ASC) so section-matched
+            chunks float to the top while preserving relative order within each
+            group.
+
+        This runs AFTER RRF merge and BEFORE the cross-encoder reranker, so
+        the reranker still gets to fine-tune within the boosted set.
+        """
+        _STOP = {"a", "an", "the", "of", "in", "for", "to", "and", "or",
+                 "is", "are", "was", "be", "with", "on", "at", "by", "from"}
+
+        query_tokens = [
+            w for w in query.lower().split()
+            if w.isalpha() and w not in _STOP
+        ]
+
+        if not query_tokens:
+            return candidates
+
+        def _match_score(chunk) -> int:
+            heading = getattr(chunk, "section_heading", "") or ""
+            heading_lower = heading.lower()
+            return sum(1 for tok in query_tokens if tok in heading_lower)
+
+        # Stable sort: primary key = match score (desc), secondary = original order
+        scored = [(i, _match_score(c), c) for i, c in enumerate(candidates)]
+        scored.sort(key=lambda x: (-x[1], x[0]))
+
+        boosted = [c for _, score, c in scored]
+
+        # Log what happened
+        top_heading = getattr(boosted[0], "section_heading", "") if boosted else ""
+        matched = sum(1 for _, s, _ in scored if s > 0)
+        log.info(
+            f"  Section boost: {matched}/{len(candidates)} candidates matched "
+            f"query tokens {query_tokens} — top heading: '{top_heading}'"
+        )
+        return boosted
+
     # ── Public search method ──────────────────────────────────────────────────
 
-    def search(self, query: str, top_k: int = 5) -> list:
+    def search(self, query: str, top_k: int = 5, section_filter: str = "") -> list:
         """
         Full hybrid search pipeline:
           1. Dense FAISS search (top reranker_top_n candidates)
           2. BM25 keyword search (top reranker_top_n candidates)  [if enabled]
           3. RRF merge                                             [if BM25 enabled]
-          4. Cross-encoder reranking                              [if enabled]
-          5. Return top_k final chunks
+          4. Section boost — float section-matching chunks up     [Bug C fix]
+          5. Cross-encoder reranking                              [if enabled]
+          6. Return top_k final chunks
 
-        Falls back gracefully at each step if a component is unavailable.
+        Args:
+            query:          The search query string.
+            top_k:          How many chunks to return.
+            section_filter: Optional. If non-empty, ONLY return chunks whose
+                            section_heading contains this string (case-insensitive).
+                            Used by search_for_section() for strict section retrieval.
         """
         if self.index is None:
             log.error("Cannot search: FAISS index not loaded.")
@@ -279,15 +338,44 @@ class Retriever:
             if i < len(self.chunks_store)
         ]
 
-        # Step 4: reranking
+        # Step 4: section filter (strict mode — used by search_for_section)
+        if section_filter:
+            sf_lower = section_filter.lower()
+            filtered = [
+                c for c in candidates
+                if sf_lower in (getattr(c, "section_heading", "") or "").lower()
+            ]
+            if filtered:
+                candidates = filtered
+                log.info(f"  Section filter '{section_filter}': {len(candidates)} candidates kept.")
+            else:
+                log.warning(f"  Section filter '{section_filter}' matched nothing — using unfiltered results.")
+
+        # Step 4b: section boost (soft mode — float matching chunks up)
+        candidates = self._section_boost(query, candidates)
+
+        # Step 5: reranking
         if self.use_reranker and len(candidates) > top_k:
             candidates = self._rerank(query, candidates)
             log.info(f"  Reranked {len(candidates)} candidates.")
 
-        # Step 5: return top_k
+        # Step 6: return top_k
         final = candidates[:top_k]
         log.info(f"  Returning {len(final)} chunks for: '{query[:60]}'")
         return final
+
+    def search_for_section(self, query: str, section_heading: str, top_k: int = 5) -> list:
+        """
+        Bug C fix — targeted retrieval: search ONLY within a specific section.
+
+        Used by the pedagogical engine when generating slides for a topic
+        whose section heading is already known (e.g. from the PDF structure).
+        This prevents cross-section contamination entirely.
+
+        Falls back to regular search if no chunks exist for that section.
+        """
+        log.info(f"  Section-targeted search: '{query}' within '{section_heading}'")
+        return self.search(query, top_k=top_k, section_filter=section_heading)
 
 
 # ── Standalone test ───────────────────────────────────────────────────────────
