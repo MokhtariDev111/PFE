@@ -1,8 +1,13 @@
 """
-html_renderer.py — Professional AI HTML Presentation Renderer
-===========================================================
-Combines RAG-powered content with high-end interactive UI/UX.
-Features: Particles, Particles interaction, Charts, TTS (stub), Q&A (stub), Professional Themes.
+html_renderer.py — Gamma-Style AI Presentation Renderer v2
+============================================================
+Premium quality interactive HTML presentations with:
+- Smooth micro-animations
+- Glass morphism effects
+- Professional typography
+- Responsive layouts
+- Image lightbox with captions
+- Mermaid diagram support
 """
 
 import os
@@ -14,52 +19,62 @@ from pathlib import Path
 
 log = logging.getLogger("renderer")
 
-# ── Themes ────────────────────────────────────────────────────────────────────
+# ── Themes (Gamma-inspired palettes) ──────────────────────────────────────────
 THEMES = {
-    "obsidian": { "bg": "#09090f", "bg2": "#111118", "surf": "rgba(255,255,255,.05)",
-                     "brd": "rgba(255,255,255,.08)", "ink": "#f0eeff", "muted": "rgba(240,238,255,.45)",
-                     "a": "#7c5cfc", "a2": "#b06bff", "a3": "#4cc9f0",
-                     "orb1": "#7c5cfc", "orb2": "#b06bff", "orb3": "#4cc9f0", "dark": True },
-    "aurora":   { "bg": "#050e1a", "bg2": "#071524", "surf": "rgba(0,255,200,.04)",
-                     "brd": "rgba(0,255,200,.10)", "ink": "#e8fff9", "muted": "rgba(232,255,249,.45)",
-                     "a": "#00e5a0", "a2": "#00cfff", "a3": "#7b2fff",
-                     "orb1": "#00e5a0", "orb2": "#00cfff", "orb3": "#7b2fff", "dark": True },
-    "inferno":  { "bg": "#0d0600", "bg2": "#150900", "surf": "rgba(255,120,0,.05)",
-                     "brd": "rgba(255,120,0,.10)", "ink": "#fff5ee", "muted": "rgba(255,245,238,.45)",
-                     "a": "#ff6b00", "a2": "#ff3d6e", "a3": "#ffd600",
-                     "orb1": "#ff6b00", "orb2": "#ff3d6e", "orb3": "#ffd600", "dark": True },
-    "ocean":    { "bg": "#020c18", "bg2": "#041424", "surf": "rgba(56,189,248,.05)",
-                     "brd": "rgba(56,189,248,.10)", "ink": "#e8f4ff", "muted": "rgba(232,244,255,.45)",
-                     "a": "#38bdf8", "a2": "#818cf8", "a3": "#34d399",
-                     "orb1": "#38bdf8", "orb2": "#818cf8", "orb3": "#34d399", "dark": True },
-    "forest":   { "bg": "#030d05", "bg2": "#051408", "surf": "rgba(52,211,153,.05)",
-                     "brd": "rgba(52,211,153,.10)", "ink": "#eeffee", "muted": "rgba(238,255,238,.45)",
-                     "a": "#34d399", "a2": "#a3e635", "a3": "#fbbf24",
-                     "orb1": "#34d399", "orb2": "#a3e635", "orb3": "#fbbf24", "dark": True },
-    "neon":     { "bg": "#020207", "bg2": "#040410", "surf": "rgba(255,0,220,.05)",
-                     "brd": "rgba(255,0,220,.10)", "ink": "#fff0ff", "muted": "rgba(255,240,255,.45)",
-                     "a": "#ff00dc", "a2": "#00f5ff", "a3": "#ffff00",
-                     "orb1": "#ff00dc", "orb2": "#00f5ff", "orb3": "#8b00ff", "dark": True },
-    "galaxy":   { "bg": "#03000d", "bg2": "#070016", "surf": "rgba(167,139,250,.05)",
-                     "brd": "rgba(167,139,250,.10)", "ink": "#f5f0ff", "muted": "rgba(245,240,255,.45)",
-                     "a": "#a78bfa", "a2": "#f472b6", "a3": "#60a5fa",
-                     "orb1": "#a78bfa", "orb2": "#f472b6", "orb3": "#60a5fa", "dark": True },
-    "cream":    { "bg": "#f9f6f0", "bg2": "#f2ede3", "surf": "rgba(0,0,0,.04)",
-                     "brd": "rgba(0,0,0,.08)", "ink": "#1a1208", "muted": "rgba(26,18,8,.50)",
-                     "a": "#c2410c", "a2": "#7c3aed", "a3": "#0d9488",
-                     "orb1": "#c2410c", "orb2": "#7c3aed", "orb3": "#0d9488", "dark": False },
+    "obsidian": {
+        "bg": "#0a0a0f", "bg2": "#12121a", "surf": "rgba(255,255,255,.04)",
+        "brd": "rgba(255,255,255,.08)", "ink": "#f4f4f8", "muted": "rgba(244,244,248,.55)",
+        "a": "#6366f1", "a2": "#a855f7", "a3": "#22d3ee",
+        "card": "rgba(18,18,26,.7)", "dark": True
+    },
+    "aurora": {
+        "bg": "#040d14", "bg2": "#061219", "surf": "rgba(0,255,200,.03)",
+        "brd": "rgba(0,255,200,.10)", "ink": "#e8fff9", "muted": "rgba(232,255,249,.55)",
+        "a": "#00e5a0", "a2": "#00cfff", "a3": "#7c3aed",
+        "card": "rgba(6,18,25,.7)", "dark": True
+    },
+    "inferno": {
+        "bg": "#0c0503", "bg2": "#140906", "surf": "rgba(255,120,0,.04)",
+        "brd": "rgba(255,120,0,.10)", "ink": "#fff5ee", "muted": "rgba(255,245,238,.55)",
+        "a": "#f97316", "a2": "#ef4444", "a3": "#facc15",
+        "card": "rgba(20,9,6,.7)", "dark": True
+    },
+    "ocean": {
+        "bg": "#020810", "bg2": "#031018", "surf": "rgba(56,189,248,.04)",
+        "brd": "rgba(56,189,248,.10)", "ink": "#f0f9ff", "muted": "rgba(240,249,255,.55)",
+        "a": "#0ea5e9", "a2": "#8b5cf6", "a3": "#10b981",
+        "card": "rgba(3,16,24,.7)", "dark": True
+    },
+    "forest": {
+        "bg": "#020905", "bg2": "#041008", "surf": "rgba(52,211,153,.04)",
+        "brd": "rgba(52,211,153,.10)", "ink": "#ecfdf5", "muted": "rgba(236,253,245,.55)",
+        "a": "#10b981", "a2": "#84cc16", "a3": "#f59e0b",
+        "card": "rgba(4,16,8,.7)", "dark": True
+    },
+    "neon": {
+        "bg": "#030208", "bg2": "#050310", "surf": "rgba(255,0,220,.04)",
+        "brd": "rgba(255,0,220,.10)", "ink": "#fdf4ff", "muted": "rgba(253,244,255,.55)",
+        "a": "#e879f9", "a2": "#22d3ee", "a3": "#facc15",
+        "card": "rgba(5,3,16,.7)", "dark": True
+    },
+    "galaxy": {
+        "bg": "#050210", "bg2": "#080318", "surf": "rgba(167,139,250,.04)",
+        "brd": "rgba(167,139,250,.10)", "ink": "#f5f3ff", "muted": "rgba(245,243,255,.55)",
+        "a": "#a78bfa", "a2": "#f472b6", "a3": "#38bdf8",
+        "card": "rgba(8,3,24,.7)", "dark": True
+    },
+    "cream": {
+        "bg": "#fafaf9", "bg2": "#f5f5f4", "surf": "rgba(0,0,0,.03)",
+        "brd": "rgba(0,0,0,.08)", "ink": "#1c1917", "muted": "rgba(28,25,23,.60)",
+        "a": "#ea580c", "a2": "#7c3aed", "a3": "#0d9488",
+        "card": "rgba(255,255,255,.8)", "dark": False
+    },
 }
 
-# Map our PPTX theme names → HTML theme names
 _PPTX_TO_HTML_THEME = {
-    "Dark Navy":     "obsidian",
-    "Ocean Blue":    "ocean",
-    "Forest Green":  "forest",
-    "Inferno":       "inferno",
-    "Aurora":        "aurora",
-    "Neon":          "neon",
-    "Galaxy":        "galaxy",
-    "Cream":         "cream",
+    "Dark Navy": "obsidian", "Ocean Blue": "ocean", "Forest Green": "forest",
+    "Inferno": "inferno", "Aurora": "aurora", "Neon": "neon",
+    "Galaxy": "galaxy", "Cream": "cream",
 }
 
 _KEYS = list(THEMES.keys())
@@ -69,780 +84,1437 @@ def _auto_theme(pres_id: str) -> str:
     return _KEYS[h % len(_KEYS)]
 
 def _esc(s: str) -> str:
-    return (str(s or "")).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace('"','&quot;').replace("'","&#39;").replace("\n"," ")
+    return (str(s or "")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', '&quot;').replace("'", "&#39;").replace("\n", " ")
 
 def _esc_mermaid(s: str) -> str:
-    """
-    Escape for Mermaid diagrams - minimal escaping to preserve syntax.
-    Keeps > for arrows (-->) and prevents escaping & to avoid breaking mermaid.
-    """
     if not s:
         return ""
-    # Avoid escaping & and > to preserve --> and other mermaid syntax.
     return str(s).replace("<", "&lt;")
 
 def _rgb(h: str) -> tuple:
     h = h.lstrip("#")
-    if len(h) == 3: h = "".join([c*2 for c in h])
+    if len(h) == 3:
+        h = "".join([c * 2 for c in h])
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
-def _img_style(img: str | dict | None):
-    if not img: return "", ""
-    src = img.get("url") if isinstance(img, dict) else img
-    if not src: return "", ""
-    safe = src.replace("'", "%27")
-    return (
-        f' style="background-image:url(\'{safe}\');background-size:cover;background-position:center"',
-        '<div class="img-overlay"></div>',
-    )
-
-# ── Chart JS builder ──────────────────────────────────────────────────────────
-def _chart_js(cdata: dict, cid: str, t: dict) -> str:
-    labels = cdata.get("labels", [])
-    values = cdata.get("values", [])
-    title  = cdata.get("title", "")
-    a, a2, a3 = t["a"], t["a2"], t["a3"]
-    r,  g,  b  = _rgb(a)
-    r2, g2, b2 = _rgb(a2)
-    n = len(labels)
-    is_dark = t["dark"]
-
-    fills   = json.dumps([
-        f"rgba({int(r+(r2-r)*i/max(n-1,1))},{int(g+(g2-g)*i/max(n-1,1))},{int(b+(b2-b)*i/max(n-1,1))},0.85)"
-        for i in range(n)
-    ])
-    borders = json.dumps([a] * n)
-    tick_c  = "rgba(240,238,255,.5)" if is_dark else "rgba(26,18,8,.5)"
-    grid_c  = f"rgba({r},{g},{b},.07)"
-    bg_c    = "rgba(6,5,15,.95)" if is_dark else "rgba(255,255,255,.95)"
-    ink_c   = t["ink"]
-    cb      = "(v)=>v>=1e9?(v/1e9).toFixed(1)+'B':v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(1)+'K':String(v)"
-    tip     = (f"tooltip:{{backgroundColor:'{bg_c}',titleColor:'{ink_c}',"
-               f"bodyColor:'{tick_c}',borderColor:'{a}44',borderWidth:1,"
-               f"padding:14,cornerRadius:12,displayColors:false,"
-               f"titleFont:{{family:'Plus Jakarta Sans',weight:'700',size:13}},"
-               f"bodyFont:{{family:'DM Mono',size:11}}}}")
-
-    lj = json.dumps(labels)
-    vj = json.dumps(values)
-    tl = title.lower()
-    ctype = "bar"
-    if any(w in tl for w in ["trend","growth","year","history","evolution"]): ctype = "line"
-    elif n <= 4 or any(w in tl for w in ["share","percent","breakdown","distribution"]): ctype = "doughnut"
-
-    base = (f"responsive:true,maintainAspectRatio:false,"
-            f"plugins:{{legend:{{display:{'true' if ctype=='doughnut' else 'false'}}},{tip}}}")
-
-    if ctype == "bar":
-        return (f"(function(){{var el=document.getElementById('{cid}');if(!el)return;"
-                f"new Chart(el,{{type:'bar',data:{{labels:{lj},datasets:[{{data:{vj},"
-                f"backgroundColor:{fills},borderColor:{borders},borderWidth:0,"
-                f"borderRadius:10,borderSkipped:false}}]}},"
-                f"options:{{{base},"
-                f"animation:{{duration:1200,easing:'easeOutQuart',delay:(c)=>c.dataIndex*120}},"
-                f"scales:{{x:{{ticks:{{color:'{tick_c}',font:{{family:'DM Mono',size:10}}}},"
-                f"grid:{{display:false}}}},y:{{beginAtZero:true,"
-                f"ticks:{{color:'{tick_c}',font:{{family:'DM Mono',size:10}},callback:{cb}}},"
-                f"grid:{{color:'{grid_c}'}}}}}}}})}})();")
-
-    if ctype == "line":
-        return (f"(function(){{var el=document.getElementById('{cid}');if(!el)return;"
-                f"var grd=el.getContext('2d').createLinearGradient(0,0,0,280);"
-                f"grd.addColorStop(0,'rgba({r},{g},{b},.35)');grd.addColorStop(1,'rgba({r},{g},{b},0)');"
-                f"new Chart(el,{{type:'line',data:{{labels:{lj},datasets:[{{data:{vj},"
-                f"borderColor:'{a}',backgroundColor:grd,borderWidth:3,fill:true,tension:0.45,"
-                f"pointBackgroundColor:'{a}',pointBorderColor:'{a2}',pointBorderWidth:2,"
-                f"pointRadius:6,pointHoverRadius:9}}]}},"
-                f"options:{{{base},"
-                f"animation:{{duration:1600,easing:'easeInOutQuart'}},"
-                f"scales:{{x:{{ticks:{{color:'{tick_c}',font:{{family:'DM Mono',size:10}}}},"
-                f"grid:{{color:'{grid_c}'}}}},"
-                f"y:{{ticks:{{color:'{tick_c}',font:{{family:'DM Mono',size:10}},callback:{cb}}},"
-                f"grid:{{color:'{grid_c}'}}}}}}}})}})();")
-
-    # doughnut
-    r3, g3, b3 = _rgb(a3)
-    multi = json.dumps([a, a2, a3, f"rgba({r},{g},{b},.6)", f"rgba({r2},{g2},{b2},.6)", f"rgba({r3},{g3},{b3},.6)"][:n])
-    return (f"(function(){{var el=document.getElementById('{cid}');if(!el)return;"
-            f"new Chart(el,{{type:'doughnut',data:{{labels:{lj},datasets:[{{data:{vj},"
-            f"backgroundColor:{multi},borderColor:'rgba(0,0,0,.2)',borderWidth:2,"
-            f"hoverOffset:14}}]}},"
-            f"options:{{{base},cutout:'68%',"
-            f"animation:{{animateRotate:true,animateScale:true,duration:1400,easing:'easeOutBack'}},"
-            f"plugins:{{legend:{{display:true,position:'right',"
-            f"labels:{{color:'{tick_c}',font:{{family:'DM Mono',size:10}},"
-            f"padding:14,boxWidth:14,boxHeight:14,usePointStyle:true,pointStyle:'circle'}}}},"
-            f"{tip}}}}}}})}})();")
-
-# ── Slide HTML builders ───────────────────────────────────────────────────────
-def _particles(idx: int, accent: str) -> str:
-    return f'<canvas class="pc" id="pc{idx}" data-ac="{accent}"></canvas>'
+# ── Slide Builders ────────────────────────────────────────────────────────────
 
 def _slide_cover(s: dict, i: int, tot: int, t: dict, img: any) -> tuple:
     title = _esc(s.get("title", ""))
     notes = _esc(s.get("speaker_notes", ""))
-    num   = f"{i+1}/{tot}"
+    num = f"{i + 1}/{tot}"
     a, a2, a3 = t["a"], t["a2"], t["a3"]
     r, g, b = _rgb(a)
-    return (
-        f'<section class="slide s-cover" data-idx="{i}" data-ac="{a}" style="--a:{a};--a2:{a2};--a3:{a3}">'
-        f'<div class="slide-bg-orb orb1" style="background:radial-gradient(circle,{a}40,transparent 70%)"></div>'
-        f'<div class="slide-bg-orb orb2" style="background:radial-gradient(circle,{a2}25,transparent 70%)"></div>'
-        f'<div class="slide-bg-orb orb3" style="background:radial-gradient(circle,{a3}15,transparent 70%)"></div>'
-        f'{_particles(i, a)}'
-        f'<div class="cover-body">'
-        f'  <div class="cover-chip" style="background:rgba({r},{g},{b},.12);border:1px solid rgba({r},{g},{b},.25);color:{a}">AI PRESENTATION</div>'
-        f'  <h1 class="cover-title">{title}</h1>'
-        f'  <div class="cover-bar" style="background:linear-gradient(90deg,{a},{a2},{a3})"></div>'
-        f'  <div class="cover-keys">'
-        f'    <span class="ck"><kbd>→</kbd> Next</span>'
-        f'    <span class="ck"><kbd>←</kbd> Prev</span>'
-        f'    <span class="ck"><kbd>F</kbd> Fullscreen</span>'
-        f'    <span class="ck"><kbd>N</kbd> Notes</span>'
-        f'  </div>'
-        f'</div>'
-        f'<div class="slide-num">{num}</div>'
-        f'<div class="notes" data-n="{notes}">{s.get("speaker_notes","")}</div>'
-        f'</section>'
-    ), ""
+    return (f'''
+<section class="slide s-cover" data-idx="{i}" style="--a:{a};--a2:{a2};--a3:{a3}">
+  <div class="bg-gradient"></div>
+  <div class="bg-orb orb-1" style="--orb:{a}"></div>
+  <div class="bg-orb orb-2" style="--orb:{a2}"></div>
+  <div class="bg-orb orb-3" style="--orb:{a3}"></div>
+  <div class="bg-noise"></div>
+  <div class="cover-content">
+    <div class="cover-badge" style="--badge-c:{a}">
+      <span class="badge-dot"></span>
+      <span>AI-POWERED PRESENTATION</span>
+    </div>
+    <h1 class="cover-title">{title}</h1>
+    <div class="cover-line" style="--line-c:linear-gradient(90deg,{a},{a2},{a3})"></div>
+    <div class="cover-meta">
+      <span class="meta-item"><kbd>→</kbd> Next slide</span>
+      <span class="meta-item"><kbd>F</kbd> Fullscreen</span>
+      <span class="meta-item"><kbd>N</kbd> Speaker notes</span>
+    </div>
+  </div>
+  <div class="slide-number">{num}</div>
+  <div class="notes" data-n="{notes}">{s.get("speaker_notes", "")}</div>
+</section>
+'''), ""
+
+
+def _slide_content(s: dict, i: int, tot: int, t: dict, img: any, caption: str = "") -> tuple:
+    title = _esc(s.get("title", ""))
+    bullets = s.get("bullets", [])
+    notes = _esc(s.get("speaker_notes", ""))
+    num = f"{i + 1}/{tot}"
+    a, a2, a3 = t["a"], t["a2"], t["a3"]
+    r, g, b = _rgb(a)
+
+    # Build bullet HTML
+    bhtml = ""
+    for j, bu in enumerate(bullets):
+        text = bu.get("text", "") or bu.get("content", "") if isinstance(bu, dict) else str(bu)
+        src_id = bu.get("source_id", "") if isinstance(bu, dict) else ""
+        
+        # Split on colon for keyword highlighting
+        parts = text.split(":", 1)
+        keyword = _esc(parts[0].strip())
+        rest = _esc(parts[1].strip()) if len(parts) > 1 else ""
+        
+        delay = 0.1 + j * 0.06
+        accent = a2 if j % 2 else a
+        ra, ga, ba = _rgb(accent)
+        
+        src_tag = f'<span class="bullet-source">📄 {_esc(src_id)}</span>' if src_id else ''
+        
+        bhtml += f'''
+        <div class="bullet-card" style="--delay:{delay:.2f}s;--accent:{accent}">
+          <div class="bullet-index" style="--accent-rgb:{ra},{ga},{ba}">{j + 1:02d}</div>
+          <div class="bullet-content">
+            <span class="bullet-keyword">{keyword}</span>
+            {f'<span class="bullet-rest">{rest}</span>' if rest else ''}
+            {src_tag}
+          </div>
+        </div>
+        '''
+
+    # Diagram HTML
+    diag_html = ""
+    diagram = s.get("diagram", "")
+    if diagram:
+        if diagram.startswith("http"):
+            diag_html = f'''
+            <div class="media-card diagram-card">
+              <img src="{_esc(diagram)}" alt="Diagram" class="diagram-img"/>
+            </div>
+            '''
+        else:
+            diag_html = f'''
+            <div class="media-card diagram-card">
+              <pre class="mermaid">{_esc_mermaid(diagram)}</pre>
+            </div>
+            '''
+
+    # Image HTML
+    img_html = ""
+    if img:
+        src = img.get("url") if isinstance(img, dict) else img
+        if src:
+            safe_src = src.replace("'", "%27").replace('"', '&quot;')
+            cap_esc = _esc(caption)
+            
+            # Extract source info from caption
+            src_info = ""
+            if caption:
+                m = re.search(r'(Figure|Fig\.?|Table|Chart)\s*[\d\-\.]+', caption, re.IGNORECASE)
+                if m:
+                    src_info = m.group(0)
+            
+            img_html = f'''
+            <div class="media-card image-card" onclick="openLightbox('{safe_src}','{cap_esc}','{_esc(src_info)}')">
+              <img src="{safe_src}" alt="Slide visual" class="card-image"/>
+              <div class="image-overlay">
+                <span class="zoom-icon">🔍</span>
+                <span>Click to enlarge</span>
+              </div>
+              {f'<div class="image-caption">{cap_esc}</div>' if caption else ''}
+            </div>
+            '''
+
+    # Layout
+    has_media = bool(img_html or diag_html)
+    layout_class = "layout-split" if has_media else "layout-full"
+    
+    media_col = ""
+    if img_html and diag_html:
+        media_col = f'<div class="media-column stacked">{img_html}{diag_html}</div>'
+    elif img_html:
+        media_col = f'<div class="media-column">{img_html}</div>'
+    elif diag_html:
+        media_col = f'<div class="media-column">{diag_html}</div>'
+
+    return (f'''
+<section class="slide s-content" data-idx="{i}" style="--a:{a};--a2:{a2};--a3:{a3}">
+  <div class="bg-gradient subtle"></div>
+  <div class="bg-orb orb-mini" style="--orb:{a}"></div>
+  <div class="bg-noise"></div>
+  <div class="accent-bar" style="--bar:linear-gradient(90deg,{a},{a2},{a3})"></div>
+  <div class="slide-inner">
+    <header class="slide-header">
+      <div class="slide-badge" style="--badge-c:{a}">SLIDE {i + 1:02d}</div>
+      <h2 class="slide-title">{title}</h2>
+      <div class="title-underline" style="--line-c:{a}"></div>
+    </header>
+    <div class="slide-body {layout_class}">
+      <div class="text-column">
+        <div class="bullet-list">{bhtml}</div>
+      </div>
+      {media_col}
+    </div>
+  </div>
+  <div class="slide-number">{num}</div>
+  <div class="notes" data-n="{notes}">{s.get("speaker_notes", "")}</div>
+</section>
+'''), ""
+
 
 def _slide_intro(s: dict, i: int, tot: int, t: dict, img: any, caption: str = "") -> tuple:
     title = _esc(s.get("title", ""))
     bullets = s.get("bullets", [])
     notes = _esc(s.get("speaker_notes", ""))
-    num   = f"{i+1}/{tot}"
+    num = f"{i + 1}/{tot}"
     a, a2, a3 = t["a"], t["a2"], t["a3"]
-    r, g, b = _rgb(a)
-    # Render bullets as a readable paragraph-style list
-    bhtml = "".join(
-        f'<div class="intro-point" style="--d:{0.3+j*0.1:.2f}s">'
-        f'<span class="ipdot" style="background:{a2 if j%2 else a}"></span>'
-        f'<span class="iptext">{_esc(b.get("text","") if isinstance(b,dict) else str(b))}</span>'
-        f'</div>'
-        for j, b in enumerate(bullets)
+
+    points = "".join(
+        f'''<div class="intro-point" style="--delay:{0.2 + j * 0.08:.2f}s">
+          <span class="point-marker" style="--marker-c:{a2 if j % 2 else a}"></span>
+          <span class="point-text">{_esc(bu.get("text", "") if isinstance(bu, dict) else str(bu))}</span>
+        </div>'''
+        for j, bu in enumerate(bullets)
     )
-    return (
-        f'<section class="slide s-intro" data-idx="{i}" data-ac="{a}" style="--a:{a};--a2:{a2};--a3:{a3}">'
-        f'<div class="slide-bg-orb orb1" style="background:radial-gradient(circle,{a}20,transparent 70%)"></div>'
-        f'{_particles(i, a)}'
-        f'<div class="slide-inner centered">'
-        f'  <div class="slide-chip" style="background:rgba({r},{g},{b},.1);border-color:rgba({r},{g},{b},.2);color:{a}">INTRODUCTION</div>'
-        f'  <h2 class="slide-title">{title}</h2>'
-        f'  <div class="title-rule" style="background:linear-gradient(90deg,transparent,{a},{a2},transparent)"></div>'
-        f'  <div class="intro-points">{bhtml}</div>'
-        f'</div>'
-        f'<div class="slide-num">{num}</div>'
-        f'<div class="notes" data-n="{notes}">{s.get("speaker_notes","")}</div>'
-        f'</section>'
-    ), ""
 
-def _slide_content(s: dict, i: int, tot: int, t: dict, img: any, caption: str = "") -> tuple:
-    title   = _esc(s.get("title", ""))
-    bullets = s.get("bullets", [])
-    notes   = _esc(s.get("speaker_notes", ""))
-    num     = f"{i+1}/{tot}"
-    a, a2, a3 = t["a"], t["a2"], t["a3"]
-    r, g, b = _rgb(a)
+    return (f'''
+<section class="slide s-intro" data-idx="{i}" style="--a:{a};--a2:{a2};--a3:{a3}">
+  <div class="bg-gradient"></div>
+  <div class="bg-orb orb-center" style="--orb:{a}"></div>
+  <div class="bg-noise"></div>
+  <div class="intro-content">
+    <div class="slide-badge centered" style="--badge-c:{a}">INTRODUCTION</div>
+    <h2 class="intro-title">{title}</h2>
+    <div class="intro-line" style="--line-c:linear-gradient(90deg,transparent,{a},{a2},transparent)"></div>
+    <div class="intro-points">{points}</div>
+  </div>
+  <div class="slide-number">{num}</div>
+  <div class="notes" data-n="{notes}">{s.get("speaker_notes", "")}</div>
+</section>
+'''), ""
 
-    # Build bullets — clean card style
-    bhtml = ""
-    for j, b in enumerate(bullets):
-        bull = b.get("text", "") or b.get("content", "") if isinstance(b, dict) else str(b)
-        src_info = _esc(str(b.get("source_id", ""))) if isinstance(b, dict) and b.get("source_id") else ""
-        src_tag = f'<span class="src-tag">📄 {src_info}</span>' if src_info else ''
-        parts = bull.split(":", 1)
-        kw    = _esc(parts[0].strip())
-        rest  = _esc(parts[1].strip()) if len(parts) > 1 else ""
-        ac    = a2 if j % 2 else a
-        ra, ga, ba = _rgb(ac)
-        d = 0.1 + j * 0.08
-        bhtml += (
-            f'<div class="bullet-card" style="--d:{d:.2f}s;border-left:3px solid {ac}">'
-            f'<div class="bc-num" style="color:{ac};background:rgba({ra},{ga},{ba},.12)">{j+1:02d}</div>'
-            f'<div class="bc-body">'
-            f'<span class="bc-kw" style="color:{ac}">{kw}</span>'
-            + (f'<span class="bc-rest">{rest}</span>' if rest else '')
-            + src_tag
-            + f'</div></div>'
-        )
 
-    # Diagram
-    diag_html = ""
-    if s.get("diagram"):
-        dv = s["diagram"]
-        if dv.startswith("http"):
-            diag_html = f'<div class="diag-box"><img src="{_esc(dv)}" style="max-width:100%;border-radius:8px;object-fit:contain" alt="Diagram"/></div>'
-        else:
-            diag_html = f'<div class="diag-box"><pre class="mermaid">{_esc_mermaid(dv)}</pre></div>'
-
-    # Image
-    img_html = ""
-    if img:
-        src = img.get("url") if isinstance(img, dict) else img
-        if src:
-            safe = src.replace("'", "%27").replace('"', '&quot;')
-            # Build source page info from caption
-            src_page = ""
-            if caption:
-                import re as _re
-                m = _re.search(r'page\s*(\d+)', caption, _re.IGNORECASE)
-                if m:
-                    src_page = f"Source: Page {m.group(1)}"
-            cap_esc = _esc(caption)
-            src_esc = _esc(src_page)
-            # Pass caption+source to lightbox as data attributes
-            img_html = (
-                f'<div class="img-card" onclick="openLightbox(\'{safe}\',\'{cap_esc}\',\'{src_esc}\')">'
-                f'<img src="{safe}" class="img-main" alt="Slide image"/>'
-                f'<div class="img-hint">🔍 Click to enlarge</div>'
-                f'<div class="img-meta">'
-                + (f'<div class="img-cap">{cap_esc}</div>' if caption else '')
-                + (f'<div class="img-src">📄 {src_esc}</div>' if src_page else '')
-                + f'</div>'
-                f'</div>'
-            )
-
-    has_img  = bool(img_html)
-    has_diag = bool(diag_html)
-
-    # Layout decision
-    if has_img and has_diag:
-        # 3-zone: text left | image top-right + diagram bottom-right
-        content_html = (
-            f'<div class="layout-3col">'
-            f'  <div class="col-text"><div class="bullet-list">{bhtml}</div></div>'
-            f'  <div class="col-right">'
-            f'    <div class="col-right-top">{img_html}</div>'
-            f'    <div class="col-right-bot">{diag_html}</div>'
-            f'  </div>'
-            f'</div>'
-        )
-    elif has_img:
-        content_html = (
-            f'<div class="layout-2col">'
-            f'  <div class="col-text"><div class="bullet-list">{bhtml}</div></div>'
-            f'  <div class="col-media">{img_html}</div>'
-            f'</div>'
-        )
-    elif has_diag:
-        content_html = (
-            f'<div class="layout-2col">'
-            f'  <div class="col-text"><div class="bullet-list">{bhtml}</div></div>'
-            f'  <div class="col-media">{diag_html}</div>'
-            f'</div>'
-        )
-    else:
-        content_html = f'<div class="layout-1col"><div class="bullet-list">{bhtml}</div></div>'
-
-    return (
-        f'<section class="slide s-content" data-idx="{i}" data-ac="{a}" style="--a:{a};--a2:{a2};--a3:{a3}">'
-        f'<div class="slide-bg-orb orb1 sm" style="background:radial-gradient(circle,{a}15,transparent 70%)"></div>'
-        f'{_particles(i, a)}'
-        f'<div class="slide-accent-bar" style="background:linear-gradient(90deg,{a},{a2},{a3})"></div>'
-        f'<div class="slide-inner">'
-        f'  <div class="slide-header">'
-        f'    <div class="slide-chip" style="background:rgba({r},{g},{b},.1);border-color:rgba({r},{g},{b},.2);color:{a}">SLIDE {i+1:02d}</div>'
-        f'    <h2 class="slide-title">{title}</h2>'
-        f'    <div class="title-rule" style="background:linear-gradient(90deg,{a},{a2}88,transparent)"></div>'
-        f'  </div>'
-        f'  {content_html}'
-        f'</div>'
-        f'<div class="slide-num">{num}</div>'
-        f'<div class="notes" data-n="{notes}">{s.get("speaker_notes","")}</div>'
-        f'</section>'
-    ), ""
 def _slide_comparison(s: dict, i: int, tot: int, t: dict, img: any, caption: str = "") -> tuple:
-    title  = _esc(s.get("title", ""))
-    notes  = _esc(s.get("speaker_notes", ""))
+    title = _esc(s.get("title", ""))
     bullets = s.get("bullets", [])
-    num    = f"{i+1}/{tot}"
+    notes = _esc(s.get("speaker_notes", ""))
+    num = f"{i + 1}/{tot}"
     a, a2, a3 = t["a"], t["a2"], t["a3"]
     r, g, b = _rgb(a)
     r2, g2, b2 = _rgb(a2)
 
     mid = max(1, len(bullets) // 2)
-    left_pts  = bullets[:mid]
+    left_pts = bullets[:mid]
     right_pts = bullets[mid:]
 
-    def _col(pts, ac, label, ra, ga, ba, delay):
+    def col(pts, accent, label, ra, ga, ba, base_delay):
         items = "".join(
-            f'<li class="cmp-item" style="--d:{delay+j*0.08:.2f}s">'
-            f'<span class="cmp-dot" style="background:{ac}"></span>'
-            f'<span>{_esc(p.get("text","") if isinstance(p,dict) else str(p))}</span>'
-            f'</li>'
+            f'''<li class="cmp-item" style="--delay:{base_delay + j * 0.06:.2f}s">
+              <span class="cmp-marker" style="--c:{accent}"></span>
+              <span>{_esc(p.get("text", "") if isinstance(p, dict) else str(p))}</span>
+            </li>'''
             for j, p in enumerate(pts)
         )
-        return (
-            f'<div class="cmp-col" style="border-top:3px solid {ac}">'
-            f'<div class="cmp-hdr" style="color:{ac};background:rgba({ra},{ga},{ba},.1)">{label}</div>'
-            f'<ul class="cmp-list">{items}</ul>'
-            f'</div>'
-        )
+        return f'''
+        <div class="cmp-column" style="--col-c:{accent};--col-rgb:{ra},{ga},{ba}">
+          <div class="cmp-header">{label}</div>
+          <ul class="cmp-list">{items}</ul>
+        </div>
+        '''
 
-    return (
-        f'<section class="slide s-content" data-idx="{i}" data-ac="{a}" style="--a:{a};--a2:{a2};--a3:{a3}">'
-        f'<div class="slide-bg-orb orb1 sm" style="background:radial-gradient(circle,{a}15,transparent 70%)"></div>'
-        f'{_particles(i, a)}'
-        f'<div class="slide-accent-bar" style="background:linear-gradient(90deg,{a},{a2},{a3})"></div>'
-        f'<div class="slide-inner">'
-        f'  <div class="slide-header">'
-        f'    <div class="slide-chip" style="background:rgba({r},{g},{b},.1);border-color:rgba({r},{g},{b},.2);color:{a}">COMPARISON</div>'
-        f'    <h2 class="slide-title">{title}</h2>'
-        f'    <div class="title-rule" style="background:linear-gradient(90deg,{a},{a2}88,transparent)"></div>'
-        f'  </div>'
-        f'  <div class="cmp-grid">'
-        f'    {_col(left_pts, a, "Approach A", r, g, b, 0.15)}'
-        f'    <div class="cmp-vs" style="background:linear-gradient(135deg,{a},{a2})">VS</div>'
-        f'    {_col(right_pts, a2, "Approach B", r2, g2, b2, 0.30)}'
-        f'  </div>'
-        f'</div>'
-        f'<div class="slide-num">{num}</div>'
-        f'<div class="notes" data-n="{notes}">{s.get("speaker_notes","")}</div>'
-        f'</section>'
-    ), ""
+    return (f'''
+<section class="slide s-comparison" data-idx="{i}" style="--a:{a};--a2:{a2};--a3:{a3}">
+  <div class="bg-gradient subtle"></div>
+  <div class="bg-noise"></div>
+  <div class="accent-bar" style="--bar:linear-gradient(90deg,{a},{a2},{a3})"></div>
+  <div class="slide-inner">
+    <header class="slide-header">
+      <div class="slide-badge" style="--badge-c:{a}">COMPARISON</div>
+      <h2 class="slide-title">{title}</h2>
+      <div class="title-underline" style="--line-c:{a}"></div>
+    </header>
+    <div class="cmp-grid">
+      {col(left_pts, a, "Option A", r, g, b, 0.15)}
+      <div class="cmp-divider">
+        <div class="vs-badge" style="--vs-bg:linear-gradient(135deg,{a},{a2})">VS</div>
+      </div>
+      {col(right_pts, a2, "Option B", r2, g2, b2, 0.30)}
+    </div>
+  </div>
+  <div class="slide-number">{num}</div>
+  <div class="notes" data-n="{notes}">{s.get("speaker_notes", "")}</div>
+</section>
+'''), ""
+
 
 def _slide_outro(s: dict, i: int, tot: int, t: dict, img: any, topic: str) -> tuple:
     title = _esc(s.get("title", "Conclusion"))
-    notes = _esc(s.get("speaker_notes", ""))
     bullets = s.get("bullets", [])
-    num   = f"{i+1}/{tot}"
+    notes = _esc(s.get("speaker_notes", ""))
+    num = f"{i + 1}/{tot}"
     a, a2, a3 = t["a"], t["a2"], t["a3"]
-    r, g, b = _rgb(a)
 
-    bhtml = "".join(
-        f'<div class="outro-pt" style="--d:{0.3+j*0.1:.2f}s">'
-        f'<span class="outro-dot" style="background:{a2 if j%2 else a}"></span>'
-        f'<span>{_esc(bu.get("text","") if isinstance(bu,dict) else str(bu))}</span>'
-        f'</div>'
+    points = "".join(
+        f'''<div class="outro-point" style="--delay:{0.25 + j * 0.08:.2f}s">
+          <span class="outro-marker" style="--c:{a2 if j % 2 else a}"></span>
+          <span>{_esc(bu.get("text", "") if isinstance(bu, dict) else str(bu))}</span>
+        </div>'''
         for j, bu in enumerate(bullets[:6])
     )
 
-    return (
-        f'<section class="slide s-outro" data-idx="{i}" data-ac="{a}" style="--a:{a};--a2:{a2};--a3:{a3}">'
-        f'<div class="slide-bg-orb orb1" style="background:radial-gradient(circle,{a}35,transparent 70%)"></div>'
-        f'<div class="slide-bg-orb orb2" style="background:radial-gradient(circle,{a2}20,transparent 70%)"></div>'
-        f'{_particles(i, a)}'
-        f'<div class="outro-body">'
-        f'  <div class="outro-icon" style="border-color:{a};color:{a}">✦</div>'
-        f'  <h2 class="outro-title" style="background:linear-gradient(135deg,{a},{a2});-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">{title}</h2>'
-        f'  <div class="outro-bar" style="background:linear-gradient(90deg,{a},{a2},{a3})"></div>'
-        f'  <div class="outro-pts">{bhtml}</div>'
-        f'  <div class="outro-topic" style="color:{a2}">{_esc(topic)}</div>'
-        f'</div>'
-        f'<div class="slide-num">{num}</div>'
-        f'<div class="notes" data-n="{notes}">{s.get("speaker_notes","")}</div>'
-        f'</section>'
-    ), ""
+    return (f'''
+<section class="slide s-outro" data-idx="{i}" style="--a:{a};--a2:{a2};--a3:{a3}">
+  <div class="bg-gradient"></div>
+  <div class="bg-orb orb-1" style="--orb:{a}"></div>
+  <div class="bg-orb orb-2" style="--orb:{a2}"></div>
+  <div class="bg-noise"></div>
+  <div class="outro-content">
+    <div class="outro-icon" style="--icon-c:{a}">✦</div>
+    <h2 class="outro-title" style="--title-grad:linear-gradient(135deg,{a},{a2})">{title}</h2>
+    <div class="outro-line" style="--line-c:linear-gradient(90deg,{a},{a2},{a3})"></div>
+    <div class="outro-points">{points}</div>
+    <div class="outro-topic" style="--topic-c:{a2}">{_esc(topic)}</div>
+  </div>
+  <div class="slide-number">{num}</div>
+  <div class="notes" data-n="{notes}">{s.get("speaker_notes", "")}</div>
+</section>
+'''), ""
+
 
 def _slide_stats(s: dict, i: int, tot: int, t: dict, img: any, caption: str = "") -> tuple:
-    title   = _esc(s.get("title", ""))
-    bullets = s.get("bullets", [])
-    notes   = _esc(s.get("speaker_notes", ""))
-    num     = f"{i+1}/{tot}"
-    a, a2, a3 = t["a"], t["a2"], t["a3"]
-    r, g, b = _rgb(a)
+    # For simplicity, treat stats like content slides
+    return _slide_content(s, i, tot, t, img, caption)
 
-    bhtml = ""
-    for j, bu in enumerate(bullets):
-        bull = bu.get("text", "") or bu.get("content", "") if isinstance(bu, dict) else str(bu)
-        parts = bull.split(":", 1)
-        kw    = _esc(parts[0].strip())
-        rest  = _esc(parts[1].strip()) if len(parts) > 1 else ""
-        ac    = a2 if j % 2 else a
-        ra, ga, ba = _rgb(ac)
-        d = 0.1 + j * 0.08
-        bhtml += (
-            f'<div class="bullet-card" style="--d:{d:.2f}s;border-left:3px solid {ac}">'
-            f'<div class="bc-num" style="color:{ac};background:rgba({ra},{ga},{ba},.12)">{j+1:02d}</div>'
-            f'<div class="bc-body"><span class="bc-kw" style="color:{ac}">{kw}</span>'
-            + (f'<span class="bc-rest">{rest}</span>' if rest else '')
-            + f'</div></div>'
-        )
-
-    chart_html = ""
-    cdata = s.get("chart_data")
-    if cdata and isinstance(cdata, dict) and cdata.get("labels") and cdata.get("values"):
-        cid = f"chart_{i}"
-        chart_html = (
-            f'<div style="margin-top:20px;background:rgba({r},{g},{b},.04);'
-            f'border:1px solid rgba({r},{g},{b},.1);border-radius:12px;padding:20px;'
-            f'height:260px;opacity:0;animation:slide-up .6s ease both .5s">'
-            f'<canvas id="{cid}"></canvas></div>'
-        )
-        js = _chart_js(cdata, cid, t)
-    else:
-        js = ""
-
-    return (
-        f'<section class="slide s-content" data-idx="{i}" data-ac="{a}" style="--a:{a};--a2:{a2};--a3:{a3}">'
-        f'<div class="slide-bg-orb orb1 sm" style="background:radial-gradient(circle,{a}15,transparent 70%)"></div>'
-        f'{_particles(i, a)}'
-        f'<div class="slide-accent-bar" style="background:linear-gradient(90deg,{a},{a2},{a3})"></div>'
-        f'<div class="slide-inner">'
-        f'  <div class="slide-header">'
-        f'    <div class="slide-chip" style="background:rgba({r},{g},{b},.1);border-color:rgba({r},{g},{b},.2);color:{a}">STATISTICS</div>'
-        f'    <h2 class="slide-title">{title}</h2>'
-        f'    <div class="title-rule" style="background:linear-gradient(90deg,{a},{a2}88,transparent)"></div>'
-        f'  </div>'
-        f'  <div class="layout-1col"><div class="bullet-list">{bhtml}</div>{chart_html}</div>'
-        f'</div>'
-        f'<div class="slide-num">{num}</div>'
-        f'<div class="notes" data-n="{notes}">{s.get("speaker_notes","")}</div>'
-        f'</section>'
-    ), js
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
+
 def _css(t: dict) -> str:
-    bg, bg2  = t["bg"], t["bg2"]
-    surf, brd = t["surf"], t["brd"]
+    bg, bg2 = t["bg"], t["bg2"]
     ink, muted = t["ink"], t["muted"]
     a, a2, a3 = t["a"], t["a2"], t["a3"]
+    card = t["card"]
     r, g, b = _rgb(a)
-    r2, g2, b2 = _rgb(a2)
-    blend = "screen" if t["dark"] else "multiply"
-    return f"""
-*,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
-:root{{--a:{a};--a2:{a2};--a3:{a3};--bg:{bg};--ink:{ink};--muted:{muted};--surf:{surf};--brd:{brd}}}
-html,body{{width:100%;height:100%;overflow:hidden;background:{bg};color:{ink};font-family:'Inter','DM Sans',system-ui,sans-serif;cursor:none;-webkit-font-smoothing:antialiased}}
+    is_dark = t["dark"]
+    blend = "screen" if is_dark else "multiply"
+    
+    return f'''
+/* ═══════════════════════════════════════════════════════════════════════════
+   GAMMA-STYLE PRESENTATION — CSS
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ── Cursor ── */
-#cur{{position:fixed;width:10px;height:10px;border-radius:50%;background:{a};pointer-events:none;z-index:9999;transform:translate(-50%,-50%);mix-blend-mode:{blend};transition:transform .1s}}
-#cur2{{position:fixed;width:32px;height:32px;border:1.5px solid {a};border-radius:50%;pointer-events:none;z-index:9998;transform:translate(-50%,-50%);opacity:.25;transition:left .06s,top .06s}}
+*, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
 
-/* ── Deck ── */
-#deck{{position:fixed;inset:0}}
-.slide{{position:absolute;inset:0;background:{bg};overflow:hidden;display:flex;flex-direction:column;opacity:0;pointer-events:none;transform:translateX(60px) scale(.97);transition:none}}
-.slide.active{{opacity:1;pointer-events:all;transform:none;transition:transform .55s cubic-bezier(.22,1,.36,1),opacity .3s}}
-.slide.xl{{opacity:0;transform:translateX(-60px) scale(.97)}}
-.slide.xr{{opacity:0;transform:translateX(60px) scale(.97)}}
+:root {{
+  --bg: {bg};
+  --bg2: {bg2};
+  --ink: {ink};
+  --muted: {muted};
+  --a: {a};
+  --a2: {a2};
+  --a3: {a3};
+  --card: {card};
+  --radius: 16px;
+  --radius-sm: 10px;
+  --shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+  --shadow-sm: 0 10px 25px -5px rgba(0,0,0,0.3);
+}}
 
-/* ── Background orbs ── */
-.slide-bg-orb{{position:absolute;border-radius:50%;filter:blur(110px);pointer-events:none;z-index:0}}
-.orb1{{width:55vw;height:55vw;top:-20%;left:-15%;animation:orb-drift 20s ease-in-out infinite alternate}}
-.orb2{{width:45vw;height:45vw;bottom:-15%;right:-10%;animation:orb-drift 26s ease-in-out infinite alternate-reverse}}
-.orb3{{width:35vw;height:35vw;top:35%;left:35%;animation:orb-drift 17s ease-in-out infinite alternate}}
-.sm{{width:32vw;height:32vw}}
-@keyframes orb-drift{{0%{{transform:translate(0,0) scale(1)}}50%{{transform:translate(4%,5%) scale(1.06)}}100%{{transform:translate(-2%,3%) scale(.96)}}}}
+html, body {{
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  cursor: none;
+}}
 
-/* ── Animated grid background ── */
-.slide::before{{content:'';position:absolute;inset:0;z-index:0;pointer-events:none;
-  background-image:linear-gradient(rgba({r},{g},{b},.03) 1px,transparent 1px),linear-gradient(90deg,rgba({r},{g},{b},.03) 1px,transparent 1px);
-  background-size:52px 52px;
-  animation:grid-pan 50s linear infinite}}
-@keyframes grid-pan{{from{{background-position:0 0}}to{{background-position:52px 52px}}}}
+/* ── Custom Cursor ── */
+#cursor {{
+  position: fixed;
+  width: 8px; height: 8px;
+  background: {a};
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 10000;
+  transform: translate(-50%, -50%);
+  mix-blend-mode: {blend};
+  transition: transform 0.1s ease;
+}}
+#cursor-ring {{
+  position: fixed;
+  width: 32px; height: 32px;
+  border: 1.5px solid {a};
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 9999;
+  transform: translate(-50%, -50%);
+  opacity: 0.3;
+  transition: left 0.08s ease, top 0.08s ease;
+}}
 
-/* ── Particles ── */
-.pc{{position:absolute;inset:0;z-index:1;opacity:.35;pointer-events:none}}
+/* ── Deck Container ── */
+#deck {{ position: fixed; inset: 0; }}
 
-/* ── Accent bar (top) ── */
-.slide-accent-bar{{position:absolute;top:0;left:0;right:0;height:3px;z-index:10}}
+/* ── Base Slide ── */
+.slide {{
+  position: absolute;
+  inset: 0;
+  background: var(--bg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(80px) scale(0.96);
+  transition: none;
+}}
+.slide.active {{
+  opacity: 1;
+  pointer-events: all;
+  transform: none;
+  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease;
+}}
+.slide.xl {{ transform: translateX(-80px) scale(0.96); opacity: 0; }}
+.slide.xr {{ transform: translateX(80px) scale(0.96); opacity: 0; }}
 
-/* ── Slide inner wrapper ── */
-.slide-inner{{position:relative;z-index:5;display:flex;flex-direction:column;width:100%;height:100%;padding:52px 64px 44px;gap:0}}
-.slide-inner.centered{{align-items:center;justify-content:center;text-align:center}}
+/* ── Background Effects ── */
+.bg-gradient {{
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 80% 60% at 50% -20%, rgba({r},{g},{b},0.15), transparent 60%),
+              radial-gradient(ellipse 60% 50% at 100% 100%, rgba({r},{g},{b},0.08), transparent 50%);
+  z-index: 0;
+}}
+.bg-gradient.subtle {{
+  background: radial-gradient(ellipse 70% 50% at 20% 0%, rgba({r},{g},{b},0.08), transparent 50%);
+}}
 
-/* ── Slide header ── */
-.slide-header{{flex-shrink:0;margin-bottom:28px}}
-.slide-chip{{display:inline-flex;align-items:center;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:5px 14px;border-radius:100px;border:1px solid;margin-bottom:14px}}
-.slide-title{{font-family:'Plus Jakarta Sans','Inter',sans-serif;font-size:clamp(28px,3.2vw,52px);font-weight:800;letter-spacing:-1.5px;line-height:1.12;color:{ink};margin-bottom:16px}}
-.title-rule{{height:2px;width:56px;border-radius:2px;margin-bottom:0}}
+.bg-orb {{
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  opacity: 0.5;
+  z-index: 0;
+  animation: orb-float 20s ease-in-out infinite;
+}}
+.orb-1 {{ width: 50vw; height: 50vw; top: -20%; left: -10%; background: var(--orb); }}
+.orb-2 {{ width: 40vw; height: 40vw; bottom: -15%; right: -5%; background: var(--orb); animation-delay: -7s; }}
+.orb-3 {{ width: 30vw; height: 30vw; top: 40%; right: 20%; background: var(--orb); animation-delay: -14s; opacity: 0.3; }}
+.orb-center {{ width: 45vw; height: 45vw; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--orb); }}
+.orb-mini {{ width: 30vw; height: 30vw; top: -10%; right: -5%; background: var(--orb); opacity: 0.3; }}
 
-/* ── Bullet list ── */
-.bullet-list{{display:flex;flex-direction:column;gap:10px}}
-.bullet-card{{display:flex;align-items:flex-start;gap:14px;padding:12px 16px;border-radius:10px;background:rgba({r},{g},{b},.05);border-left:3px solid {a};opacity:0;animation:slide-up .5s ease both var(--d)}}
-@keyframes slide-up{{from{{opacity:0;transform:translateY(16px)}}to{{opacity:1;transform:none}}}}
-.bc-num{{flex-shrink:0;width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;font-family:monospace;margin-top:2px}}
-.bc-body{{flex:1;min-width:0}}
-.bc-kw{{display:block;font-size:16px;font-weight:700;line-height:1.3;margin-bottom:4px}}
-.bc-rest{{display:block;font-size:14.5px;font-weight:400;line-height:1.6;color:{muted}}}
-.src-tag{{display:inline-block;margin-left:8px;font-size:11px;font-weight:500;background:rgba(255,255,255,.07);padding:2px 8px;border-radius:4px;color:{muted}}}
+@keyframes orb-float {{
+  0%, 100% {{ transform: translate(0, 0) scale(1); }}
+  33% {{ transform: translate(3%, 5%) scale(1.05); }}
+  66% {{ transform: translate(-2%, 2%) scale(0.97); }}
+}}
 
-/* ── Layouts ── */
-.layout-1col{{flex:1;display:flex;flex-direction:column;justify-content:center;min-height:0}}
-.layout-2col{{flex:1;display:grid;grid-template-columns:1fr 42%;gap:32px;align-items:center;min-height:0}}
-.layout-3col{{flex:1;display:grid;grid-template-columns:1fr 40%;gap:28px;align-items:stretch;min-height:0}}
-.col-text{{display:flex;flex-direction:column;justify-content:center;min-width:0;min-height:0}}
-.col-media{{display:flex;flex-direction:column;justify-content:center;min-width:0;min-height:0}}
-.col-right{{display:flex;flex-direction:column;gap:16px;min-width:0;min-height:0}}
-.col-right-top{{flex:1;min-height:0}}
-.col-right-bot{{flex:1;min-height:0}}
+.bg-noise {{
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.03;
+  z-index: 1;
+  pointer-events: none;
+}}
 
-/* ── Image card ── */
-.img-card{{position:relative;border-radius:14px;overflow:hidden;cursor:pointer;background:rgba({r},{g},{b},.06);border:1px solid rgba({r},{g},{b},.18);box-shadow:0 20px 48px rgba(0,0,0,.45);opacity:0;animation:slide-up .5s ease both .15s;height:100%;display:flex;flex-direction:column}}
-.img-card:hover .img-hint{{opacity:1}}
-.img-main{{width:100%;flex:1;object-fit:cover;display:block;min-height:0;max-height:340px}}
-.img-hint{{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);color:#fff;font-size:13px;font-weight:500;opacity:0;transition:opacity .2s;backdrop-filter:blur(2px)}}
-.img-meta{{flex-shrink:0;padding:10px 14px;background:rgba({r},{g},{b},.08);border-top:1px solid rgba({r},{g},{b},.12)}}
-.img-cap{{font-size:13px;font-weight:500;color:{ink};line-height:1.45;margin-bottom:4px}}
-.img-src{{font-size:11px;font-weight:400;color:{a};opacity:.85;display:flex;align-items:center;gap:5px}}
+/* ── Accent Bar ── */
+.accent-bar {{
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--bar);
+  z-index: 10;
+}}
 
-/* ── Diagram box ── */
-.diag-box{{border-radius:14px;overflow:hidden;background:rgba({r},{g},{b},.04);border:1px solid rgba({r},{g},{b},.14);padding:16px;display:flex;align-items:center;justify-content:center;min-height:120px;opacity:0;animation:slide-up .5s ease both .25s;height:100%}}
-.mermaid{{background:transparent !important;color:{ink} !important;width:100%}}
-.mermaid svg{{max-width:100%;height:auto;filter:drop-shadow(0 6px 14px rgba(0,0,0,.3))}}
+/* ── Slide Inner ── */
+.slide-inner {{
+  position: relative;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  padding: 56px 72px 48px;
+}}
 
-/* ── Cover slide ── */
-.cover-body{{position:relative;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:60px 80px;height:100%}}
-.cover-chip{{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;padding:7px 20px;border-radius:100px;margin-bottom:32px;opacity:0;animation:slide-up .6s ease both .1s}}
-.cover-title{{font-family:'Plus Jakarta Sans','Inter',sans-serif;font-size:clamp(40px,6vw,88px);font-weight:800;letter-spacing:-3px;line-height:1.05;color:{ink};margin-bottom:32px;opacity:0;animation:slide-up .7s ease both .2s;max-width:900px}}
-.cover-bar{{height:4px;width:120px;border-radius:4px;margin:0 auto 36px;opacity:0;animation:slide-up .6s ease both .35s}}
-.cover-keys{{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;opacity:0;animation:slide-up .6s ease both .5s}}
-.ck{{display:flex;align-items:center;gap:7px;font-size:12px;color:{muted}}}
-.ck kbd{{background:rgba({r},{g},{b},.15);border:1px solid rgba({r},{g},{b},.25);padding:3px 9px;border-radius:6px;font-family:monospace;font-size:11px;color:{ink}}}
+/* ── Slide Header ── */
+.slide-header {{
+  flex-shrink: 0;
+  margin-bottom: 32px;
+}}
 
-/* ── Intro slide ── */
-.intro-points{{display:flex;flex-direction:column;gap:12px;max-width:680px;margin-top:28px;text-align:left}}
-.intro-point{{display:flex;align-items:flex-start;gap:12px;opacity:0;animation:slide-up .5s ease both var(--d)}}
-.ipdot{{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:7px}}
-.iptext{{font-size:17px;line-height:1.7;color:{muted}}}
+.slide-badge {{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--badge-c);
+  background: rgba({r},{g},{b},0.1);
+  border: 1px solid rgba({r},{g},{b},0.2);
+  padding: 6px 14px;
+  border-radius: 100px;
+  margin-bottom: 16px;
+  opacity: 0;
+  animation: fade-up 0.5s ease 0.1s forwards;
+}}
+.slide-badge.centered {{ margin: 0 auto 20px; }}
 
-/* ── Comparison ── */
-.cmp-grid{{flex:1;display:grid;grid-template-columns:1fr auto 1fr;gap:20px;align-items:start;min-height:0}}
-.cmp-col{{border-radius:14px;overflow:hidden;background:rgba({r},{g},{b},.04);border:1px solid rgba({r},{g},{b},.12)}}
-.cmp-hdr{{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:12px 18px}}
-.cmp-list{{list-style:none;padding:14px 18px;display:flex;flex-direction:column;gap:10px}}
-.cmp-item{{display:flex;align-items:flex-start;gap:10px;font-size:15px;line-height:1.55;color:{muted};opacity:0;animation:slide-up .5s ease both var(--d)}}
-.cmp-dot{{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:6px}}
-.cmp-vs{{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;align-self:center;flex-shrink:0;box-shadow:0 8px 24px rgba(0,0,0,.4)}}
+.slide-title {{
+  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  font-size: clamp(32px, 4vw, 56px);
+  font-weight: 800;
+  letter-spacing: -1.5px;
+  line-height: 1.1;
+  color: var(--ink);
+  margin-bottom: 16px;
+  opacity: 0;
+  animation: fade-up 0.6s ease 0.15s forwards;
+}}
 
-/* ── Outro ── */
-.s-outro{{display:flex;align-items:center;justify-content:center}}
-.outro-body{{position:relative;z-index:5;display:flex;flex-direction:column;align-items:center;text-align:center;padding:60px;max-width:800px}}
-.outro-icon{{width:72px;height:72px;border-radius:50%;border:2px solid;display:flex;align-items:center;justify-content:center;font-size:28px;margin-bottom:28px;opacity:0;animation:slide-up .6s ease both .1s}}
-.outro-title{{font-family:'Plus Jakarta Sans','Inter',sans-serif;font-size:clamp(36px,5vw,72px);font-weight:800;letter-spacing:-2px;line-height:1.1;margin-bottom:20px;opacity:0;animation:slide-up .6s ease both .2s}}
-.outro-bar{{height:3px;width:80px;border-radius:3px;margin:0 auto 32px;opacity:0;animation:slide-up .5s ease both .3s}}
-.outro-pts{{display:flex;flex-direction:column;gap:10px;margin-bottom:28px;text-align:left;width:100%;max-width:560px}}
-.outro-pt{{display:flex;align-items:flex-start;gap:12px;font-size:15px;line-height:1.6;color:{muted};opacity:0;animation:slide-up .5s ease both var(--d)}}
-.outro-dot{{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:7px}}
-.outro-topic{{font-size:15px;color:{muted};opacity:.6;opacity:0;animation:slide-up .5s ease both .7s}}
+.title-underline {{
+  width: 64px;
+  height: 3px;
+  background: var(--line-c);
+  border-radius: 3px;
+  opacity: 0;
+  animation: fade-up 0.5s ease 0.2s forwards;
+}}
+
+@keyframes fade-up {{
+  from {{ opacity: 0; transform: translateY(20px); }}
+  to {{ opacity: 1; transform: none; }}
+}}
+
+/* ── Slide Body Layouts ── */
+.slide-body {{
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}}
+
+.layout-full {{ flex-direction: column; }}
+.layout-split {{ gap: 40px; }}
+
+.text-column {{
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}}
+
+.media-column {{
+  flex: 0 0 45%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}}
+.media-column.stacked {{ gap: 16px; }}
+
+/* ── Bullet Cards ── */
+.bullet-list {{
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}}
+
+.bullet-card {{
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 20px;
+  background: {card};
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba({r},{g},{b},0.12);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  opacity: 0;
+  animation: fade-up 0.5s ease var(--delay) forwards;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}}
+.bullet-card:hover {{
+  transform: translateX(4px);
+  box-shadow: var(--shadow-sm);
+}}
+
+.bullet-index {{
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  border-radius: 8px;
+}}
+
+.bullet-content {{
+  flex: 1;
+  min-width: 0;
+}}
+
+.bullet-keyword {{
+  display: block;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1.3;
+  margin-bottom: 4px;
+}}
+
+.bullet-rest {{
+  display: block;
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--muted);
+  line-height: 1.6;
+}}
+
+.bullet-source {{
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  background: rgba({r},{g},{b},0.08);
+  padding: 3px 10px;
+  border-radius: 4px;
+}}
+
+/* ── Media Cards ── */
+.media-card {{
+  background: {card};
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba({r},{g},{b},0.15);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  animation: fade-up 0.6s ease 0.3s forwards;
+}}
+
+.image-card {{
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}}
+.image-card:hover {{
+  transform: scale(1.02);
+  box-shadow: 0 30px 60px -15px rgba(0,0,0,0.6);
+}}
+.image-card:hover .image-overlay {{
+  opacity: 1;
+}}
+
+.card-image {{
+  width: 100%;
+  height: auto;
+  max-height: 380px;
+  object-fit: cover;
+  display: block;
+}}
+
+.image-overlay {{
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  backdrop-filter: blur(4px);
+}}
+.zoom-icon {{
+  font-size: 28px;
+}}
+
+.image-caption {{
+  padding: 14px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  background: rgba({r},{g},{b},0.06);
+  border-top: 1px solid rgba({r},{g},{b},0.1);
+  line-height: 1.5;
+}}
+
+.diagram-card {{
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}}
+.diagram-card .mermaid {{
+  width: 100%;
+  color: var(--ink) !important;
+  background: transparent !important;
+}}
+.diagram-card .mermaid svg {{
+  max-width: 100%;
+  height: auto;
+  filter: drop-shadow(0 8px 16px rgba(0,0,0,0.3));
+}}
+
+/* ── Cover Slide ── */
+.cover-content {{
+  position: relative;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  height: 100%;
+  padding: 60px;
+}}
+
+.cover-badge {{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--badge-c);
+  background: rgba({r},{g},{b},0.1);
+  border: 1px solid rgba({r},{g},{b},0.25);
+  padding: 8px 20px;
+  border-radius: 100px;
+  margin-bottom: 36px;
+  opacity: 0;
+  animation: fade-up 0.6s ease 0.1s forwards;
+}}
+.badge-dot {{
+  width: 6px;
+  height: 6px;
+  background: var(--badge-c);
+  border-radius: 50%;
+  animation: pulse 2s ease-in-out infinite;
+}}
+@keyframes pulse {{
+  0%, 100% {{ opacity: 1; transform: scale(1); }}
+  50% {{ opacity: 0.5; transform: scale(1.2); }}
+}}
+
+.cover-title {{
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: clamp(44px, 7vw, 96px);
+  font-weight: 800;
+  letter-spacing: -3px;
+  line-height: 1.05;
+  color: var(--ink);
+  max-width: 1000px;
+  margin-bottom: 36px;
+  opacity: 0;
+  animation: fade-up 0.7s ease 0.2s forwards;
+}}
+
+.cover-line {{
+  width: 120px;
+  height: 4px;
+  background: var(--line-c);
+  border-radius: 4px;
+  margin-bottom: 40px;
+  opacity: 0;
+  animation: fade-up 0.6s ease 0.35s forwards;
+}}
+
+.cover-meta {{
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  justify-content: center;
+  opacity: 0;
+  animation: fade-up 0.6s ease 0.5s forwards;
+}}
+.meta-item {{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}}
+.meta-item kbd {{
+  background: rgba({r},{g},{b},0.12);
+  border: 1px solid rgba({r},{g},{b},0.2);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--ink);
+}}
+
+/* ── Intro Slide ── */
+.intro-content {{
+  position: relative;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  height: 100%;
+  padding: 60px;
+}}
+
+.intro-title {{
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: clamp(36px, 5vw, 68px);
+  font-weight: 800;
+  letter-spacing: -2px;
+  line-height: 1.1;
+  color: var(--ink);
+  margin-bottom: 24px;
+  opacity: 0;
+  animation: fade-up 0.6s ease 0.15s forwards;
+}}
+
+.intro-line {{
+  width: 100px;
+  height: 2px;
+  background: var(--line-c);
+  border-radius: 2px;
+  margin-bottom: 36px;
+  opacity: 0;
+  animation: fade-up 0.5s ease 0.25s forwards;
+}}
+
+.intro-points {{
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: left;
+  max-width: 700px;
+}}
+
+.intro-point {{
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  opacity: 0;
+  animation: fade-up 0.5s ease var(--delay) forwards;
+}}
+.point-marker {{
+  width: 8px;
+  height: 8px;
+  background: var(--marker-c);
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 8px;
+}}
+.point-text {{
+  font-size: 18px;
+  line-height: 1.7;
+  color: var(--muted);
+}}
+
+/* ── Comparison Slide ── */
+.cmp-grid {{
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 24px;
+  align-items: start;
+}}
+
+.cmp-column {{
+  background: {card};
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(var(--col-rgb),0.15);
+  border-top: 3px solid var(--col-c);
+  border-radius: var(--radius);
+  overflow: hidden;
+}}
+
+.cmp-header {{
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--col-c);
+  padding: 14px 20px;
+  background: rgba(var(--col-rgb),0.08);
+}}
+
+.cmp-list {{
+  list-style: none;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}}
+
+.cmp-item {{
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--muted);
+  opacity: 0;
+  animation: fade-up 0.5s ease var(--delay) forwards;
+}}
+.cmp-marker {{
+  width: 6px;
+  height: 6px;
+  background: var(--c);
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 7px;
+}}
+
+.cmp-divider {{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+}}
+.vs-badge {{
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--vs-bg);
+  color: white;
+  font-size: 12px;
+  font-weight: 800;
+  border-radius: 50%;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+}}
+
+/* ── Outro Slide ── */
+.outro-content {{
+  position: relative;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  height: 100%;
+  padding: 60px;
+}}
+
+.outro-icon {{
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  color: var(--icon-c);
+  border: 2px solid var(--icon-c);
+  border-radius: 50%;
+  margin-bottom: 32px;
+  opacity: 0;
+  animation: fade-up 0.6s ease 0.1s forwards, float 4s ease-in-out 0.6s infinite;
+}}
+@keyframes float {{
+  0%, 100% {{ transform: translateY(0); }}
+  50% {{ transform: translateY(-10px); }}
+}}
+
+.outro-title {{
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: clamp(40px, 6vw, 80px);
+  font-weight: 800;
+  letter-spacing: -2px;
+  line-height: 1.1;
+  background: var(--title-grad);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 20px;
+  opacity: 0;
+  animation: fade-up 0.6s ease 0.2s forwards;
+}}
+
+.outro-line {{
+  width: 100px;
+  height: 3px;
+  background: var(--line-c);
+  border-radius: 3px;
+  margin-bottom: 36px;
+  opacity: 0;
+  animation: fade-up 0.5s ease 0.3s forwards;
+}}
+
+.outro-points {{
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+  max-width: 600px;
+  margin-bottom: 32px;
+}}
+
+.outro-point {{
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--muted);
+  opacity: 0;
+  animation: fade-up 0.5s ease var(--delay) forwards;
+}}
+.outro-marker {{
+  width: 8px;
+  height: 8px;
+  background: var(--c);
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 7px;
+}}
+
+.outro-topic {{
+  font-size: 14px;
+  color: var(--topic-c);
+  opacity: 0.7;
+  opacity: 0;
+  animation: fade-up 0.5s ease 0.7s forwards;
+}}
 
 /* ── HUD ── */
-#hud{{position:fixed;top:0;left:0;right:0;z-index:200;display:flex;align-items:center;justify-content:space-between;padding:14px 24px;pointer-events:none;background:linear-gradient(to bottom,rgba({r},{g},{b},.08),transparent)}}
-#hud-title{{font-size:12px;font-weight:600;color:{muted};opacity:.7;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
-.hbtns{{display:flex;gap:6px;pointer-events:all}}
-.hb{{background:rgba({r},{g},{b},.1);border:1px solid rgba({r},{g},{b},.18);padding:6px 14px;border-radius:8px;color:{ink};cursor:pointer;font-size:11px;font-weight:500;transition:all .15s;backdrop-filter:blur(12px)}}
-.hb:hover{{background:rgba({r},{g},{b},.22);border-color:rgba({r},{g},{b},.35)}}
-.hb.on{{background:{a};border-color:{a};color:#fff}}
+#hud {{
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba({r},{g},{b},0.06), transparent);
+}}
 
-/* ── Progress ── */
-#prog{{position:fixed;bottom:0;left:0;right:0;height:3px;z-index:200;background:rgba({r},{g},{b},.08)}}
-#pf{{height:100%;background:linear-gradient(90deg,{a},{a2});transition:width .4s cubic-bezier(.22,1,.36,1)}}
+#hud-title {{
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  opacity: 0.6;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}}
 
-/* ── Nav arrows ── */
-#navp,#navn{{position:fixed;top:50%;transform:translateY(-50%);z-index:200;width:44px;height:44px;display:flex;align-items:center;justify-content:center;color:{muted};font-size:26px;cursor:pointer;border-radius:50%;transition:all .2s;background:rgba({r},{g},{b},.06);border:1px solid rgba({r},{g},{b},.1)}}
-#navp{{left:12px}}#navn{{right:12px}}
-#navp:hover,#navn:hover{{background:rgba({r},{g},{b},.18);color:{ink}}}
+.hud-buttons {{
+  display: flex;
+  gap: 8px;
+  pointer-events: all;
+}}
 
-/* ── Slide number ── */
-.slide-num{{position:absolute;bottom:18px;left:24px;font-size:13px;font-weight:600;color:{ink};opacity:.55;z-index:10;font-family:monospace;letter-spacing:.04em;background:rgba({r},{g},{b},.1);padding:4px 10px;border-radius:6px;border:1px solid rgba({r},{g},{b},.15)}}
+.hud-btn {{
+  background: rgba({r},{g},{b},0.1);
+  border: 1px solid rgba({r},{g},{b},0.18);
+  padding: 7px 16px;
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  backdrop-filter: blur(12px);
+}}
+.hud-btn:hover {{
+  background: rgba({r},{g},{b},0.2);
+  border-color: rgba({r},{g},{b},0.3);
+}}
+.hud-btn.active {{
+  background: {a};
+  border-color: {a};
+  color: white;
+}}
 
-/* ── Notes ── */
-.notes{{display:none;position:fixed;bottom:0;left:0;right:0;background:rgba({r},{g},{b},.96);backdrop-filter:blur(20px);padding:24px 60px;font-family:monospace;font-size:13px;line-height:1.6;z-index:300;border-top:1px solid rgba({r},{g},{b},.2)}}
-.notes-on .notes{{display:block}}
+/* ── Progress Bar ── */
+#progress {{
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 500;
+  background: rgba({r},{g},{b},0.1);
+}}
+#progress-fill {{
+  height: 100%;
+  background: linear-gradient(90deg, {a}, {a2});
+  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}}
+
+/* ── Nav Arrows ── */
+.nav-arrow {{
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 500;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba({r},{g},{b},0.08);
+  border: 1px solid rgba({r},{g},{b},0.12);
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 24px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}}
+.nav-arrow:hover {{
+  background: rgba({r},{g},{b},0.2);
+  color: var(--ink);
+  transform: translateY(-50%) scale(1.05);
+}}
+#nav-prev {{ left: 16px; }}
+#nav-next {{ right: 16px; }}
+
+/* ── Slide Number ── */
+.slide-number {{
+  position: absolute;
+  bottom: 20px;
+  left: 28px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--ink);
+  opacity: 0.5;
+  z-index: 10;
+  background: rgba({r},{g},{b},0.1);
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba({r},{g},{b},0.12);
+}}
+
+/* ── Notes Panel ── */
+.notes {{
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba({r},{g},{b},0.95);
+  backdrop-filter: blur(24px);
+  padding: 24px 60px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink);
+  z-index: 600;
+  border-top: 1px solid rgba({r},{g},{b},0.2);
+  max-height: 30vh;
+  overflow-y: auto;
+}}
+.notes-on .notes {{ display: block; }}
 
 /* ── Lightbox ── */
-#lightbox{{display:none;position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.94);align-items:center;justify-content:center;cursor:zoom-out;backdrop-filter:blur(12px)}}
-#lightbox.open{{display:flex}}
-#lb-content{{display:flex;flex-direction:column;align-items:center;gap:0;cursor:default;max-width:90vw}}
-#lb-img{{max-width:88vw;max-height:78vh;object-fit:contain;border-radius:12px 12px 0 0;box-shadow:0 40px 100px rgba(0,0,0,.8);animation:lb-in .22s ease;display:block}}
-#lb-meta{{width:100%;background:rgba(20,20,30,.95);border-radius:0 0 12px 12px;padding:14px 20px;border:1px solid rgba(255,255,255,.08);border-top:none}}
-#lb-cap{{font-size:15px;font-weight:500;color:#f0eeff;line-height:1.5;margin-bottom:5px}}
-#lb-src{{font-size:12px;color:{a};font-weight:500;opacity:.85}}
-#lb-cap:empty,#lb-src:empty{{display:none}}
-@keyframes lb-in{{from{{opacity:0;transform:scale(.88)}}to{{opacity:1;transform:scale(1)}}}}
-#lb-close{{position:absolute;top:18px;right:24px;color:#fff;font-size:32px;cursor:pointer;opacity:.55;line-height:1;z-index:9001;transition:opacity .15s}}
-#lb-close:hover{{opacity:1}}
-"""
+#lightbox {{
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  background: rgba(0, 0, 0, 0.95);
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+  backdrop-filter: blur(16px);
+}}
+#lightbox.open {{ display: flex; }}
 
-# ── JS ────────────────────────────────────────────────────────────────────────
-_JS = r"""
-(function(){
-  function init(c){
-    if(!c||c._i)return;c._i=true;
-    const ac=c.dataset.ac||'#7c5cfc',ctx=c.getContext('2d'),sec=c.parentElement;
-    let W=c.width=sec.offsetWidth,H=c.height=sec.offsetHeight;
-    const rv=parseInt(ac.slice(1,3),16),gv=parseInt(ac.slice(3,5),16),bv=parseInt(ac.slice(5,7),16);
-    const pts=Array.from({length:60},()=>({
-      x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-.5)*.4,vy:(Math.random()-.5)*.4,r:Math.random()*2+1,a:Math.random()*.3+.1
-    }));
-    function draw(){
-      ctx.clearRect(0,0,W,H);
-      pts.forEach(p=>{
-        p.x+=p.vx;p.y+=p.vy;
-        if(p.x<0||p.x>W)p.vx*=-1;if(p.y<0||p.y>H)p.vy*=-1;
-        ctx.save();ctx.globalAlpha=p.a;ctx.fillStyle=`rgba(${rv},${gv},${bv},1)`;
-        ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();ctx.restore();
-      });
-      requestAnimationFrame(draw);
-    }
-    draw();
-  }
-  function initMermaid(){
-    if(window.mermaid){
-      mermaid.initialize({
-        startOnLoad:false,
-        theme:'dark',
-        securityLevel:'loose',
-        flowchart:{useMaxWidth:true,htmlLabels:true},
-        suppressErrorRendering:true
-      });
-      // Render all mermaid diagrams on active slide
-      setTimeout(function(){
-        const active = document.querySelector('.slide.active');
-        if(active){
-          const diagrams = active.querySelectorAll('.mermaid');
-          diagrams.forEach(function(el, idx){
-            try {
-              mermaid.render('mermaid-'+idx, el.textContent).then(function(result){
-                el.innerHTML = result.svg;
-              }).catch(function(err){
-                console.warn('Mermaid render failed:', err);
-                el.innerHTML = '<div style="color:#ff6b6b;padding:10px">Diagram unavailable</div>';
-              });
-            } catch(e) {
-              console.warn('Mermaid error:', e);
-            }
-          });
-        }
-      }, 100);
-    }
-  }
-  window._PI=init;
-  window._IM=initMermaid;
-})();
+#lb-container {{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: default;
+  max-width: 92vw;
+}}
 
-const SL=Array.from(document.querySelectorAll('.slide'));
-let cur=0,notesOn=false;
+#lb-image {{
+  max-width: 90vw;
+  max-height: 75vh;
+  object-fit: contain;
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 50px 100px rgba(0, 0, 0, 0.8);
+  animation: lb-zoom 0.25s ease;
+}}
+@keyframes lb-zoom {{
+  from {{ opacity: 0; transform: scale(0.9); }}
+  to {{ opacity: 1; transform: scale(1); }}
+}}
 
-function goTo(n,fwd=true){
-  if(n<0||n>=TOT)return;
-  SL[cur].classList.remove('active');
-  SL[cur].classList.add(fwd?'xl':'xr');
-  SL[n].classList.remove('xl','xr');
-  SL[n].classList.add('active');
-  const pc=SL[n].querySelector('.pc');if(pc)window._PI(pc);
-  // Render mermaid diagrams on the new slide
-  if(window.mermaid){
-    const diagrams = SL[n].querySelectorAll('.mermaid:not([data-processed])');
-    diagrams.forEach(function(el, idx){
-      el.setAttribute('data-processed', 'true');
-      const code = el.textContent;
-      mermaid.render('mermaid-'+n+'-'+idx, code).then(function(result){
-        el.innerHTML = result.svg;
-      }).catch(function(err){
-        console.warn('Mermaid render failed:', err);
-        el.innerHTML = '<div style="color:#ff6b6b;padding:10px;font-size:12px">Diagram unavailable</div>';
-      });
+#lb-meta {{
+  width: 100%;
+  background: rgba(15, 15, 20, 0.95);
+  border-radius: 0 0 12px 12px;
+  padding: 16px 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: none;
+}}
+
+#lb-caption {{
+  font-size: 15px;
+  font-weight: 500;
+  color: #f4f4f8;
+  line-height: 1.5;
+  margin-bottom: 6px;
+}}
+#lb-source {{
+  font-size: 12px;
+  color: {a};
+  font-weight: 500;
+}}
+#lb-caption:empty, #lb-source:empty {{ display: none; }}
+
+#lb-close {{
+  position: absolute;
+  top: 20px;
+  right: 28px;
+  color: white;
+  font-size: 36px;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.15s ease;
+  line-height: 1;
+}}
+#lb-close:hover {{ opacity: 1; }}
+'''
+
+
+# ── JavaScript ────────────────────────────────────────────────────────────────
+
+_JS = r'''
+(function() {
+  // Custom cursor
+  const cursor = document.getElementById('cursor');
+  const cursorRing = document.getElementById('cursor-ring');
+  
+  document.addEventListener('mousemove', e => {
+    cursor.style.left = e.clientX + 'px';
+    cursor.style.top = e.clientY + 'px';
+    cursorRing.style.left = e.clientX + 'px';
+    cursorRing.style.top = e.clientY + 'px';
+  });
+
+  // Mermaid init
+  if (window.mermaid) {
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'dark',
+      securityLevel: 'loose',
+      flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
+      themeVariables: {
+        primaryColor: '#6366f1',
+        primaryTextColor: '#f4f4f8',
+        primaryBorderColor: '#6366f1',
+        lineColor: '#6366f1',
+        secondaryColor: '#a855f7',
+        tertiaryColor: '#22d3ee'
+      }
     });
   }
-  cur=n;upd();
-}
-function fwd(){goTo(cur+1,true)}
-function bwd(){goTo(cur-1,false)}
-function upd(){
-  document.getElementById('pf').style.width=((cur)/(TOT-1)*100)+'%';
-  SL.forEach((s,i)=>s.classList.toggle('notes-on',notesOn&&i===cur));
-}
-function toggleNotes(){notesOn=!notesOn;upd();document.getElementById('btn-n').classList.toggle('on',notesOn);}
-function toggleFS(){
-  if(!document.fullscreenElement)document.documentElement.requestFullscreen();
-  else document.exitFullscreen();
-}
-function openLightbox(src,cap,srcInfo){
-  document.getElementById('lb-img').src=src;
-  document.getElementById('lb-cap').textContent=cap||'';
-  document.getElementById('lb-src').textContent=srcInfo||'';
-  document.getElementById('lightbox').classList.add('open');
-}
-function closeLightbox(){
-  document.getElementById('lightbox').classList.remove('open');
-  document.getElementById('lb-img').src='';
-}
-document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){closeLightbox();return;}
-  if(e.key==='ArrowRight'||e.key===' ')fwd();
-  if(e.key==='ArrowLeft')bwd();
-  if(e.key==='n')toggleNotes();
-  if(e.key==='f')toggleFS();
-});
-document.addEventListener('mousemove',e=>{
-  const c=document.getElementById('cur'),r=document.getElementById('cur2');
-  c.style.left=e.clientX+'px';c.style.top=e.clientY+'px';
-  r.style.left=e.clientX+'px';r.style.top=e.clientY+'px';
-});
-(function init(){
-  SL[0].classList.add('active');
-  const pc=SL[0].querySelector('.pc');if(pc)window._PI(pc);
-  window._IM();
-  upd();
+
+  // Slides
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  let current = 0;
+  let notesOn = false;
+
+  function goTo(n, forward = true) {
+    if (n < 0 || n >= slides.length) return;
+    
+    slides[current].classList.remove('active');
+    slides[current].classList.add(forward ? 'xl' : 'xr');
+    
+    slides[n].classList.remove('xl', 'xr');
+    slides[n].classList.add('active');
+    
+    // Render Mermaid diagrams
+    if (window.mermaid) {
+      const diagrams = slides[n].querySelectorAll('.mermaid:not([data-rendered])');
+      diagrams.forEach((el, idx) => {
+        el.setAttribute('data-rendered', 'true');
+        const code = el.textContent;
+        mermaid.render('mermaid-' + n + '-' + idx, code).then(result => {
+          el.innerHTML = result.svg;
+        }).catch(err => {
+          console.warn('Mermaid error:', err);
+          el.innerHTML = '<div style="color:#ef4444;padding:16px;text-align:center">Diagram unavailable</div>';
+        });
+      });
+    }
+    
+    current = n;
+    update();
+  }
+
+  function next() { goTo(current + 1, true); }
+  function prev() { goTo(current - 1, false); }
+
+  function update() {
+    const pct = (current / (slides.length - 1)) * 100;
+    document.getElementById('progress-fill').style.width = pct + '%';
+    slides.forEach((s, i) => s.classList.toggle('notes-on', notesOn && i === current));
+  }
+
+  function toggleNotes() {
+    notesOn = !notesOn;
+    update();
+    document.getElementById('btn-notes').classList.toggle('active', notesOn);
+  }
+
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen();
+    } else {
+      document.exitFullscreen();
+    }
+  }
+
+  // Lightbox
+  window.openLightbox = function(src, caption, source) {
+    document.getElementById('lb-image').src = src;
+    document.getElementById('lb-caption').textContent = caption || '';
+    document.getElementById('lb-source').textContent = source || '';
+    document.getElementById('lightbox').classList.add('open');
+  };
+
+  window.closeLightbox = function() {
+    document.getElementById('lightbox').classList.remove('open');
+    document.getElementById('lb-image').src = '';
+  };
+
+  // Keyboard
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closeLightbox(); return; }
+    if (e.key === 'ArrowRight' || e.key === ' ') next();
+    if (e.key === 'ArrowLeft') prev();
+    if (e.key === 'n' || e.key === 'N') toggleNotes();
+    if (e.key === 'f' || e.key === 'F') toggleFullscreen();
+  });
+
+  // Navigation buttons
+  document.getElementById('nav-prev').addEventListener('click', prev);
+  document.getElementById('nav-next').addEventListener('click', next);
+  document.getElementById('btn-notes').addEventListener('click', toggleNotes);
+  document.getElementById('btn-fs').addEventListener('click', toggleFullscreen);
+
+  // Init
+  slides[0].classList.add('active');
+  update();
+  
+  // Render initial slide's mermaid
+  if (window.mermaid) {
+    setTimeout(() => {
+      const diagrams = slides[0].querySelectorAll('.mermaid');
+      diagrams.forEach((el, idx) => {
+        el.setAttribute('data-rendered', 'true');
+        mermaid.render('mermaid-0-' + idx, el.textContent).then(result => {
+          el.innerHTML = result.svg;
+        }).catch(() => {});
+      });
+    }, 100);
+  }
 })();
-"""
+'''
+
+
+# ── Main Render Function ──────────────────────────────────────────────────────
 
 def render(
-    topic:      str,
-    slides:     list,
+    topic: str,
+    slides: list,
     session_id: str,
     output_dir: str,
-    images:     dict = None,
+    images: dict = None,
     theme_name: str = None,
-    captions:   dict = None,
+    captions: dict = None,
 ) -> str:
     html_theme = _PPTX_TO_HTML_THEME.get(theme_name, theme_name)
     theme = THEMES.get(html_theme) or THEMES[_auto_theme(session_id)]
     total = len(slides)
     sections = []
-    charts = []
     captions = captions or {}
 
     for i, s in enumerate(slides):
         stype = s.get("slide_type") or s.get("type") or "content"
         img = (images or {}).get(i) or (images or {}).get(s.get("image_id"))
         cap = s.get("caption") or captions.get(i, "")
-        
-        js_chart = ""
-        if i == 0:     h, js_chart = _slide_cover(s, i, total, theme, img)
-        elif i == total-1: h, js_chart = _slide_outro(s, i, total, theme, img, topic)
-        elif stype == "comparison": h, js_chart = _slide_comparison(s, i, total, theme, img, cap)
-        elif stype == "stats" or s.get("chart_data"): h, js_chart = _slide_stats(s, i, total, theme, img, cap)
-        elif stype == "intro": h, js_chart = _slide_intro(s, i, total, theme, img, cap)
-        else:          h, js_chart = _slide_content(s, i, total, theme, img, cap)
-        
-        sections.append(h)
-        if js_chart: charts.append(js_chart)
 
-    te = _esc(topic)
-    html = f"""<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>{te}</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
-<style>{_css(theme)}</style></head>
+        if i == 0:
+            h, _ = _slide_cover(s, i, total, theme, img)
+        elif i == total - 1:
+            h, _ = _slide_outro(s, i, total, theme, img, topic)
+        elif stype == "comparison":
+            h, _ = _slide_comparison(s, i, total, theme, img, cap)
+        elif stype == "intro":
+            h, _ = _slide_intro(s, i, total, theme, img, cap)
+        elif stype == "stats" or s.get("chart_data"):
+            h, _ = _slide_stats(s, i, total, theme, img, cap)
+        else:
+            h, _ = _slide_content(s, i, total, theme, img, cap)
+
+        sections.append(h)
+
+    title_esc = _esc(topic)
+    
+    html = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{title_esc}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>{_css(theme)}</style>
+</head>
 <body>
-<div id="cur"></div><div id="cur2"></div>
-<div id="lightbox" onclick="closeLightbox()">
-  <span id="lb-close" onclick="closeLightbox()">&#x2715;</span>
-  <div id="lb-content" onclick="event.stopPropagation()">
-    <img id="lb-img" src="" alt=""/>
-    <div id="lb-meta">
-      <div id="lb-cap"></div>
-      <div id="lb-src"></div>
+  <!-- Custom Cursor -->
+  <div id="cursor"></div>
+  <div id="cursor-ring"></div>
+  
+  <!-- Lightbox -->
+  <div id="lightbox" onclick="closeLightbox()">
+    <span id="lb-close" onclick="closeLightbox()">&times;</span>
+    <div id="lb-container" onclick="event.stopPropagation()">
+      <img id="lb-image" src="" alt=""/>
+      <div id="lb-meta">
+        <div id="lb-caption"></div>
+        <div id="lb-source"></div>
+      </div>
     </div>
   </div>
-</div>
-<div id="hud">
-  <div id="hud-title">{te}</div>
-  <div class="hbtns">
-    <button class="hb" id="btn-n" onclick="toggleNotes()">Notes</button>
-    <button class="hb" onclick="toggleFS()">Fullscreen</button>
+  
+  <!-- HUD -->
+  <div id="hud">
+    <div id="hud-title">{title_esc}</div>
+    <div class="hud-buttons">
+      <button class="hud-btn" id="btn-notes">Notes</button>
+      <button class="hud-btn" id="btn-fs">Fullscreen</button>
+    </div>
   </div>
-</div>
-<div id="prog"><div id="pf"></div></div>
-<div id="navp" onclick="bwd()">&#8249;</div>
-<div id="navn" onclick="fwd()">&#8250;</div>
-<div id="deck">{"".join(sections)}</div>
-<script>const TOT={total}; {"".join(charts)} \n {_JS}</script>
-</body></html>"""
+  
+  <!-- Progress -->
+  <div id="progress"><div id="progress-fill"></div></div>
+  
+  <!-- Navigation -->
+  <div class="nav-arrow" id="nav-prev">&#8249;</div>
+  <div class="nav-arrow" id="nav-next">&#8250;</div>
+  
+  <!-- Slides -->
+  <div id="deck">
+    {"".join(sections)}
+  </div>
+  
+  <script>{_JS}</script>
+</body>
+</html>'''
 
     os.makedirs(output_dir, exist_ok=True)
     path = os.path.join(output_dir, f"pres_{session_id[:8]}.html")
