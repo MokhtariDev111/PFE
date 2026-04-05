@@ -157,12 +157,15 @@ def _assign_fallback_images(slides: list, pdf_images: dict, image_contexts: dict
         bullet_texts = [b.get("text", "") if isinstance(b, dict) else str(b) for b in bullets]
         slide_text = f"{title} {' '.join(bullet_texts)}".lower()
         
-        # Find best matching unused image
+        # Strict matching: Find best matching unused image
+        import re
+        slide_words = set(re.findall(r'\b[a-z]{5,}\b', slide_text))
         best_match, best_score = None, 0
         for img_id, context in image_contexts.items():
             if img_id in used_images:
                 continue
-            overlap = len(set(slide_text.split()) & set(context.lower().split()))
+            ctx_words = set(re.findall(r'\b[a-z]{5,}\b', context.lower()))
+            overlap = len(slide_words & ctx_words)
             if overlap > best_score and overlap >= 3:
                 best_score, best_match = overlap, img_id
         
@@ -341,7 +344,8 @@ async def generate_stream(
             if use_batch_mode:
                 print("⚡ Using BATCH generation mode", flush=True)
                 
-                slides_raw = await llm.generate_all_slides_batch(
+                from modules.schemas import validate_and_fix_slide
+                raw_list = await llm.generate_all_slides_batch(
                     query=prompt,
                     context_text=context_text,
                     num_slides=num_slides,
@@ -349,6 +353,11 @@ async def generate_stream(
                     available_images=available_image_ids,
                     image_contexts=image_contexts,
                 )
+                
+                slides_raw = []
+                for s in raw_list:
+                    fixed = validate_and_fix_slide(s)
+                    slides_raw.append(fixed)
                 
                 for i, slide in enumerate(slides_raw):
                     yield _emit("slide", {
@@ -432,20 +441,27 @@ async def generate_stream(
             # 7. Build HTML slides with diagrams
             html_slides = []
             for idx, s in enumerate(slides_obj):
-                html_bullets = [
-                    b.get("text", "") if isinstance(b, dict) else str(b)
-                    for b in s.bullets
-                ]
+                html_bullets = s.bullets
                 diag_info = diag_map.get(idx, {})
+                
+                img_id_val = s.image_id
+                img_caption = ""
+                if img_id_val and "page_" in img_id_val:
+                    try:
+                        page_num = img_id_val.split("_")[1]
+                        img_caption = f"Source: Page {page_num}"
+                    except IndexError:
+                        pass
                 
                 html_slides.append({
                     "title": s.title,
                     "bullets": html_bullets,
                     "speaker_notes": s.speaker_notes,
                     "slide_type": s.slide_type,
-                    "image_id": s.image_id,
-                    "diagram": diag_info.get("mermaid") if isinstance(diag_info, dict) else None,
+                    "image_id": img_id_val,
+                    "diagram": diag_info.get("url") if isinstance(diag_info, dict) else None,
                     "visual_hint": s.visual_hint,
+                    "caption": img_caption,
                 })
 
             # 8. Assign images

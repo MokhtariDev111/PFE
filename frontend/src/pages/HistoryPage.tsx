@@ -101,15 +101,25 @@ export default function HistoryPage() {
           </p>
         </motion.div>
 
-        {/* Search Bar */}
-        <motion.div variants={itemVariants} className="mb-8">
+        {/* Search Bar & Actions */}
+        <motion.div variants={itemVariants} className="mb-8 flex gap-4">
           <input
             type="text"
             placeholder="Search presentations..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full px-4 py-3 rounded-lg bg-card border border-border placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            className="flex-1 px-4 py-3 rounded-lg bg-card border border-border placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
           />
+          {presentations.length > 0 && (
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              className="h-auto px-6"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Clear History
+            </Button>
+          )}
         </motion.div>
 
         {/* Content */}
@@ -220,21 +230,14 @@ export default function HistoryPage() {
               ))}
             </motion.div>
 
-            {/* Clear History Button */}
+            {/* Back Button */}
             {presentations.length > 0 && (
-              <motion.div variants={itemVariants} className="flex justify-end gap-3">
+              <motion.div variants={itemVariants} className="flex justify-end mt-4">
                 <Button
                   variant="outline"
                   onClick={() => navigate("/")}
                 >
                   ← Back to Home
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={handleDelete}
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Clear All
                 </Button>
               </motion.div>
             )}

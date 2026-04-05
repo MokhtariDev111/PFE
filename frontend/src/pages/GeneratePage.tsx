@@ -18,7 +18,7 @@ import { useToast } from "@/components/ui/use-toast";
 interface Slide {
   index: number;
   title: string;
-  bullets: string[];
+  bullets: (string | { text: string; source_id?: string })[];
   slideType: string;
 }
 
@@ -462,34 +462,47 @@ export default function GeneratePage() {
         )}
 
         {/* Slide Preview */}
-        {!isLoading && slides.length > 0 && currentSlide && (
+        {slides.length > 0 && currentSlide && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             className="space-y-4"
           >
-            {/* Slide Card */}
-            <div className="slide-card aspect-video flex flex-col justify-between p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white rounded-2xl">
-              <div>
-                <span className="text-xs font-medium text-blue-400 mb-4 block">
-                  {currentSlide.slideType.toUpperCase()}
-                </span>
-                <h3 className="text-3xl font-bold mb-6">
-                  {currentSlide.title}
-                </h3>
-                <ul className="space-y-3">
-                  {currentSlide.bullets?.slice(0, 5).map((bullet: string, i: number) => (
-                    <li key={i} className="flex gap-3 text-sm leading-relaxed">
-                      <span className="text-blue-400 mt-1 shrink-0">→</span>
-                      <span>{typeof bullet === 'string' ? bullet : (bullet as any).text || (bullet as any).content || ''}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="text-xs text-gray-400 text-right">
-                Slide {currentSlideIndex + 1} / {slides.length}
-              </div>
-            </div>
+        {/* Slide Card */}
+        <div className="slide-card p-6 rounded-2xl">
+          <div>
+            <span className="text-xs font-medium text-blue-400 mb-3 block">
+              {(currentSlide.slideType || 'content').toUpperCase()}
+            </span>
+            <h3 className="slide-title mb-4 text-xl md:text-2xl">
+              {currentSlide.title}
+            </h3>
+            <ul className="space-y-2.5">
+              {currentSlide.bullets?.slice(0, 6).map((bullet: any, i: number) => {
+                const text = typeof bullet === 'string'
+                  ? bullet
+                  : (bullet?.text || bullet?.content || bullet?.fact || bullet?.bullet || '');
+                if (!text) return null;
+                return (
+                  <li key={i} className="bullet-item">
+                    <span className="bullet-icon">→</span>
+                    <span className="bullet-text text-sm leading-snug">
+                      {text}
+                      {bullet?.source_id && (
+                        <span className="inline-block ml-2 px-2 py-0.5 text-[10px] font-medium bg-blue-500/10 text-blue-400 rounded">
+                          📄 {bullet.source_id}
+                        </span>
+                      )}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+          <div className="text-xs text-muted-foreground text-right mt-4 pt-3 border-t border-border/40">
+            Slide {currentSlideIndex + 1} / {slides.length}
+          </div>
+        </div>
 
             {/* Navigation */}
             <div className="flex gap-3 justify-between">

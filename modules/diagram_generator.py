@@ -27,11 +27,6 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-
 from modules.config_loader import CONFIG
 
 log = logging.getLogger("diagram_generator")
@@ -351,46 +346,7 @@ def _mermaid_hierarchy(title: str, items: list[str], key_message: str = "") -> s
     return "\n".join(lines)
 
 
-# ── PNG fallback (matplotlib) ─────────────────────────────────────────────────
 
-def _flow_png(title: str, steps: list[str], color: str, out_path: str) -> str:
-    labels = _to_diagram_labels(steps, max_len=40)  # Longer for PNG
-    n = min(len(labels), 6)
-    
-    if n == 0:
-        return out_path
-    
-    fig, ax = plt.subplots(figsize=(6, 3.5))
-    ax.set_xlim(0, 10)
-    ax.set_ylim(0, n + 1)
-    ax.axis("off")
-    fig.patch.set_facecolor("#0D1B2A")
-    ax.set_facecolor("#0D1B2A")
-    
-    for i, step in enumerate(labels[:n]):
-        y = n - i
-        rect = mpatches.FancyBboxPatch(
-            (0.5, y - 0.35), 9, 0.7,
-            boxstyle="round,pad=0.1",
-            facecolor=color, edgecolor="#FFFFFF", linewidth=0.8
-        )
-        ax.add_patch(rect)
-        ax.text(5, y, step[:45], ha="center", va="center",
-                color="white", fontsize=9, fontweight="bold")
-        if i < n - 1:
-            ax.annotate("", xy=(5, n - i - 1.35), xytext=(5, n - i - 0.65),
-                        arrowprops=dict(arrowstyle="->", color="white", lw=1.5))
-    
-    short_title = _extract_title_keyword(title, 40)
-    ax.set_title(short_title, color="white", fontsize=11, fontweight="bold", y=1.01)
-    
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=120, bbox_inches="tight", facecolor=fig.get_facecolor())
-    plt.close(fig)
-    return out_path
-
-
-# ── Main generator ────────────────────────────────────────────────────────────
 
 def generate_all_diagrams(slides, theme_color: str = "#1F6FEB",
                           tmp_dir: str = None) -> dict[int, dict]:
@@ -452,28 +408,16 @@ def generate_all_diagrams(slides, theme_color: str = "#1F6FEB",
         try:
             if hint == "flowchart":
                 mermaid_src = _mermaid_flowchart(title, steps)
-                _flow_png(title, steps, theme_color, out_png)
-                png_path = out_png
-
             elif hint == "mindmap":
                 mermaid_src = _mermaid_mindmap(title, steps, key_message)
-
             elif hint == "timeline":
                 mermaid_src = _mermaid_timeline(title, steps)
-
             elif hint == "comparison":
                 mermaid_src = _mermaid_comparison(title, steps)
-                _flow_png(title, steps, theme_color, out_png)
-                png_path = out_png
-
             elif hint == "process":
                 mermaid_src = _mermaid_process(title, steps)
-                _flow_png(title, steps, theme_color, out_png)
-                png_path = out_png
-
             elif hint == "hierarchy":
                 mermaid_src = _mermaid_hierarchy(title, steps, key_message)
-
             else:
                 mermaid_src = _mermaid_flowchart(title, steps)
 
@@ -482,8 +426,13 @@ def generate_all_diagrams(slides, theme_color: str = "#1F6FEB",
             mermaid_src = None
 
         if mermaid_src:
-            diagrams[i] = {"mermaid": mermaid_src, "png": png_path}
+            import base64
+            import zlib
+            compressed = zlib.compress(mermaid_src.encode('utf-8'), 9)
+            b64 = base64.urlsafe_b64encode(compressed).decode('utf-8')
+            img_url = f"https://kroki.io/mermaid/svg/{b64}"
+            diagrams[i] = {"mermaid": mermaid_src, "url": img_url}
             _used_hints.append(hint)
-            log.info(f"  ✔ Slide {i}: {hint} diagram generated.")
+            log.info(f"  ✔ Slide {i}: {hint} diagram generated via Kroki.")
 
     return diagrams

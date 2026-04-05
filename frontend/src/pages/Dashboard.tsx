@@ -65,6 +65,15 @@ export default function Dashboard() {
     }
   }, [history]);
 
+  const handleDeleteHistory = async () => {
+    try {
+      await fetch("http://127.0.0.1:8000/history", { method: "DELETE" });
+      window.location.reload();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: {
@@ -331,12 +340,18 @@ export default function Dashboard() {
               ))}
             </div>
 
-            <div className="text-center mt-8">
+            <div className="text-center mt-8 space-x-4">
               <Button
                 variant="outline"
                 onClick={() => navigate("/history")}
               >
                 View All Presentations →
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDeleteHistory}
+              >
+                Clear History
               </Button>
             </div>
           </motion.div>

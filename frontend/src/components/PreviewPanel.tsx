@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ChevronLeft, ChevronRight, Presentation, Maximize2, AlertCircle,
   Lightbulb, Target, Zap, TrendingUp, CheckCircle, BookOpen, Code, 
-  GitBranch, BarChart3, Layers, ArrowRight, Sparkles
+  GitBranch, BarChart3, Layers, ArrowRight, Sparkles, ZoomIn, ZoomOut
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Slide } from "@/hooks/useAppState";
@@ -236,6 +236,7 @@ export function PreviewPanel({ slides, isStreaming = false, htmlUrl }: PreviewPa
   const [currentSlide, setCurrentSlide] = useState(0);
   const [direction, setDirection] = useState(0);
   const [autoFollow, setAutoFollow] = useState(true);
+  const [imageExpanded, setImageExpanded] = useState(false);
 
   useEffect(() => {
     if (slides.length === 0) {
@@ -302,6 +303,7 @@ export function PreviewPanel({ slides, isStreaming = false, htmlUrl }: PreviewPa
   const slide = slides[currentSlide];
   const progress = ((currentSlide + 1) / slides.length) * 100;
   const showDiagram = shouldShowDiagram(slide);
+  const hasImage = !!slide.image_id;
 
   const slideVariants = {
     enter: (d: number) => ({ x: d > 0 ? 60 : -60, opacity: 0, scale: 0.98 }),
@@ -342,84 +344,77 @@ export function PreviewPanel({ slides, isStreaming = false, htmlUrl }: PreviewPa
       {/* Slide Card */}
       <div className="relative bg-card border rounded-2xl shadow-2xl overflow-hidden">
         {/* Decorative top accent */}
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary via-purple-500 to-pink-500" />
-        
-        {/* Background decoration */}
-        <div className="absolute top-0 right-0 w-64 h-64 opacity-5 pointer-events-none">
-          <Presentation className="w-full h-full" />
-        </div>
-        
-        <div className="p-8 md:p-12 min-h-[480px]">
-          <AnimatePresence mode="wait" custom={direction}>
-            <motion.div
-              key={currentSlide}
-              custom={direction}
-              variants={slideVariants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={{ duration: 0.35, ease: [0.25, 0.1, 0.25, 1] }}
-              className="relative z-10 space-y-6"
-            >
-              {/* Header */}
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground">
-                  {currentSlide + 1} / {slides.length}
-                </span>
+        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary via-purple-500 to-pink-500 z-10" />
+
+        <AnimatePresence mode="wait" custom={direction}>
+          <motion.div
+            key={currentSlide}
+            custom={direction}
+            variants={slideVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
+            className="p-6 md:p-8 pt-8"
+          >
+            {/* Header */}
+            <div className="flex justify-between items-center mb-4">
+              <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground">
+                {currentSlide + 1} / {slides.length}
+              </span>
+              <div className="flex items-center gap-2">
+                {slide.image_id && (
+                  <button
+                    onClick={() => setImageExpanded(v => !v)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border border-border bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                  >
+                    {imageExpanded ? <ZoomOut className="w-3 h-3" /> : <ZoomIn className="w-3 h-3" />}
+                    {imageExpanded ? "Shrink" : "Expand"} image
+                  </button>
+                )}
                 <SlideTypeBadge type={slide.slideType || "content"} />
               </div>
-              
-              {/* Title */}
-              <motion.h2 
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1, duration: 0.3 }}
-                className="text-3xl md:text-4xl font-bold tracking-tight bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text"
-              >
-                {slide.title}
-              </motion.h2>
-              
-              {/* Divider */}
-              <motion.div 
-                initial={{ scaleX: 0 }}
-                animate={{ scaleX: 1 }}
-                transition={{ delay: 0.15, duration: 0.4 }}
-                className="h-0.5 w-24 bg-gradient-to-r from-primary to-transparent origin-left"
-              />
-              
-              {/* Bullets */}
-              <motion.ul 
-                className="space-y-2"
-                initial="hidden"
-                animate="visible"
-                variants={{
-                  hidden: { opacity: 0 },
-                  visible: { opacity: 1, transition: { staggerChildren: 0.08 } }
-                }}
-              >
-                {(slide.bullets || []).map((b: any, i: number) => (
-                  <AnimatedBullet 
-                    key={i} 
-                    text={typeof b === 'string' ? b : b.text} 
-                    index={i} 
-                  />
-                ))}
-              </motion.ul>
+            </div>
 
-              {/* Diagram (conditional) */}
-              {showDiagram && slide.diagram && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.4, duration: 0.4 }}
-                  className="mt-8"
-                >
-                  <MermaidDiagram code={slide.diagram} />
-                </motion.div>
+            {/* Title */}
+            <h2 className="text-xl md:text-2xl font-bold tracking-tight mb-3 leading-snug">
+              {slide.title}
+            </h2>
+
+            {/* Divider */}
+            <div className="h-0.5 w-16 bg-gradient-to-r from-primary to-transparent mb-4" />
+
+            {/* Body: split when image expanded, stacked otherwise */}
+            <div className={slide.image_id && imageExpanded ? "flex gap-6 items-start" : ""}>
+              {/* Bullets */}
+              <ul className={`space-y-1 ${slide.image_id && imageExpanded ? "flex-1 min-w-0" : ""}`}>
+                {(slide.bullets || []).map((b: any, i: number) => {
+                  const text = typeof b === 'string' ? b : b?.text;
+                  if (!text) return null;
+                  return (
+                    <AnimatedBullet key={i} text={text} index={i} />
+                  );
+                })}
+              </ul>
+
+              {/* Image placeholder when expanded */}
+              {slide.image_id && imageExpanded && (
+                <div className="w-2/5 shrink-0 rounded-xl border border-border/50 bg-secondary/20 flex flex-col items-center justify-center gap-2 p-4 min-h-[160px] text-center">
+                  <Presentation className="w-8 h-8 text-muted-foreground/30" />
+                  <p className="text-xs text-muted-foreground/50">Image visible in full presentation</p>
+                  <code className="text-[10px] text-muted-foreground/30">{slide.image_id}</code>
+                </div>
               )}
-            </motion.div>
-          </AnimatePresence>
-        </div>
+            </div>
+
+            {/* Diagram */}
+            {showDiagram && slide.diagram && (
+              <div className="mt-5">
+                <MermaidDiagram code={slide.diagram} />
+              </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
 
       {/* Navigation & Launch */}

@@ -48,6 +48,10 @@ def _pil_to_base64(img: Image.Image) -> str:
 def load_pdf(path: Path) -> list[DocumentPage]:
     doc = fitz.open(str(path))
     pages = []
+    total_pages = len(doc)
+
+    # Skip preliminary pages (covers, TOC, preface) — heuristic: skip first ~8% of pages, min 2, max 6
+    skip_count = max(2, min(6, int(total_pages * 0.08)))
 
     try:
         for i in range(len(doc)):
@@ -58,6 +62,10 @@ def load_pdf(path: Path) -> list[DocumentPage]:
             pages.append(
                 DocumentPage(source=path.name, page=i + 1, type="pdf", text=text)
             )
+
+            # Skip image extraction for preliminary pages
+            if i < skip_count:
+                continue
 
             # 2. Detect large diagrams (full-page diagrams with little text)
             drawings = page.get_drawings()
@@ -89,8 +97,8 @@ def load_pdf(path: Path) -> list[DocumentPage]:
                 if base_img:
                     try:
                         pil_img = Image.open(io.BytesIO(base_img["image"])).convert("RGB")
-                        # Skip tiny images
-                        if pil_img.width >= 100 and pil_img.height >= 100:
+                        # Skip tiny images (likely decorative icons/logos)
+                        if pil_img.width >= 150 and pil_img.height >= 150:
                             b64_img = _pil_to_base64(pil_img)
                             
                             # Try to extract figure caption from page text
@@ -114,7 +122,7 @@ def load_pdf(path: Path) -> list[DocumentPage]:
     # Logging
     img_count = sum(1 for p in pages if p.type == "pdf_image")
     txt_count = sum(1 for p in pages if p.type == "pdf")
-    log.info(f"[PDF] {path.name} → {txt_count} text pg(s), {img_count} embedded img(s)")
+    log.info(f"[PDF] {path.name} → {txt_count} text pg(s), {img_count} embedded img(s), skipped first {skip_count} pages for images")
 
     return pages
 

@@ -181,58 +181,58 @@ def _particles(idx: int, accent: str) -> str:
 def _slide_cover(s: dict, i: int, tot: int, t: dict, img: any) -> tuple:
     title = _esc(s.get("title", ""))
     notes = _esc(s.get("speaker_notes", ""))
-    num   = f"{i+1:02d}/{tot:02d}"
+    num   = f"{i+1}/{tot}"
     a, a2, a3 = t["a"], t["a2"], t["a3"]
-    bs, bo = _img_style(img)
+    r, g, b = _rgb(a)
     return (
         f'<section class="slide s-cover" data-idx="{i}" data-ac="{a}" style="--a:{a};--a2:{a2};--a3:{a3}">'
-        f'<div class="mesh" style="--c1:{a};--c2:{a2};--c3:{a3}"></div>'
-        f'{bo}'
+        f'<div class="slide-bg-orb orb1" style="background:radial-gradient(circle,{a}40,transparent 70%)"></div>'
+        f'<div class="slide-bg-orb orb2" style="background:radial-gradient(circle,{a2}25,transparent 70%)"></div>'
+        f'<div class="slide-bg-orb orb3" style="background:radial-gradient(circle,{a3}15,transparent 70%)"></div>'
         f'{_particles(i, a)}'
-        f'<div class="gridlines"></div>'
-        f'<div class="intro-body">'
-        f'  <div class="intro-tag"><span class="dot" style="background:{a}"></span>'
-        f'  <span style="color:{a}">PRESENTATION</span>'
-        f'  <span style="color:{a}44;margin-left:auto;font-size:9px">{num}</span></div>'
-        f'  <h1 class="intro-h"><span class="shimmer">{title}</span></h1>'
-        f'  <div class="glow-bar" style="background:linear-gradient(90deg,{a},{a2},{a3},transparent)"></div>'
-        f'  <div class="meta-row">'
-        f'    <span class="mk"><kbd>→</kbd> Next</span>'
-        f'    <span class="mk"><kbd>P</kbd> Auto</span>'
-        f'    <span class="mk"><kbd>Q</kbd> Q&amp;A</span>'
-        f'    <span class="mk"><kbd>S</kbd> Speak</span>'
+        f'<div class="cover-body">'
+        f'  <div class="cover-chip" style="background:rgba({r},{g},{b},.12);border:1px solid rgba({r},{g},{b},.25);color:{a}">AI PRESENTATION</div>'
+        f'  <h1 class="cover-title">{title}</h1>'
+        f'  <div class="cover-bar" style="background:linear-gradient(90deg,{a},{a2},{a3})"></div>'
+        f'  <div class="cover-keys">'
+        f'    <span class="ck"><kbd>→</kbd> Next</span>'
+        f'    <span class="ck"><kbd>←</kbd> Prev</span>'
+        f'    <span class="ck"><kbd>F</kbd> Fullscreen</span>'
+        f'    <span class="ck"><kbd>N</kbd> Notes</span>'
         f'  </div>'
         f'</div>'
-        f'<div class="orbs">'
-        f'  <div class="orb oa" style="background:radial-gradient(circle,{a}50,transparent 65%)"></div>'
-        f'  <div class="orb ob" style="background:radial-gradient(circle,{a2}35,transparent 65%)"></div>'
-        f'</div>'
+        f'<div class="slide-num">{num}</div>'
         f'<div class="notes" data-n="{notes}">{s.get("speaker_notes","")}</div>'
-        f'<div class="snum">{num}</div>'
         f'</section>'
     ), ""
 
 def _slide_intro(s: dict, i: int, tot: int, t: dict, img: any, caption: str = "") -> tuple:
     title = _esc(s.get("title", ""))
     bullets = s.get("bullets", [])
-    para = " ".join([_esc(b) for b in bullets])
     notes = _esc(s.get("speaker_notes", ""))
-    num   = f"{i+1:02d}/{tot:02d}"
-    bs, bo = _img_style(img)
+    num   = f"{i+1}/{tot}"
     a, a2, a3 = t["a"], t["a2"], t["a3"]
+    r, g, b = _rgb(a)
+    # Render bullets as a readable paragraph-style list
+    bhtml = "".join(
+        f'<div class="intro-point" style="--d:{0.3+j*0.1:.2f}s">'
+        f'<span class="ipdot" style="background:{a2 if j%2 else a}"></span>'
+        f'<span class="iptext">{_esc(b.get("text","") if isinstance(b,dict) else str(b))}</span>'
+        f'</div>'
+        for j, b in enumerate(bullets)
+    )
     return (
         f'<section class="slide s-intro" data-idx="{i}" data-ac="{a}" style="--a:{a};--a2:{a2};--a3:{a3}">'
-        f'<div class="mesh subtle" style="--c1:{a};--c2:{a2};--c3:{a3}"></div>'
+        f'<div class="slide-bg-orb orb1" style="background:radial-gradient(circle,{a}20,transparent 70%)"></div>'
         f'{_particles(i, a)}'
-        f'<div class="imgwrap"{bs}>{bo}</div>'
-        f'<div class="inner" style="max-width:850px;text-align:center">'
-        f'  <div class="eyebrow" style="margin-bottom:24px"><span class="etag" style="background:{a}18;border-color:{a}30;color:{a}">INTRODUCTION</span></div>'
-        f'  <h2 class="stitle" style="font-size:clamp(32px,4vw,64px);margin-bottom:32px">{title}</h2>'
-        f'  <div class="rule" style="background:linear-gradient(90deg,transparent,{a},{a2}88,transparent);margin:0 auto 36px"></div>'
-        f'  <div class="intro-para" style="font-size:18px;line-height:1.8;color:var(--muted);font-weight:300;opacity:0;animation:fup .7s ease .4s both">{para}</div>'
+        f'<div class="slide-inner centered">'
+        f'  <div class="slide-chip" style="background:rgba({r},{g},{b},.1);border-color:rgba({r},{g},{b},.2);color:{a}">INTRODUCTION</div>'
+        f'  <h2 class="slide-title">{title}</h2>'
+        f'  <div class="title-rule" style="background:linear-gradient(90deg,transparent,{a},{a2},transparent)"></div>'
+        f'  <div class="intro-points">{bhtml}</div>'
         f'</div>'
+        f'<div class="slide-num">{num}</div>'
         f'<div class="notes" data-n="{notes}">{s.get("speaker_notes","")}</div>'
-        f'<div class="snum">{num}</div>'
         f'</section>'
     ), ""
 
@@ -240,102 +240,164 @@ def _slide_content(s: dict, i: int, tot: int, t: dict, img: any, caption: str = 
     title   = _esc(s.get("title", ""))
     bullets = s.get("bullets", [])
     notes   = _esc(s.get("speaker_notes", ""))
-    num     = f"{i+1:02d}/{tot:02d}"
+    num     = f"{i+1}/{tot}"
     a, a2, a3 = t["a"], t["a2"], t["a3"]
+    r, g, b = _rgb(a)
 
+    # Build bullets — clean card style
     bhtml = ""
     for j, b in enumerate(bullets):
         bull = b.get("text", "") or b.get("content", "") if isinstance(b, dict) else str(b)
+        src_info = _esc(str(b.get("source_id", ""))) if isinstance(b, dict) and b.get("source_id") else ""
+        src_tag = f'<span class="src-tag">📄 {src_info}</span>' if src_info else ''
         parts = bull.split(":", 1)
-        kw    = parts[0].strip()
-        rest  = parts[1].strip() if len(parts) > 1 else ""
+        kw    = _esc(parts[0].strip())
+        rest  = _esc(parts[1].strip()) if len(parts) > 1 else ""
         ac    = a2 if j % 2 else a
         ra, ga, ba = _rgb(ac)
-        d  = 0.15 + j * 0.10
+        d = 0.1 + j * 0.08
         bhtml += (
-            f'<div class="brow" style="--d:{d:.2f}s">'
-            f'<div class="bidx" style="background:rgba({ra},{ga},{ba},.15);border-color:rgba({ra},{ga},{ba},.35);color:{ac}">{j+1:02d}</div>'
-            f'<div class="bbody"><span class="bkw" style="color:{ac}">{_esc(kw)}</span>'
-            + (f'<span class="brest">{_esc(rest)}</span>' if rest else '')
+            f'<div class="bullet-card" style="--d:{d:.2f}s;border-left:3px solid {ac}">'
+            f'<div class="bc-num" style="color:{ac};background:rgba({ra},{ga},{ba},.12)">{j+1:02d}</div>'
+            f'<div class="bc-body">'
+            f'<span class="bc-kw" style="color:{ac}">{kw}</span>'
+            + (f'<span class="bc-rest">{rest}</span>' if rest else '')
+            + src_tag
             + f'</div></div>'
         )
-    
+
+    # Diagram
     diag_html = ""
     if s.get("diagram"):
-        diag_html = f'<div class="diagram-box"><pre class="mermaid">{_esc_mermaid(s["diagram"])}</pre></div>'
+        dv = s["diagram"]
+        if dv.startswith("http"):
+            diag_html = f'<div class="diag-box"><img src="{_esc(dv)}" style="max-width:100%;border-radius:8px;object-fit:contain" alt="Diagram"/></div>'
+        else:
+            diag_html = f'<div class="diag-box"><pre class="mermaid">{_esc_mermaid(dv)}</pre></div>'
 
+    # Image
     img_html = ""
     if img:
         src = img.get("url") if isinstance(img, dict) else img
         if src:
             safe = src.replace("'", "%27").replace('"', '&quot;')
-            caption_html = f'<div class="img-caption">{_esc(caption)}</div>' if caption else ''
-            img_html = f'<div class="inline-image-box"><img src="{safe}" class="inline-content-img" alt="Slide Image" />{caption_html}</div>'
+            # Build source page info from caption
+            src_page = ""
+            if caption:
+                import re as _re
+                m = _re.search(r'page\s*(\d+)', caption, _re.IGNORECASE)
+                if m:
+                    src_page = f"Source: Page {m.group(1)}"
+            cap_esc = _esc(caption)
+            src_esc = _esc(src_page)
+            # Pass caption+source to lightbox as data attributes
+            img_html = (
+                f'<div class="img-card" onclick="openLightbox(\'{safe}\',\'{cap_esc}\',\'{src_esc}\')">'
+                f'<img src="{safe}" class="img-main" alt="Slide image"/>'
+                f'<div class="img-hint">🔍 Click to enlarge</div>'
+                f'<div class="img-meta">'
+                + (f'<div class="img-cap">{cap_esc}</div>' if caption else '')
+                + (f'<div class="img-src">📄 {src_esc}</div>' if src_page else '')
+                + f'</div>'
+                f'</div>'
+            )
 
-    layout_class = "content-layout-split" if img_html else "content-layout-single"
+    has_img  = bool(img_html)
+    has_diag = bool(diag_html)
 
-    right_col = f'<div class="content-right">{img_html}</div>' if img_html else ""
+    # Layout decision
+    if has_img and has_diag:
+        # 3-zone: text left | image top-right + diagram bottom-right
+        content_html = (
+            f'<div class="layout-3col">'
+            f'  <div class="col-text"><div class="bullet-list">{bhtml}</div></div>'
+            f'  <div class="col-right">'
+            f'    <div class="col-right-top">{img_html}</div>'
+            f'    <div class="col-right-bot">{diag_html}</div>'
+            f'  </div>'
+            f'</div>'
+        )
+    elif has_img:
+        content_html = (
+            f'<div class="layout-2col">'
+            f'  <div class="col-text"><div class="bullet-list">{bhtml}</div></div>'
+            f'  <div class="col-media">{img_html}</div>'
+            f'</div>'
+        )
+    elif has_diag:
+        content_html = (
+            f'<div class="layout-2col">'
+            f'  <div class="col-text"><div class="bullet-list">{bhtml}</div></div>'
+            f'  <div class="col-media">{diag_html}</div>'
+            f'</div>'
+        )
+    else:
+        content_html = f'<div class="layout-1col"><div class="bullet-list">{bhtml}</div></div>'
 
     return (
         f'<section class="slide s-content" data-idx="{i}" data-ac="{a}" style="--a:{a};--a2:{a2};--a3:{a3}">'
-        f'<div class="mesh subtle" style="--c1:{a};--c2:{a2};--c3:{a3}"></div>'
+        f'<div class="slide-bg-orb orb1 sm" style="background:radial-gradient(circle,{a}15,transparent 70%)"></div>'
         f'{_particles(i, a)}'
-        f'<div class="rail" style="background:linear-gradient(180deg,{a},{a2}66,transparent)"></div>'
-        f'<div class="inner">'
-        f'  <div class="eyebrow"><span class="etag" style="background:{a}18;border-color:{a}30;color:{a}">SLIDE {i+1:02d}</span></div>'
-        f'  <h2 class="stitle">{title}</h2>'
-        f'  <div class="rule" style="background:linear-gradient(90deg,{a},{a2}88,transparent)"></div>'
-        f'  <div class="{layout_class}">'
-        f'    <div class="content-left"><div class="bullets">{bhtml}</div>{diag_html}</div>'
-        f'    {right_col}'
+        f'<div class="slide-accent-bar" style="background:linear-gradient(90deg,{a},{a2},{a3})"></div>'
+        f'<div class="slide-inner">'
+        f'  <div class="slide-header">'
+        f'    <div class="slide-chip" style="background:rgba({r},{g},{b},.1);border-color:rgba({r},{g},{b},.2);color:{a}">SLIDE {i+1:02d}</div>'
+        f'    <h2 class="slide-title">{title}</h2>'
+        f'    <div class="title-rule" style="background:linear-gradient(90deg,{a},{a2}88,transparent)"></div>'
         f'  </div>'
+        f'  {content_html}'
         f'</div>'
-        f'<div class="orb oa sm" style="background:radial-gradient(circle,{a}20,transparent 65%)"></div>'
+        f'<div class="slide-num">{num}</div>'
         f'<div class="notes" data-n="{notes}">{s.get("speaker_notes","")}</div>'
-        f'<div class="snum">{num}</div>'
         f'</section>'
     ), ""
-
 def _slide_comparison(s: dict, i: int, tot: int, t: dict, img: any, caption: str = "") -> tuple:
     title  = _esc(s.get("title", ""))
     notes  = _esc(s.get("speaker_notes", ""))
     bullets = s.get("bullets", [])
-    num    = f"{i+1:02d}/{tot:02d}"
-    bs, bo = _img_style(img)
+    num    = f"{i+1}/{tot}"
     a, a2, a3 = t["a"], t["a2"], t["a3"]
+    r, g, b = _rgb(a)
+    r2, g2, b2 = _rgb(a2)
 
     mid = max(1, len(bullets) // 2)
     left_pts  = bullets[:mid]
     right_pts = bullets[mid:]
 
-    def _col(pts, ac, side, delay):
-        ra, ga, ba = _rgb(ac)
-        items = "".join(f'<li class="cpi"><span class="cpbul" style="background:{ac}"></span>{_esc(p)}</li>' for p in pts)
+    def _col(pts, ac, label, ra, ga, ba, delay):
+        items = "".join(
+            f'<li class="cmp-item" style="--d:{delay+j*0.08:.2f}s">'
+            f'<span class="cmp-dot" style="background:{ac}"></span>'
+            f'<span>{_esc(p.get("text","") if isinstance(p,dict) else str(p))}</span>'
+            f'</li>'
+            for j, p in enumerate(pts)
+        )
         return (
-            f'<div class="ccol {side}" style="--d:{delay}s">'
-            f'<div class="chdr" style="background:rgba({ra},{ga},{ba},.12);border-color:rgba({ra},{ga},{ba},.30);color:{ac}">'
-            f'{"Approach A" if side=="left" else "Approach B"}</div>'
-            f'<ul class="clist">{items}</ul>'
+            f'<div class="cmp-col" style="border-top:3px solid {ac}">'
+            f'<div class="cmp-hdr" style="color:{ac};background:rgba({ra},{ga},{ba},.1)">{label}</div>'
+            f'<ul class="cmp-list">{items}</ul>'
             f'</div>'
         )
 
     return (
-        f'<section class="slide s-comparison" data-idx="{i}" data-ac="{a}" style="--a:{a};--a2:{a2};--a3:{a3}">'
-        f'<div class="mesh subtle" style="--c1:{a};--c2:{a2};--c3:{a3}"></div>'
+        f'<section class="slide s-content" data-idx="{i}" data-ac="{a}" style="--a:{a};--a2:{a2};--a3:{a3}">'
+        f'<div class="slide-bg-orb orb1 sm" style="background:radial-gradient(circle,{a}15,transparent 70%)"></div>'
         f'{_particles(i, a)}'
-        f'<div class="imgwrap"{bs}>{bo}</div>'
-        f'<div class="inner">'
-        f'  <div class="eyebrow"><span class="etag" style="background:{a}18;border-color:{a}30;color:{a}">COMPARISON</span></div>'
-        f'  <h2 class="stitle">{title}</h2>'
-        f'  <div class="rule" style="background:linear-gradient(90deg,{a},{a2}88,transparent)"></div>'
-        f'  <div class="clayout">'
-        f'    {_col(left_pts, a, "left", 0.20)}'
-        f'    <div class="cdiv"><div class="vsbadge" style="background:linear-gradient(135deg,{a},{a2})">VS</div></div>'
-        f'    {_col(right_pts, a2, "right", 0.40)}'
+        f'<div class="slide-accent-bar" style="background:linear-gradient(90deg,{a},{a2},{a3})"></div>'
+        f'<div class="slide-inner">'
+        f'  <div class="slide-header">'
+        f'    <div class="slide-chip" style="background:rgba({r},{g},{b},.1);border-color:rgba({r},{g},{b},.2);color:{a}">COMPARISON</div>'
+        f'    <h2 class="slide-title">{title}</h2>'
+        f'    <div class="title-rule" style="background:linear-gradient(90deg,{a},{a2}88,transparent)"></div>'
+        f'  </div>'
+        f'  <div class="cmp-grid">'
+        f'    {_col(left_pts, a, "Approach A", r, g, b, 0.15)}'
+        f'    <div class="cmp-vs" style="background:linear-gradient(135deg,{a},{a2})">VS</div>'
+        f'    {_col(right_pts, a2, "Approach B", r2, g2, b2, 0.30)}'
         f'  </div>'
         f'</div>'
+        f'<div class="slide-num">{num}</div>'
         f'<div class="notes" data-n="{notes}">{s.get("speaker_notes","")}</div>'
-        f'<div class="snum">{num}</div>'
         f'</section>'
     ), ""
 
@@ -343,43 +405,32 @@ def _slide_outro(s: dict, i: int, tot: int, t: dict, img: any, topic: str) -> tu
     title = _esc(s.get("title", "Conclusion"))
     notes = _esc(s.get("speaker_notes", ""))
     bullets = s.get("bullets", [])
-    num   = f"{i+1:02d}/{tot:02d}"
-    bs, bo = _img_style(img)
+    num   = f"{i+1}/{tot}"
     a, a2, a3 = t["a"], t["a2"], t["a3"]
     r, g, b = _rgb(a)
-    
-    # Build bullet HTML for conclusion points
-    bhtml = ""
-    for j, bu in enumerate(bullets[:6]):
-        bull = bu.get("text", "") or bu.get("content", "") if isinstance(bu, dict) else str(bu)
-        ac = a2 if j % 2 else a
-        ra, ga, ba = _rgb(ac)
-        d = 0.3 + j * 0.12
-        bhtml += (
-            f'<div class="outro-point" style="--d:{d:.2f}s;opacity:0;animation:fup .6s both var(--d)">'
-            f'<span class="outro-bullet" style="background:{ac}"></span>'
-            f'<span class="outro-text">{_esc(bull)}</span>'
-            f'</div>'
-        )
-    
-    bullets_section = f'<div class="outro-bullets">{bhtml}</div>' if bhtml else ''
-    
+
+    bhtml = "".join(
+        f'<div class="outro-pt" style="--d:{0.3+j*0.1:.2f}s">'
+        f'<span class="outro-dot" style="background:{a2 if j%2 else a}"></span>'
+        f'<span>{_esc(bu.get("text","") if isinstance(bu,dict) else str(bu))}</span>'
+        f'</div>'
+        for j, bu in enumerate(bullets[:6])
+    )
+
     return (
         f'<section class="slide s-outro" data-idx="{i}" data-ac="{a}" style="--a:{a};--a2:{a2};--a3:{a3}">'
-        f'<div class="mesh" style="--c1:{a3};--c2:{a};--c3:{a2}"></div>'
-        f'{_particles(i, a2)}'
-        f'<div class="gridlines"></div>'
-        f'<div class="imgwrap"{bs}>{bo}</div>'
+        f'<div class="slide-bg-orb orb1" style="background:radial-gradient(circle,{a}35,transparent 70%)"></div>'
+        f'<div class="slide-bg-orb orb2" style="background:radial-gradient(circle,{a2}20,transparent 70%)"></div>'
+        f'{_particles(i, a)}'
         f'<div class="outro-body">'
-        f'  <div class="outro-ring"><svg viewBox="0 0 120 120" class="rsv"><circle cx="60" cy="60" r="54" fill="none" stroke="{a}" stroke-width="1" stroke-dasharray="4 8" opacity=".4"/><text x="60" y="67" text-anchor="middle" font-size="28" fill="{a}" font-weight="800">✦</text></svg></div>'
-        f'  <h2 class="outro-h">{title}</h2>'
-        f'  {bullets_section}'
+        f'  <div class="outro-icon" style="border-color:{a};color:{a}">✦</div>'
+        f'  <h2 class="outro-title" style="background:linear-gradient(135deg,{a},{a2});-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">{title}</h2>'
+        f'  <div class="outro-bar" style="background:linear-gradient(90deg,{a},{a2},{a3})"></div>'
+        f'  <div class="outro-pts">{bhtml}</div>'
         f'  <div class="outro-topic" style="color:{a2}">{_esc(topic)}</div>'
-        f'  <p class="outro-cta">Press <kbd>Q</kbd> to take questions</p>'
         f'</div>'
-        f'<div class="orbs"><div class="orb oa" style="background:radial-gradient(circle,{a}45,transparent 65%)"></div></div>'
+        f'<div class="slide-num">{num}</div>'
         f'<div class="notes" data-n="{notes}">{s.get("speaker_notes","")}</div>'
-        f'<div class="snum">{num}</div>'
         f'</section>'
     ), ""
 
@@ -387,7 +438,7 @@ def _slide_stats(s: dict, i: int, tot: int, t: dict, img: any, caption: str = ""
     title   = _esc(s.get("title", ""))
     bullets = s.get("bullets", [])
     notes   = _esc(s.get("speaker_notes", ""))
-    num     = f"{i+1:02d}/{tot:02d}"
+    num     = f"{i+1}/{tot}"
     a, a2, a3 = t["a"], t["a2"], t["a3"]
     r, g, b = _rgb(a)
 
@@ -395,16 +446,16 @@ def _slide_stats(s: dict, i: int, tot: int, t: dict, img: any, caption: str = ""
     for j, bu in enumerate(bullets):
         bull = bu.get("text", "") or bu.get("content", "") if isinstance(bu, dict) else str(bu)
         parts = bull.split(":", 1)
-        kw    = parts[0].strip()
-        rest  = parts[1].strip() if len(parts) > 1 else ""
+        kw    = _esc(parts[0].strip())
+        rest  = _esc(parts[1].strip()) if len(parts) > 1 else ""
         ac    = a2 if j % 2 else a
         ra, ga, ba = _rgb(ac)
-        d  = 0.15 + j * 0.10
+        d = 0.1 + j * 0.08
         bhtml += (
-            f'<div class="brow" style="--d:{d:.2f}s">'
-            f'<div class="bidx" style="background:rgba({ra},{ga},{ba},.15);border-color:rgba({ra},{ga},{ba},.35);color:{ac}">{j+1:02d}</div>'
-            f'<div class="bbody"><span class="bkw" style="color:{ac}">{_esc(kw)}</span>'
-            + (f'<span class="brest">{_esc(rest)}</span>' if rest else '')
+            f'<div class="bullet-card" style="--d:{d:.2f}s;border-left:3px solid {ac}">'
+            f'<div class="bc-num" style="color:{ac};background:rgba({ra},{ga},{ba},.12)">{j+1:02d}</div>'
+            f'<div class="bc-body"><span class="bc-kw" style="color:{ac}">{kw}</span>'
+            + (f'<span class="bc-rest">{rest}</span>' if rest else '')
             + f'</div></div>'
         )
 
@@ -413,9 +464,9 @@ def _slide_stats(s: dict, i: int, tot: int, t: dict, img: any, caption: str = ""
     if cdata and isinstance(cdata, dict) and cdata.get("labels") and cdata.get("values"):
         cid = f"chart_{i}"
         chart_html = (
-            f'<div class="chart-box" style="margin-top:25px;background:rgba(255,255,255,.03);'
+            f'<div style="margin-top:20px;background:rgba({r},{g},{b},.04);'
             f'border:1px solid rgba({r},{g},{b},.1);border-radius:12px;padding:20px;'
-            f'height:300px;opacity:0;animation:fup .6s both .6s">'
+            f'height:260px;opacity:0;animation:slide-up .6s ease both .5s">'
             f'<canvas id="{cid}"></canvas></div>'
         )
         js = _chart_js(cdata, cid, t)
@@ -423,20 +474,20 @@ def _slide_stats(s: dict, i: int, tot: int, t: dict, img: any, caption: str = ""
         js = ""
 
     return (
-        f'<section class="slide s-content s-stats" data-idx="{i}" data-ac="{a}" style="--a:{a};--a2:{a2};--a3:{a3}">'
-        f'<div class="mesh subtle" style="--c1:{a};--c2:{a2};--c3:{a3}"></div>'
+        f'<section class="slide s-content" data-idx="{i}" data-ac="{a}" style="--a:{a};--a2:{a2};--a3:{a3}">'
+        f'<div class="slide-bg-orb orb1 sm" style="background:radial-gradient(circle,{a}15,transparent 70%)"></div>'
         f'{_particles(i, a)}'
-        f'<div class="rail" style="background:linear-gradient(180deg,{a},{a2}66,transparent)"></div>'
-        f'<div class="inner">'
-        f'  <div class="eyebrow"><span class="etag" style="background:{a}18;border-color:{a}30;color:{a}">STATISTICS</span></div>'
-        f'  <h2 class="stitle">{title}</h2>'
-        f'  <div class="rule" style="background:linear-gradient(90deg,{a},{a2}88,transparent)"></div>'
-        f'  <div class="bullets">{bhtml}</div>'
-        f'  {chart_html}'
+        f'<div class="slide-accent-bar" style="background:linear-gradient(90deg,{a},{a2},{a3})"></div>'
+        f'<div class="slide-inner">'
+        f'  <div class="slide-header">'
+        f'    <div class="slide-chip" style="background:rgba({r},{g},{b},.1);border-color:rgba({r},{g},{b},.2);color:{a}">STATISTICS</div>'
+        f'    <h2 class="slide-title">{title}</h2>'
+        f'    <div class="title-rule" style="background:linear-gradient(90deg,{a},{a2}88,transparent)"></div>'
+        f'  </div>'
+        f'  <div class="layout-1col"><div class="bullet-list">{bhtml}</div>{chart_html}</div>'
         f'</div>'
-        f'<div class="orb oa sm" style="background:radial-gradient(circle,{a}20,transparent 65%)"></div>'
+        f'<div class="slide-num">{num}</div>'
         f'<div class="notes" data-n="{notes}">{s.get("speaker_notes","")}</div>'
-        f'<div class="snum">{num}</div>'
         f'</section>'
     ), js
 
@@ -446,71 +497,161 @@ def _css(t: dict) -> str:
     surf, brd = t["surf"], t["brd"]
     ink, muted = t["ink"], t["muted"]
     a, a2, a3 = t["a"], t["a2"], t["a3"]
-    r,g,b = _rgb(a)
-    r2,g2,b2 = _rgb(a2)
-    blend  = "screen" if t["dark"] else "multiply"
+    r, g, b = _rgb(a)
+    r2, g2, b2 = _rgb(a2)
+    blend = "screen" if t["dark"] else "multiply"
     return f"""
 *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
-:root{{--a:{a};--a2:{a2};--a3:{a3};--bg:{bg};--bg2:{bg2};--surf:{surf};--brd:{brd};--ink:{ink};--muted:{muted}}}
-html,body{{width:100%;height:100%;overflow:hidden;background:{bg};color:{ink};font-family:'DM Sans',sans-serif;cursor:none}}
-#cur{{position:fixed;width:12px;height:12px;border-radius:50%;background:{a};pointer-events:none;z-index:9999;transform:translate(-50%,-50%);transition:width .1s;mix-blend-mode:{blend}}}
-#cur2{{position:fixed;width:36px;height:36px;border:1px solid {a};border-radius:50%;pointer-events:none;z-index:9998;transform:translate(-50%,-50%);opacity:.3}}
+:root{{--a:{a};--a2:{a2};--a3:{a3};--bg:{bg};--ink:{ink};--muted:{muted};--surf:{surf};--brd:{brd}}}
+html,body{{width:100%;height:100%;overflow:hidden;background:{bg};color:{ink};font-family:'Inter','DM Sans',system-ui,sans-serif;cursor:none;-webkit-font-smoothing:antialiased}}
+
+/* ── Cursor ── */
+#cur{{position:fixed;width:10px;height:10px;border-radius:50%;background:{a};pointer-events:none;z-index:9999;transform:translate(-50%,-50%);mix-blend-mode:{blend};transition:transform .1s}}
+#cur2{{position:fixed;width:32px;height:32px;border:1.5px solid {a};border-radius:50%;pointer-events:none;z-index:9998;transform:translate(-50%,-50%);opacity:.25;transition:left .06s,top .06s}}
+
+/* ── Deck ── */
 #deck{{position:fixed;inset:0}}
-.slide{{position:absolute;inset:0;background:{bg};overflow:hidden;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transform:scale(2) translateZ(0);transition:none}}
-.slide.active{{opacity:1;pointer-events:all;transform:scale(1) translateZ(0);transition:transform .8s cubic-bezier(.16,1,.3,1),opacity .4s}}
-.slide.xl{{opacity:0;transform:scale(.5) translateX(-20%)}}
-.slide.xr{{opacity:0;transform:scale(.5) translateX(20%)}}
-.mesh{{position:absolute;inset:-50%;width:200%;height:200%;z-index:0;background:radial-gradient(ellipse at 20% 30%,var(--c1)15,transparent 60%),radial-gradient(ellipse at 80% 20%,var(--c2)10,transparent 60%),{bg};animation:mdrift 20s infinite alternate}}
-@keyframes mdrift{{from{{transform:rotate(0deg)}}to{{transform:rotate(5deg) scale(1.05)}}}}
-.gridlines{{position:absolute;inset:0;z-index:1;background-image:linear-gradient(rgba({r},{g},{b},.04) 1px,transparent 1px),linear-gradient(90deg,rgba({r},{g},{b},.04) 1px,transparent 1px);background-size:50px 50px}}
-.pc{{position:absolute;inset:0;z-index:2;opacity:.5}}
-.imgwrap{{position:absolute;inset:0;z-index:1;background-size:cover;background-position:center}}
-.img-overlay{{position:absolute;inset:0;background:linear-gradient(rgba({r},{g},{b},.4),{bg} 90%)}}
-.inner{{position:relative;z-index:5;max-width:1100px;width:100%;padding:60px}}
-.stitle{{font-family:'Plus Jakarta Sans',sans-serif;font-size:clamp(30px,4vw,60px);font-weight:800;letter-spacing:-2px;margin-bottom:24px}}
-.bullets{{display:flex;flex-direction:column;gap:15px}}
-.brow{{display:flex;gap:20px;opacity:0;animation:fup .6s both var(--d)}}
-@keyframes fup{{from{{opacity:0;transform:translateY(20px)}}to{{opacity:1;transform:none}}}}
-.bidx{{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:10px;font-family:monospace;border:1px solid;flex-shrink:0}}
-.bkw{{font-weight:700;display:block;font-size:1.1em;margin-bottom:4px}}
-.brest{{color:{muted};font-weight:300}}
-#hud{{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;justify-content:space-between;padding:15px 25px;pointer-events:none}}
-.hbtns{{display:flex;gap:8px;pointer-events:all}}
-.hb{{background:rgba({r},{g},{b},.1);border:1px solid rgba({r},{g},{b},.2);padding:8px 16px;border-radius:8px;color:{ink};cursor:none;font-size:11px;transition:all .2s;backdrop-filter:blur(10px)}}
-.hb:hover{{background:rgba({r},{g},{b},.2)}}
-.hb.on{{background:{a};color:white}}
-#prog{{position:fixed;bottom:0;left:0;right:0;height:4px;z-index:100;background:rgba({r},{g},{b},.1)}}
-#pf{{height:100%;background:linear-gradient(90deg,{a},{a2});transition:width .4s}}
-#navp,#navn{{position:fixed;top:50%;transform:translateY(-50%);z-index:100;width:50px;height:50px;display:flex;align-items:center;justify-content:center;color:{muted};font-size:30px;cursor:none}}
-#navp{{left:10px}}#navn{{right:10px}}
-.notes{{display:none;position:fixed;bottom:0;left:0;right:0;background:rgba({r},{g},{b},.95);backdrop-filter:blur(20px);padding:30px 60px;font-family:monospace;z-index:150}}
+.slide{{position:absolute;inset:0;background:{bg};overflow:hidden;display:flex;flex-direction:column;opacity:0;pointer-events:none;transform:translateX(60px) scale(.97);transition:none}}
+.slide.active{{opacity:1;pointer-events:all;transform:none;transition:transform .55s cubic-bezier(.22,1,.36,1),opacity .3s}}
+.slide.xl{{opacity:0;transform:translateX(-60px) scale(.97)}}
+.slide.xr{{opacity:0;transform:translateX(60px) scale(.97)}}
+
+/* ── Background orbs ── */
+.slide-bg-orb{{position:absolute;border-radius:50%;filter:blur(110px);pointer-events:none;z-index:0}}
+.orb1{{width:55vw;height:55vw;top:-20%;left:-15%;animation:orb-drift 20s ease-in-out infinite alternate}}
+.orb2{{width:45vw;height:45vw;bottom:-15%;right:-10%;animation:orb-drift 26s ease-in-out infinite alternate-reverse}}
+.orb3{{width:35vw;height:35vw;top:35%;left:35%;animation:orb-drift 17s ease-in-out infinite alternate}}
+.sm{{width:32vw;height:32vw}}
+@keyframes orb-drift{{0%{{transform:translate(0,0) scale(1)}}50%{{transform:translate(4%,5%) scale(1.06)}}100%{{transform:translate(-2%,3%) scale(.96)}}}}
+
+/* ── Animated grid background ── */
+.slide::before{{content:'';position:absolute;inset:0;z-index:0;pointer-events:none;
+  background-image:linear-gradient(rgba({r},{g},{b},.03) 1px,transparent 1px),linear-gradient(90deg,rgba({r},{g},{b},.03) 1px,transparent 1px);
+  background-size:52px 52px;
+  animation:grid-pan 50s linear infinite}}
+@keyframes grid-pan{{from{{background-position:0 0}}to{{background-position:52px 52px}}}}
+
+/* ── Particles ── */
+.pc{{position:absolute;inset:0;z-index:1;opacity:.35;pointer-events:none}}
+
+/* ── Accent bar (top) ── */
+.slide-accent-bar{{position:absolute;top:0;left:0;right:0;height:3px;z-index:10}}
+
+/* ── Slide inner wrapper ── */
+.slide-inner{{position:relative;z-index:5;display:flex;flex-direction:column;width:100%;height:100%;padding:52px 64px 44px;gap:0}}
+.slide-inner.centered{{align-items:center;justify-content:center;text-align:center}}
+
+/* ── Slide header ── */
+.slide-header{{flex-shrink:0;margin-bottom:28px}}
+.slide-chip{{display:inline-flex;align-items:center;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:5px 14px;border-radius:100px;border:1px solid;margin-bottom:14px}}
+.slide-title{{font-family:'Plus Jakarta Sans','Inter',sans-serif;font-size:clamp(28px,3.2vw,52px);font-weight:800;letter-spacing:-1.5px;line-height:1.12;color:{ink};margin-bottom:16px}}
+.title-rule{{height:2px;width:56px;border-radius:2px;margin-bottom:0}}
+
+/* ── Bullet list ── */
+.bullet-list{{display:flex;flex-direction:column;gap:10px}}
+.bullet-card{{display:flex;align-items:flex-start;gap:14px;padding:12px 16px;border-radius:10px;background:rgba({r},{g},{b},.05);border-left:3px solid {a};opacity:0;animation:slide-up .5s ease both var(--d)}}
+@keyframes slide-up{{from{{opacity:0;transform:translateY(16px)}}to{{opacity:1;transform:none}}}}
+.bc-num{{flex-shrink:0;width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;font-family:monospace;margin-top:2px}}
+.bc-body{{flex:1;min-width:0}}
+.bc-kw{{display:block;font-size:16px;font-weight:700;line-height:1.3;margin-bottom:4px}}
+.bc-rest{{display:block;font-size:14.5px;font-weight:400;line-height:1.6;color:{muted}}}
+.src-tag{{display:inline-block;margin-left:8px;font-size:11px;font-weight:500;background:rgba(255,255,255,.07);padding:2px 8px;border-radius:4px;color:{muted}}}
+
+/* ── Layouts ── */
+.layout-1col{{flex:1;display:flex;flex-direction:column;justify-content:center;min-height:0}}
+.layout-2col{{flex:1;display:grid;grid-template-columns:1fr 42%;gap:32px;align-items:center;min-height:0}}
+.layout-3col{{flex:1;display:grid;grid-template-columns:1fr 40%;gap:28px;align-items:stretch;min-height:0}}
+.col-text{{display:flex;flex-direction:column;justify-content:center;min-width:0;min-height:0}}
+.col-media{{display:flex;flex-direction:column;justify-content:center;min-width:0;min-height:0}}
+.col-right{{display:flex;flex-direction:column;gap:16px;min-width:0;min-height:0}}
+.col-right-top{{flex:1;min-height:0}}
+.col-right-bot{{flex:1;min-height:0}}
+
+/* ── Image card ── */
+.img-card{{position:relative;border-radius:14px;overflow:hidden;cursor:pointer;background:rgba({r},{g},{b},.06);border:1px solid rgba({r},{g},{b},.18);box-shadow:0 20px 48px rgba(0,0,0,.45);opacity:0;animation:slide-up .5s ease both .15s;height:100%;display:flex;flex-direction:column}}
+.img-card:hover .img-hint{{opacity:1}}
+.img-main{{width:100%;flex:1;object-fit:cover;display:block;min-height:0;max-height:340px}}
+.img-hint{{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);color:#fff;font-size:13px;font-weight:500;opacity:0;transition:opacity .2s;backdrop-filter:blur(2px)}}
+.img-meta{{flex-shrink:0;padding:10px 14px;background:rgba({r},{g},{b},.08);border-top:1px solid rgba({r},{g},{b},.12)}}
+.img-cap{{font-size:13px;font-weight:500;color:{ink};line-height:1.45;margin-bottom:4px}}
+.img-src{{font-size:11px;font-weight:400;color:{a};opacity:.85;display:flex;align-items:center;gap:5px}}
+
+/* ── Diagram box ── */
+.diag-box{{border-radius:14px;overflow:hidden;background:rgba({r},{g},{b},.04);border:1px solid rgba({r},{g},{b},.14);padding:16px;display:flex;align-items:center;justify-content:center;min-height:120px;opacity:0;animation:slide-up .5s ease both .25s;height:100%}}
+.mermaid{{background:transparent !important;color:{ink} !important;width:100%}}
+.mermaid svg{{max-width:100%;height:auto;filter:drop-shadow(0 6px 14px rgba(0,0,0,.3))}}
+
+/* ── Cover slide ── */
+.cover-body{{position:relative;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:60px 80px;height:100%}}
+.cover-chip{{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;padding:7px 20px;border-radius:100px;margin-bottom:32px;opacity:0;animation:slide-up .6s ease both .1s}}
+.cover-title{{font-family:'Plus Jakarta Sans','Inter',sans-serif;font-size:clamp(40px,6vw,88px);font-weight:800;letter-spacing:-3px;line-height:1.05;color:{ink};margin-bottom:32px;opacity:0;animation:slide-up .7s ease both .2s;max-width:900px}}
+.cover-bar{{height:4px;width:120px;border-radius:4px;margin:0 auto 36px;opacity:0;animation:slide-up .6s ease both .35s}}
+.cover-keys{{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;opacity:0;animation:slide-up .6s ease both .5s}}
+.ck{{display:flex;align-items:center;gap:7px;font-size:12px;color:{muted}}}
+.ck kbd{{background:rgba({r},{g},{b},.15);border:1px solid rgba({r},{g},{b},.25);padding:3px 9px;border-radius:6px;font-family:monospace;font-size:11px;color:{ink}}}
+
+/* ── Intro slide ── */
+.intro-points{{display:flex;flex-direction:column;gap:12px;max-width:680px;margin-top:28px;text-align:left}}
+.intro-point{{display:flex;align-items:flex-start;gap:12px;opacity:0;animation:slide-up .5s ease both var(--d)}}
+.ipdot{{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:7px}}
+.iptext{{font-size:17px;line-height:1.7;color:{muted}}}
+
+/* ── Comparison ── */
+.cmp-grid{{flex:1;display:grid;grid-template-columns:1fr auto 1fr;gap:20px;align-items:start;min-height:0}}
+.cmp-col{{border-radius:14px;overflow:hidden;background:rgba({r},{g},{b},.04);border:1px solid rgba({r},{g},{b},.12)}}
+.cmp-hdr{{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:12px 18px}}
+.cmp-list{{list-style:none;padding:14px 18px;display:flex;flex-direction:column;gap:10px}}
+.cmp-item{{display:flex;align-items:flex-start;gap:10px;font-size:15px;line-height:1.55;color:{muted};opacity:0;animation:slide-up .5s ease both var(--d)}}
+.cmp-dot{{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:6px}}
+.cmp-vs{{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;align-self:center;flex-shrink:0;box-shadow:0 8px 24px rgba(0,0,0,.4)}}
+
+/* ── Outro ── */
+.s-outro{{display:flex;align-items:center;justify-content:center}}
+.outro-body{{position:relative;z-index:5;display:flex;flex-direction:column;align-items:center;text-align:center;padding:60px;max-width:800px}}
+.outro-icon{{width:72px;height:72px;border-radius:50%;border:2px solid;display:flex;align-items:center;justify-content:center;font-size:28px;margin-bottom:28px;opacity:0;animation:slide-up .6s ease both .1s}}
+.outro-title{{font-family:'Plus Jakarta Sans','Inter',sans-serif;font-size:clamp(36px,5vw,72px);font-weight:800;letter-spacing:-2px;line-height:1.1;margin-bottom:20px;opacity:0;animation:slide-up .6s ease both .2s}}
+.outro-bar{{height:3px;width:80px;border-radius:3px;margin:0 auto 32px;opacity:0;animation:slide-up .5s ease both .3s}}
+.outro-pts{{display:flex;flex-direction:column;gap:10px;margin-bottom:28px;text-align:left;width:100%;max-width:560px}}
+.outro-pt{{display:flex;align-items:flex-start;gap:12px;font-size:15px;line-height:1.6;color:{muted};opacity:0;animation:slide-up .5s ease both var(--d)}}
+.outro-dot{{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:7px}}
+.outro-topic{{font-size:15px;color:{muted};opacity:.6;opacity:0;animation:slide-up .5s ease both .7s}}
+
+/* ── HUD ── */
+#hud{{position:fixed;top:0;left:0;right:0;z-index:200;display:flex;align-items:center;justify-content:space-between;padding:14px 24px;pointer-events:none;background:linear-gradient(to bottom,rgba({r},{g},{b},.08),transparent)}}
+#hud-title{{font-size:12px;font-weight:600;color:{muted};opacity:.7;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+.hbtns{{display:flex;gap:6px;pointer-events:all}}
+.hb{{background:rgba({r},{g},{b},.1);border:1px solid rgba({r},{g},{b},.18);padding:6px 14px;border-radius:8px;color:{ink};cursor:pointer;font-size:11px;font-weight:500;transition:all .15s;backdrop-filter:blur(12px)}}
+.hb:hover{{background:rgba({r},{g},{b},.22);border-color:rgba({r},{g},{b},.35)}}
+.hb.on{{background:{a};border-color:{a};color:#fff}}
+
+/* ── Progress ── */
+#prog{{position:fixed;bottom:0;left:0;right:0;height:3px;z-index:200;background:rgba({r},{g},{b},.08)}}
+#pf{{height:100%;background:linear-gradient(90deg,{a},{a2});transition:width .4s cubic-bezier(.22,1,.36,1)}}
+
+/* ── Nav arrows ── */
+#navp,#navn{{position:fixed;top:50%;transform:translateY(-50%);z-index:200;width:44px;height:44px;display:flex;align-items:center;justify-content:center;color:{muted};font-size:26px;cursor:pointer;border-radius:50%;transition:all .2s;background:rgba({r},{g},{b},.06);border:1px solid rgba({r},{g},{b},.1)}}
+#navp{{left:12px}}#navn{{right:12px}}
+#navp:hover,#navn:hover{{background:rgba({r},{g},{b},.18);color:{ink}}}
+
+/* ── Slide number ── */
+.slide-num{{position:absolute;bottom:18px;left:24px;font-size:13px;font-weight:600;color:{ink};opacity:.55;z-index:10;font-family:monospace;letter-spacing:.04em;background:rgba({r},{g},{b},.1);padding:4px 10px;border-radius:6px;border:1px solid rgba({r},{g},{b},.15)}}
+
+/* ── Notes ── */
+.notes{{display:none;position:fixed;bottom:0;left:0;right:0;background:rgba({r},{g},{b},.96);backdrop-filter:blur(20px);padding:24px 60px;font-family:monospace;font-size:13px;line-height:1.6;z-index:300;border-top:1px solid rgba({r},{g},{b},.2)}}
 .notes-on .notes{{display:block}}
-.snum{{position:absolute;bottom:25px;right:30px;font-size:10px;color:{muted}}}
-.diagram-box{{margin-top:25px;background:rgba(255,255,255,.03);border:1px solid rgba({r},{g},{b},.1);border-radius:12px;padding:20px;overflow:hidden;opacity:0;animation:fup .6s both .6s}}
-.mermaid{{background:transparent !important;color:{ink} !important}}
-.mermaid svg{{max-width:100%;height:auto;filter:drop-shadow(0 10px 20px rgba(0,0,0,.3))}}
-.content-layout-split{{display:flex;gap:40px;align-items:center}}
-.content-left{{flex:1}}
-.content-right{{flex:1;display:flex;justify-content:center}}
-.inline-image-box{{border-radius:16px;overflow:hidden;box-shadow:0 20px 40px rgba(0,0,0,0.4);border:1px solid rgba({r},{g},{b},0.3);max-height:500px;opacity:0;animation:fup .6s both .4s}}
-.inline-content-img{{width:100%;height:auto;display:block;object-fit:cover;max-height:500px}}
-.outro-bullets{{display:flex;flex-direction:column;gap:12px;margin:24px 0;max-width:700px}}
-.outro-point{{display:flex;align-items:flex-start;gap:14px}}
-.outro-bullet{{width:8px;height:8px;border-radius:50%;margin-top:8px;flex-shrink:0}}
-.outro-text{{font-size:17px;line-height:1.6;color:{muted}}}
-.s-outro{{text-align:center}}
-.outro-body{{position:relative;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px;max-width:900px}}
-.outro-ring{{width:100px;height:100px;margin-bottom:30px;animation:float 3s ease-in-out infinite}}
-@keyframes float{{0%,100%{{transform:translateY(0)}}50%{{transform:translateY(-10px)}}}}
-.rsv{{width:100%;height:100%}}
-.outro-h{{font-family:'Plus Jakarta Sans',sans-serif;font-size:clamp(36px,5vw,72px);font-weight:800;letter-spacing:-2px;margin-bottom:16px;background:linear-gradient(135deg,{a},{a2});-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}}
-.outro-topic{{font-size:18px;margin-bottom:24px;opacity:0.7}}
-.outro-cta{{font-size:13px;color:{muted};margin-top:20px}}
-.outro-cta kbd{{background:{surf};border:1px solid {brd};padding:4px 10px;border-radius:6px;font-family:monospace}}
-.orbs{{position:absolute;inset:0;pointer-events:none;overflow:hidden}}
-.orb{{position:absolute;border-radius:50%;filter:blur(80px);animation:orb-float 8s ease-in-out infinite}}
-.orb.oa{{width:400px;height:400px;bottom:-100px;right:-100px}}
-@keyframes orb-float{{0%,100%{{transform:translate(0,0)}}50%{{transform:translate(-20px,-20px)}}}}
+
+/* ── Lightbox ── */
+#lightbox{{display:none;position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.94);align-items:center;justify-content:center;cursor:zoom-out;backdrop-filter:blur(12px)}}
+#lightbox.open{{display:flex}}
+#lb-content{{display:flex;flex-direction:column;align-items:center;gap:0;cursor:default;max-width:90vw}}
+#lb-img{{max-width:88vw;max-height:78vh;object-fit:contain;border-radius:12px 12px 0 0;box-shadow:0 40px 100px rgba(0,0,0,.8);animation:lb-in .22s ease;display:block}}
+#lb-meta{{width:100%;background:rgba(20,20,30,.95);border-radius:0 0 12px 12px;padding:14px 20px;border:1px solid rgba(255,255,255,.08);border-top:none}}
+#lb-cap{{font-size:15px;font-weight:500;color:#f0eeff;line-height:1.5;margin-bottom:5px}}
+#lb-src{{font-size:12px;color:{a};font-weight:500;opacity:.85}}
+#lb-cap:empty,#lb-src:empty{{display:none}}
+@keyframes lb-in{{from{{opacity:0;transform:scale(.88)}}to{{opacity:1;transform:scale(1)}}}}
+#lb-close{{position:absolute;top:18px;right:24px;color:#fff;font-size:32px;cursor:pointer;opacity:.55;line-height:1;z-index:9001;transition:opacity .15s}}
+#lb-close:hover{{opacity:1}}
 """
 
 # ── JS ────────────────────────────────────────────────────────────────────────
@@ -607,7 +748,18 @@ function toggleFS(){
   if(!document.fullscreenElement)document.documentElement.requestFullscreen();
   else document.exitFullscreen();
 }
+function openLightbox(src,cap,srcInfo){
+  document.getElementById('lb-img').src=src;
+  document.getElementById('lb-cap').textContent=cap||'';
+  document.getElementById('lb-src').textContent=srcInfo||'';
+  document.getElementById('lightbox').classList.add('open');
+}
+function closeLightbox(){
+  document.getElementById('lightbox').classList.remove('open');
+  document.getElementById('lb-img').src='';
+}
 document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){closeLightbox();return;}
   if(e.key==='ArrowRight'||e.key===' ')fwd();
   if(e.key==='ArrowLeft')bwd();
   if(e.key==='n')toggleNotes();
@@ -645,7 +797,7 @@ def render(
     for i, s in enumerate(slides):
         stype = s.get("slide_type") or s.get("type") or "content"
         img = (images or {}).get(i) or (images or {}).get(s.get("image_id"))
-        cap = captions.get(i, "")
+        cap = s.get("caption") or captions.get(i, "")
         
         js_chart = ""
         if i == 0:     h, js_chart = _slide_cover(s, i, total, theme, img)
@@ -660,19 +812,37 @@ def render(
 
     te = _esc(topic)
     html = f"""<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"/><title>{te} — Presentation</title>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>{te}</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <style>{_css(theme)}</style></head>
-<body><div id="cur"></div><div id="cur2"></div>
-<div id="hud"><div id="title">{te}</div><div class="hbtns">
-<button class="hb" id="btn-n" onclick="toggleNotes()">Notes</button>
-<button class="hb" onclick="toggleFS()">FS</button></div></div>
+<body>
+<div id="cur"></div><div id="cur2"></div>
+<div id="lightbox" onclick="closeLightbox()">
+  <span id="lb-close" onclick="closeLightbox()">&#x2715;</span>
+  <div id="lb-content" onclick="event.stopPropagation()">
+    <img id="lb-img" src="" alt=""/>
+    <div id="lb-meta">
+      <div id="lb-cap"></div>
+      <div id="lb-src"></div>
+    </div>
+  </div>
+</div>
+<div id="hud">
+  <div id="hud-title">{te}</div>
+  <div class="hbtns">
+    <button class="hb" id="btn-n" onclick="toggleNotes()">Notes</button>
+    <button class="hb" onclick="toggleFS()">Fullscreen</button>
+  </div>
+</div>
 <div id="prog"><div id="pf"></div></div>
-<div id="navp" onclick="bwd()">‹</div><div id="navn" onclick="fwd()">›</div>
+<div id="navp" onclick="bwd()">&#8249;</div>
+<div id="navn" onclick="fwd()">&#8250;</div>
 <div id="deck">{"".join(sections)}</div>
-<script>const TOT={total}; {"".join(charts)} \n {_JS}</script></body></html>"""
+<script>const TOT={total}; {"".join(charts)} \n {_JS}</script>
+</body></html>"""
 
     os.makedirs(output_dir, exist_ok=True)
     path = os.path.join(output_dir, f"pres_{session_id[:8]}.html")
