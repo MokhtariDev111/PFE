@@ -39,10 +39,25 @@ class LLMEngine:
         self.ollama_model = CONFIG["llm"]["model"]
         
         # Groq config (primary if available)
-        self.groq_api_key = os.getenv("GROQ_API_KEY", "")
+        # Load all available Groq keys for rotation
+        self.groq_api_keys = [
+            k for k in [
+                os.getenv("GROQ_API_KEY", ""),
+                os.getenv("GROQ_API_KEY_2", ""),
+                os.getenv("GROQ_API_KEY_3", ""),
+            ] if k
+        ]
+        self.groq_api_key = self.groq_api_keys[0] if self.groq_api_keys else ""
+        self._groq_key_index = 0
+
         self.groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
         self.groq_url = "https://api.groq.com/openai/v1/chat/completions"
         
+        # Gemini config (secondary fallback)
+        self.gemini_api_key = os.getenv("GEMINI_API_KEY", "")
+        self.gemini_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+
+
         # General config
         self.temp = CONFIG["llm"]["temperature"]
         self.ctx_len = min(CONFIG["llm"]["context_length"], 4096)
@@ -83,7 +98,7 @@ class LLMEngine:
                 {"role": "user", "content": prompt}
             ],
             "temperature": self.temp,
-            "max_tokens": 4096,
+            "max_tokens": 2048,
         }
         
         if json_mode:
@@ -94,11 +109,20 @@ class LLMEngine:
                 response = await client.post(self.groq_url, json=payload, headers=headers)
                 
                 # Handle rate limiting
+                
                 if response.status_code == 429:
-                    retry_after = float(response.headers.get("retry-after", 2))
-                    delay = await self._rate_limiter.handle_rate_limit(retry_after)
-                    await asyncio.sleep(delay)
-                    raise ConnectionError("Rate limited, retrying...")
+                    # Try next Groq key before falling back to Gemini
+                    next_index = self._groq_key_index + 1
+                    if next_index < len(self.groq_api_keys):
+                        self._groq_key_index = next_index
+                        self.groq_api_key = self.groq_api_keys[next_index]
+                        headers["Authorization"] = f"Bearer {self.groq_api_key}"
+                        log.warning(f"Groq key {next_index} rate limited — switching to key {next_index + 1}")
+                        raise ConnectionError("Switching Groq key, retrying...")
+                    log.warning("All Groq keys rate limited — falling back to Gemini")
+                    raise ConnectionError("ALL_KEYS_EXHAUSTED")
+
+                    
                 
                 # Handle other retryable errors
                 if response.status_code in RETRYABLE_STATUS_CODES:
@@ -118,12 +142,63 @@ class LLMEngine:
         try:
             return await retry_async(
                 _make_request,
-                max_attempts=3,
-                base_delay=1.0,
+                max_attempts=len(self.groq_api_keys),
+                base_delay=0.5,
             )
+        
         except Exception as e:
-            log.warning(f"Groq failed after retries ({e}) - falling back to Ollama")
-            return await self._call_ollama(prompt, self.ollama_model, json_mode)
+            if "ALL_KEYS_EXHAUSTED" in str(e):
+                log.warning("All Groq keys exhausted — falling back to Gemini")
+                return await self._call_gemini(prompt)
+            if "gemini" in str(e).lower() or "429" in str(e):
+                log.error(f"Both Groq and Gemini failed: {e}")
+                return "{}"
+            log.warning(f"Groq failed ({e}) — falling back to Gemini")
+            return await self._call_gemini(prompt)
+
+        
+     
+        
+        
+    # ══════════════════════════════════════════════════════════════════════════
+    # Gemini BACKEND (Fallback - Cloud)
+    # ══════════════════════════════════════════════════════════════════════════   
+    async def _call_gemini(self, prompt: str) -> str:
+        """Call Gemini API as fallback."""
+        import httpx
+
+        cached = get_cached(prompt, "gemini")
+        if cached:
+            log.info("  ⚡ Cache HIT for Gemini")
+            return cached
+
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": self.temp, "maxOutputTokens": 2048}
+        }
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                f"{self.gemini_url}?key={self.gemini_api_key}",
+                json=payload
+            )
+            if not response.is_success:
+                log.error(f"Gemini error {response.status_code}: {response.text[:300]}")
+                response.raise_for_status()
+            data = response.json()
+            result = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+            if "```" in result:
+                start = result.find("```")
+                end = result.rfind("```")
+                if start != end:
+                    result = result[start+3:end].strip()
+                    if result.startswith("json"):
+                        result = result[4:].strip()
+            set_cached(prompt, "gemini", result)
+            log.info("✔ Gemini response received")
+            return result
+    
 
     # ══════════════════════════════════════════════════════════════════════════
     # OLLAMA BACKEND (Fallback - Local)
@@ -255,12 +330,12 @@ OUTPUT FORMAT - Return a JSON object with this exact structure:
       "slide_type": "intro|definition|concept|example|comparison|summary",
       "title": "Slide Title",
       "bullets": [
-        {{"text": "Specific fact or concept with concrete details", "source_id": "Page X"}},
-        {{"text": "Second distinct point", "source_id": "Page Y"}},
-        {{"text": "Third point with example or application", "source_id": "Page Z"}}
+        {{"text": "Specific fact or concept with concrete details", "source_id": "Page X"}},{{"text": "Specific fact or concept with a full explanation of 15-25 words including context or example", "source_id": "Page X"}},
+        {{"text": "Second distinct point explained in detail with supporting evidence or elaboration", "source_id": "Page Y"}},
+        {{"text": "Third point with a concrete example, application, or consequence described in full", "source_id": "Page Z"}}
       ],
       "key_message": "One-sentence synthesis of this slide's main takeaway",
-      "visual_hint": "flowchart|mindmap|timeline|comparison|process|hierarchy|none",
+      "visual_hint": "none",
       "image_id": "IMG_001 or null",
       "speaker_notes": "Brief explanation for presenter"
     }}
@@ -268,15 +343,20 @@ OUTPUT FORMAT - Return a JSON object with this exact structure:
 }}
 
 RULES:
-1. Each slide MUST have 3-5 bullets with SPECIFIC facts, not vague statements
+1. Each slide MUST have 4-6 bullets. Each bullet MUST be a complete, detailed sentence of 15-25 words — no one-liners, no vague statements. Include context, explanation, or example in every bullet.
 2. NO repetition between slides - each slide covers different aspects
-3. visual_hint: Use variety - don't repeat the same type consecutively
+3. visual_hint: none
 4. image_id: Assign relevant images from the list above, or null if none fit
 5. Slide types should follow a logical teaching arc:
    - Start with intro/definition
-   - Middle slides: concept, example, comparison
+   - Middle slides: concept, example, comparison — these MUST be content-rich:
+     * concept slides: explain the idea deeply, include how it works, why it matters, and its components
+     * example slides: give a real-world scenario, walk through it step by step, explain the outcome
+     * comparison slides: contrast two approaches across multiple dimensions (speed, cost, use case, pros/cons)
    - End with summary
-6. All content must be in {language}
+6. For middle slides specifically, aim for 5-6 bullets, each 20-30 words, covering different angles of the topic
+
+7. All content must be in {language}
 
 Generate the {num_slides} slides now as valid JSON:"""
 

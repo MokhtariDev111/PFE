@@ -36,7 +36,6 @@ from modules.text_processing import process_pages
 from modules.embeddings import build_vector_db
 from modules.retrieval import Retriever, _load_reranker
 from modules.slide_generator import SlideData
-from modules.diagram_generator import generate_all_diagrams
 from modules.history_store import record_presentation, load_history, clear_history
 from modules.html_renderer import render as render_html
 from modules.context_manager import prepare_context_for_slides
@@ -427,23 +426,14 @@ async def generate_stream(
                 )
                 slides_obj.append(s_obj)
 
-            # 6. Generate Diagrams
-            yield _emit("status", {"step": "diagrams", "message": "Generating diagrams…"})
+            # 6. Generate Diagrams (skipped)
             diag_map = {}
-            try:
-                diag_map = await asyncio.to_thread(
-                    generate_all_diagrams, slides_obj, "#1F6FEB", str(tmp_dir / "diagrams")
-                )
-                print(f"📊 Generated {len(diag_map)} diagrams", flush=True)
-            except Exception as e:
-                log.warning(f"Diagram error: {e}")
 
-            # 7. Build HTML slides with diagrams
+            # 7. Build HTML slides
             html_slides = []
             for idx, s in enumerate(slides_obj):
                 html_bullets = s.bullets
-                diag_info = diag_map.get(idx, {})
-                
+
                 img_id_val = s.image_id
                 img_caption = ""
                 if img_id_val and "page_" in img_id_val:
@@ -452,15 +442,15 @@ async def generate_stream(
                         img_caption = f"Source: Page {page_num}"
                     except IndexError:
                         pass
-                
+
                 html_slides.append({
                     "title": s.title,
                     "bullets": html_bullets,
                     "speaker_notes": s.speaker_notes,
                     "slide_type": s.slide_type,
                     "image_id": img_id_val,
-                    "diagram": diag_info.get("url") if isinstance(diag_info, dict) else None,
-                    "visual_hint": s.visual_hint,
+                    "diagram": None,
+                    "visual_hint": "none",
                     "caption": img_caption,
                 })
 

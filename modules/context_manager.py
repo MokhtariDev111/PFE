@@ -175,7 +175,7 @@ def prepare_context_for_slides(
     """
     base_tokens   = 2000
     scaled_tokens = base_tokens + (num_slides * tokens_per_slide)
-    max_tokens    = min(scaled_tokens, 8000)   # was 3500 — Bug D fix
+    max_tokens    = min(scaled_tokens, 3500)   
 
     log.info(f"Context budget for {num_slides} slides: {max_tokens} tokens (cap was 3500)")
 

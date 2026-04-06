@@ -169,20 +169,6 @@ def _slide_content(s: dict, i: int, tot: int, t: dict, img: any, caption: str = 
 
     # Diagram HTML
     diag_html = ""
-    diagram = s.get("diagram", "")
-    if diagram:
-        if diagram.startswith("http"):
-            diag_html = f'''
-            <div class="media-card diagram-card">
-              <img src="{_esc(diagram)}" alt="Diagram" class="diagram-img"/>
-            </div>
-            '''
-        else:
-            diag_html = f'''
-            <div class="media-card diagram-card">
-              <pre class="mermaid">{_esc_mermaid(diagram)}</pre>
-            </div>
-            '''
 
     # Image HTML
     img_html = ""
@@ -211,16 +197,12 @@ def _slide_content(s: dict, i: int, tot: int, t: dict, img: any, caption: str = 
             '''
 
     # Layout
-    has_media = bool(img_html or diag_html)
+    has_media = bool(img_html)
     layout_class = "layout-split" if has_media else "layout-full"
-    
+
     media_col = ""
-    if img_html and diag_html:
-        media_col = f'<div class="media-column stacked">{img_html}{diag_html}</div>'
-    elif img_html:
+    if img_html:
         media_col = f'<div class="media-column">{img_html}</div>'
-    elif diag_html:
-        media_col = f'<div class="media-column">{diag_html}</div>'
 
     return (f'''
 <section class="slide s-content" data-idx="{i}" style="--a:{a};--a2:{a2};--a3:{a3}">
@@ -652,7 +634,7 @@ html, body {{
 
 .bullet-keyword {{
   display: block;
-  font-size: 17px;
+  font-size: 19px;
   font-weight: 700;
   color: var(--accent);
   line-height: 1.3;
@@ -661,7 +643,7 @@ html, body {{
 
 .bullet-rest {{
   display: block;
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 400;
   color: var(--muted);
   line-height: 1.6;
@@ -707,7 +689,7 @@ html, body {{
   width: 100%;
   height: auto;
   max-height: 380px;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
 }}
 
@@ -754,8 +736,10 @@ html, body {{
   background: transparent !important;
 }}
 .diagram-card .mermaid svg {{
+  width: 100% !important;
   max-width: 100%;
-  height: auto;
+  height: auto !important;
+  display: block;
   filter: drop-shadow(0 8px 16px rgba(0,0,0,0.3));
 }}
 
@@ -869,8 +853,6 @@ html, body {{
   line-height: 1.1;
   color: var(--ink);
   margin-bottom: 24px;
-  opacity: 0;
-  animation: fade-up 0.6s ease 0.15s forwards;
 }}
 
 .intro-line {{
@@ -879,8 +861,6 @@ html, body {{
   background: var(--line-c);
   border-radius: 2px;
   margin-bottom: 36px;
-  opacity: 0;
-  animation: fade-up 0.5s ease 0.25s forwards;
 }}
 
 .intro-points {{
@@ -907,7 +887,7 @@ html, body {{
   margin-top: 8px;
 }}
 .point-text {{
-  font-size: 18px;
+  font-size: 20px;
   line-height: 1.7;
   color: var(--muted);
 }}
@@ -952,7 +932,7 @@ html, body {{
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  font-size: 15px;
+  font-size: 17px;
   line-height: 1.6;
   color: var(--muted);
   opacity: 0;
@@ -1304,22 +1284,6 @@ _JS = r'''
   });
 
   // Mermaid init
-  if (window.mermaid) {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: 'dark',
-      securityLevel: 'loose',
-      flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
-      themeVariables: {
-        primaryColor: '#6366f1',
-        primaryTextColor: '#f4f4f8',
-        primaryBorderColor: '#6366f1',
-        lineColor: '#6366f1',
-        secondaryColor: '#a855f7',
-        tertiaryColor: '#22d3ee'
-      }
-    });
-  }
 
   // Slides
   const slides = Array.from(document.querySelectorAll('.slide'));
@@ -1334,21 +1298,6 @@ _JS = r'''
     
     slides[n].classList.remove('xl', 'xr');
     slides[n].classList.add('active');
-    
-    // Render Mermaid diagrams
-    if (window.mermaid) {
-      const diagrams = slides[n].querySelectorAll('.mermaid:not([data-rendered])');
-      diagrams.forEach((el, idx) => {
-        el.setAttribute('data-rendered', 'true');
-        const code = el.textContent;
-        mermaid.render('mermaid-' + n + '-' + idx, code).then(result => {
-          el.innerHTML = result.svg;
-        }).catch(err => {
-          console.warn('Mermaid error:', err);
-          el.innerHTML = '<div style="color:#ef4444;padding:16px;text-align:center">Diagram unavailable</div>';
-        });
-      });
-    }
     
     current = n;
     update();
@@ -1408,19 +1357,6 @@ _JS = r'''
   // Init
   slides[0].classList.add('active');
   update();
-  
-  // Render initial slide's mermaid
-  if (window.mermaid) {
-    setTimeout(() => {
-      const diagrams = slides[0].querySelectorAll('.mermaid');
-      diagrams.forEach((el, idx) => {
-        el.setAttribute('data-rendered', 'true');
-        mermaid.render('mermaid-0-' + idx, el.textContent).then(result => {
-          el.innerHTML = result.svg;
-        }).catch(() => {});
-      });
-    }, 100);
-  }
 })();
 '''
 
@@ -1471,7 +1407,6 @@ def render(
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>{title_esc}</title>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
-  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
   <style>{_css(theme)}</style>
 </head>
 <body>

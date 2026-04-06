@@ -1,57 +1,17 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ChevronLeft, ChevronRight, Presentation, Maximize2, AlertCircle,
+  ChevronLeft, ChevronRight, Presentation, Maximize2,
   Lightbulb, Target, Zap, TrendingUp, CheckCircle, BookOpen, Code, 
   GitBranch, BarChart3, Layers, ArrowRight, Sparkles, ZoomIn, ZoomOut
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Slide } from "@/hooks/useAppState";
-import mermaid from "mermaid";
-
-mermaid.initialize({ 
-  startOnLoad: false, 
-  theme: "dark", 
-  darkMode: true, 
-  fontFamily: "DM Sans, sans-serif",
-  flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
-  themeVariables: {
-    primaryColor: '#7c3aed',
-    primaryTextColor: '#f8fafc',
-    primaryBorderColor: '#7c3aed',
-    lineColor: '#64748b',
-    secondaryColor: '#1e293b',
-    tertiaryColor: '#0f172a'
-  }
-});
 
 interface PreviewPanelProps {
   slides: Slide[];
   isStreaming?: boolean;
   htmlUrl?: string | null;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SMART VISUAL LOGIC
-// ─────────────────────────────────────────────────────────────────────────────
-
-const NO_DIAGRAM_TYPES = new Set(["title", "intro", "summary"]);
-const DIAGRAM_KEYWORDS = ["process", "workflow", "step", "flow", "architecture", "hierarchy", "comparison", "vs", "timeline", "cycle"];
-
-function shouldShowDiagram(slide: Slide): boolean {
-  // Skip for certain slide types
-  if (NO_DIAGRAM_TYPES.has(slide.slideType || "")) return false;
-  if (!slide.diagram) return false;
-  
-  // Check if diagram has enough nodes (at least 3)
-  const nodeMatches = slide.diagram.match(/\[.*?\]|-->|---/g) || [];
-  if (nodeMatches.length < 3) return false;
-  
-  // Check if content warrants a diagram
-  const content = `${slide.title} ${(slide.bullets || []).map(b => typeof b === 'string' ? b : b.text).join(' ')}`.toLowerCase();
-  const hasDiagramKeywords = DIAGRAM_KEYWORDS.some(kw => content.includes(kw));
-  
-  return hasDiagramKeywords;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -110,96 +70,6 @@ function SlideTypeBadge({ type }: { type: string }) {
       {config.icon}
       {config.label}
     </span>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MERMAID DIAGRAM
-// ─────────────────────────────────────────────────────────────────────────────
-
-function MermaidDiagram({ code }: { code: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const idRef = useRef(`mermaid-${Math.random().toString(36).slice(2, 10)}`);
-
-  useEffect(() => {
-    if (!ref.current || !code) return;
-    
-    const renderDiagram = async () => {
-      setLoading(true);
-      setError(false);
-      
-      try {
-        // Clean the code
-        const cleanCode = code
-          .replace(/```mermaid/g, '')
-          .replace(/```/g, '')
-          .trim();
-        
-        const { svg } = await mermaid.render(idRef.current, cleanCode);
-        
-        if (ref.current) {
-          ref.current.innerHTML = svg;
-          
-          // Style the SVG
-          const svgEl = ref.current.querySelector('svg');
-          if (svgEl) {
-            svgEl.style.maxWidth = '100%';
-            svgEl.style.height = 'auto';
-            svgEl.style.minHeight = '120px';
-          }
-        }
-      } catch (e) {
-        console.warn("Mermaid render failed:", e);
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    // Small delay to ensure DOM is ready
-    const timer = setTimeout(renderDiagram, 50);
-    return () => clearTimeout(timer);
-  }, [code]);
-
-  if (error) {
-    // Fallback: extract and display nodes as a list
-    const nodes = code.match(/\[([^\]]+)\]/g)?.map(n => n.slice(1, -1)) || [];
-    
-    return (
-      <div className="p-4 bg-secondary/30 rounded-xl border border-dashed border-muted-foreground/30">
-        <div className="flex items-center gap-2 text-muted-foreground text-sm mb-3">
-          <AlertCircle className="w-4 h-4" />
-          <span>Diagram structure</span>
-        </div>
-        {nodes.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {nodes.slice(0, 6).map((node, i) => (
-              <span key={i} className="px-3 py-1.5 bg-secondary rounded-lg text-sm text-foreground/80 border border-border">
-                {node}
-              </span>
-            ))}
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground/60">Could not render diagram</p>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div className="relative">
-      {loading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-secondary/50 rounded-xl">
-          <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-        </div>
-      )}
-      <div 
-        ref={ref} 
-        className="flex justify-center items-center min-h-[140px] p-4 bg-gradient-to-br from-secondary/40 to-secondary/20 rounded-xl border border-border/50"
-      />
-    </div>
   );
 }
 
@@ -302,7 +172,6 @@ export function PreviewPanel({ slides, isStreaming = false, htmlUrl }: PreviewPa
 
   const slide = slides[currentSlide];
   const progress = ((currentSlide + 1) / slides.length) * 100;
-  const showDiagram = shouldShowDiagram(slide);
   const hasImage = !!slide.image_id;
 
   const slideVariants = {
@@ -408,11 +277,7 @@ export function PreviewPanel({ slides, isStreaming = false, htmlUrl }: PreviewPa
             </div>
 
             {/* Diagram */}
-            {showDiagram && slide.diagram && (
-              <div className="mt-5">
-                <MermaidDiagram code={slide.diagram} />
-              </div>
-            )}
+            
           </motion.div>
         </AnimatePresence>
       </div>

@@ -143,7 +143,6 @@ export default function GeneratePage() {
                   indexing: 30,
                   retrieving: 50,
                   generating: 70,
-                  diagrams: 85,
                   rendering: 95,
                 };
                 setProgress(stepProgress[data.step] || 0);
@@ -428,7 +427,6 @@ export default function GeneratePage() {
                   { step: "indexing", label: "🗂️ Building index" },
                   { step: "retrieving", label: "🔍 Retrieving context" },
                   { step: "generating", label: "✨ Generating slides" },
-                  { step: "diagrams", label: "📊 Creating diagrams" },
                   { step: "rendering", label: "🎨 Rendering HTML" },
                 ].map((item) => {
                   const isDone = progress >= {
@@ -436,7 +434,6 @@ export default function GeneratePage() {
                     indexing: 30,
                     retrieving: 50,
                     generating: 70,
-                    diagrams: 85,
                     rendering: 95,
                   }[item.step] || 0;
 
@@ -478,7 +475,7 @@ export default function GeneratePage() {
               {currentSlide.title}
             </h3>
             <ul className="space-y-2.5">
-              {currentSlide.bullets?.slice(0, 6).map((bullet: any, i: number) => {
+              {currentSlide.bullets?.map((bullet: any, i: number) => {
                 const text = typeof bullet === 'string'
                   ? bullet
                   : (bullet?.text || bullet?.content || bullet?.fact || bullet?.bullet || '');
