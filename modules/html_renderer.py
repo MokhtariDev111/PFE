@@ -100,7 +100,7 @@ def _rgb(h: str) -> tuple:
 # ── Slide Builders ────────────────────────────────────────────────────────────
 
 def _slide_toc(sections: list, i: int, tot: int, t: dict) -> tuple:
-    """Table of contents slide — vertical table with slide numbers."""
+    """Table of contents slide — vertical table with slide numbers and click navigation."""
     a, a2, a3 = t["a"], t["a2"], t["a3"]
     r, g, b = _rgb(a)
     num = f"{i + 1}/{tot}"
@@ -110,14 +110,18 @@ def _slide_toc(sections: list, i: int, tot: int, t: dict) -> tuple:
         slide_num = entry["num"]
         label     = entry["label"]
         stype     = entry["type"]
-        delay     = 0.1 + (slide_num - 1) * 0.05
+        delay     = 0.08 + (slide_num - 1) * 0.04
         ac        = a2 if slide_num % 2 == 0 else a
         ra, ga, ba = _rgb(ac)
-        type_badge = f'<span class="toc-type" style="background:rgba({ra},{ga},{ba},.12);color:{ac}">{stype.upper()}</span>'
-        rows += f'''<div class="toc-row" style="--delay:{delay:.2f}s">
-          <span class="toc-slide-num" style="color:{ac}">{slide_num:02d}</span>
+        # slide_num - 1 because JS array is 0-indexed, but TOC slide itself is at index i
+        # target index = slide_num - 1 (cover=0, toc=1, intro=2, ...)
+        target_idx = slide_num - 1
+        type_label = {"intro": "Introduction", "summary": "Summary", "content": "Content"}.get(stype, stype.title())
+        rows += f'''<div class="toc-row" style="--delay:{delay:.2f}s;--ac:{ac};--ac-rgb:{ra},{ga},{ba}" onclick="goTo({target_idx}, true)">
+          <div class="toc-num-box" style="background:rgba({ra},{ga},{ba},.15);border-color:rgba({ra},{ga},{ba},.3);color:{ac}">{slide_num:02d}</div>
           <span class="toc-row-label">{_esc(label)}</span>
-          {type_badge}
+          <span class="toc-type-badge" style="background:rgba({ra},{ga},{ba},.12);color:{ac}">{type_label}</span>
+          <span class="toc-arrow" style="color:{ac}">›</span>
         </div>'''
 
     return (f'''
@@ -125,6 +129,7 @@ def _slide_toc(sections: list, i: int, tot: int, t: dict) -> tuple:
   <div class="bg-gradient subtle"></div>
   <div class="bg-orb orb-mini" style="--orb:{a}"></div>
   <div class="bg-noise"></div>
+  <canvas class="slide-particles"></canvas>
   <div class="accent-bar" style="--bar:linear-gradient(90deg,{a},{a2},{a3})"></div>
   <div class="slide-inner">
     <header class="slide-header">
@@ -152,6 +157,7 @@ def _slide_cover(s: dict, i: int, tot: int, t: dict, img: any) -> tuple:
   <div class="bg-orb orb-2" style="--orb:{a2}"></div>
   <div class="bg-orb orb-3" style="--orb:{a3}"></div>
   <div class="bg-noise"></div>
+  <canvas class="slide-particles"></canvas>
   <div class="cover-content">
     <div class="cover-badge" style="--badge-c:{a}">
       <span class="badge-dot"></span>
@@ -239,6 +245,7 @@ def _slide_content(s: dict, i: int, tot: int, t: dict, img: any, caption: str = 
   <div class="bg-gradient subtle"></div>
   <div class="bg-orb orb-mini" style="--orb:{a}"></div>
   <div class="bg-noise"></div>
+  <canvas class="slide-particles"></canvas>
   <div class="accent-bar" style="--bar:linear-gradient(90deg,{a},{a2},{a3})"></div>
   <div class="slide-inner">
     <header class="slide-header">
@@ -293,6 +300,7 @@ def _slide_intro(s: dict, i: int, tot: int, t: dict, img: any, caption: str = ""
   <div class="bg-gradient"></div>
   <div class="bg-orb orb-center" style="--orb:{a}"></div>
   <div class="bg-noise"></div>
+  <canvas class="slide-particles"></canvas>
   <div class="intro-content">
     <div class="slide-badge centered" style="--badge-c:{a}">INTRODUCTION</div>
     <h2 class="intro-title">{title}</h2>
@@ -395,6 +403,7 @@ def _slide_outro(s: dict, i: int, tot: int, t: dict, img: any, topic: str) -> tu
   <div class="bg-orb orb-1" style="--orb:{a}"></div>
   <div class="bg-orb orb-2" style="--orb:{a2}"></div>
   <div class="bg-noise"></div>
+  <canvas class="slide-particles"></canvas>
   <div class="outro-content">
     <div class="outro-icon" style="--icon-c:{a}">✦</div>
     <h2 class="outro-title" style="--title-grad:linear-gradient(135deg,{a},{a2})">{title}</h2>
@@ -546,6 +555,15 @@ html, body {{
   opacity: 0.03;
   z-index: 1;
   pointer-events: none;
+}}
+
+/* ── Floating Particles Canvas ── */
+.slide-particles {{
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.45;
 }}
 
 /* ── Accent Bar ── */
@@ -835,45 +853,67 @@ html, body {{
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   overflow-y: auto;
+  padding-right: 4px;
 }}
 .toc-row {{
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 12px 20px;
-  border-radius: 10px;
-  background: rgba({r},{g},{b},.04);
-  border: 1px solid rgba({r},{g},{b},.1);
+  gap: 18px;
+  padding: 16px 22px;
+  border-radius: 14px;
+  background: rgba({r},{g},{b},.05);
+  border: 1px solid rgba({r},{g},{b},.12);
   opacity: 0;
   animation: fade-up .4s ease both var(--delay);
-  transition: background .2s;
+  cursor: pointer;
+  transition: background .18s, transform .18s, border-color .18s;
 }}
 .toc-row:hover {{
-  background: rgba({r},{g},{b},.09);
+  background: rgba({r},{g},{b},.12);
+  border-color: rgba({r},{g},{b},.3);
+  transform: translateX(6px);
 }}
-.toc-slide-num {{
+.toc-num-box {{
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 14px;
   font-weight: 700;
   font-family: 'JetBrains Mono', monospace;
   flex-shrink: 0;
-  width: 32px;
 }}
 .toc-row-label {{
-  font-size: 16px;
-  font-weight: 500;
+  font-size: 18px;
+  font-weight: 600;
   color: {ink};
   flex: 1;
   line-height: 1.3;
 }}
-.toc-type {{
-  font-size: 10px;
+.toc-type-badge {{
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: .08em;
-  padding: 3px 10px;
+  padding: 4px 12px;
   border-radius: 20px;
   flex-shrink: 0;
+  text-transform: uppercase;
+}}
+.toc-arrow {{
+  font-size: 22px;
+  font-weight: 300;
+  flex-shrink: 0;
+  opacity: 0.5;
+  transition: opacity .18s, transform .18s;
+}}
+.toc-row:hover .toc-arrow {{
+  opacity: 1;
+  transform: translateX(4px);
 }}
 
 /* ── Intro Slide ── */
@@ -1423,6 +1463,46 @@ _JS = r'''
   // Init
   slides[0].classList.add('active');
   update();
+
+  // ── Floating Particles ──────────────────────────────────────────────────
+  (function initParticles() {
+    document.querySelectorAll('.slide-particles').forEach(canvas => {
+      const slide = canvas.parentElement;
+      const accentColor = slide.style.getPropertyValue('--a') || '#7c5cfc';
+      const ctx = canvas.getContext('2d');
+      let W = canvas.width = slide.offsetWidth || window.innerWidth;
+      let H = canvas.height = slide.offsetHeight || window.innerHeight;
+
+      // Parse accent color to RGB
+      let rv = 124, gv = 92, bv = 252;
+      const m = accentColor.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+      if (m) { rv = parseInt(m[1],16); gv = parseInt(m[2],16); bv = parseInt(m[3],16); }
+
+      const pts = Array.from({length: 35}, () => ({
+        x: Math.random() * W, y: Math.random() * H,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: (Math.random() - 0.5) * 0.3,
+        r: Math.random() * 1.8 + 0.5,
+        a: Math.random() * 0.4 + 0.1
+      }));
+
+      function draw() {
+        ctx.clearRect(0, 0, W, H);
+        pts.forEach(p => {
+          p.x += p.vx; p.y += p.vy;
+          if (p.x < 0 || p.x > W) p.vx *= -1;
+          if (p.y < 0 || p.y > H) p.vy *= -1;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(${rv},${gv},${bv},${p.a})`;
+          ctx.fill();
+        });
+        requestAnimationFrame(draw);
+      }
+      draw();
+    });
+  })();
+
 })();
 '''
 
