@@ -132,43 +132,34 @@ def _slide_cover(s: dict, i: int, tot: int, t: dict, img: any) -> tuple:
 
 
 def _slide_content(s: dict, i: int, tot: int, t: dict, img: any, caption: str = "") -> tuple:
-    title = _esc(s.get("title", ""))
-    bullets = s.get("bullets", [])
-    notes = _esc(s.get("speaker_notes", ""))
-    num = f"{i + 1}/{tot}"
+    title      = _esc(s.get("title", ""))
+    paragraph  = _esc(s.get("paragraph", ""))
+    key_points = s.get("key_points", [])
+    page_range = _esc(s.get("page_range", ""))
+    # fallback: if no paragraph, join bullets into one
+    if not paragraph:
+        bullets = s.get("bullets", [])
+        paragraph = _esc(" ".join(
+            (b.get("text","") if isinstance(b,dict) else str(b)) for b in bullets
+        ))
+    notes  = _esc(s.get("speaker_notes", ""))
+    num    = f"{i + 1}/{tot}"
     a, a2, a3 = t["a"], t["a2"], t["a3"]
     r, g, b = _rgb(a)
 
-    # Build bullet HTML
-    bhtml = ""
-    for j, bu in enumerate(bullets):
-        text = bu.get("text", "") or bu.get("content", "") if isinstance(bu, dict) else str(bu)
-        src_id = bu.get("source_id", "") if isinstance(bu, dict) else ""
-        
-        # Split on colon for keyword highlighting
-        parts = text.split(":", 1)
-        keyword = _esc(parts[0].strip())
-        rest = _esc(parts[1].strip()) if len(parts) > 1 else ""
-        
-        delay = 0.1 + j * 0.06
-        accent = a2 if j % 2 else a
-        ra, ga, ba = _rgb(accent)
-        
-        src_tag = f'<span class="bullet-source">📄 {_esc(src_id)}</span>' if src_id else ''
-        
-        bhtml += f'''
-        <div class="bullet-card" style="--delay:{delay:.2f}s;--accent:{accent}">
-          <div class="bullet-index" style="--accent-rgb:{ra},{ga},{ba}">{j + 1:02d}</div>
-          <div class="bullet-content">
-            <span class="bullet-keyword">{keyword}</span>
-            {f'<span class="bullet-rest">{rest}</span>' if rest else ''}
-            {src_tag}
-          </div>
-        </div>
-        '''
+    # Key points HTML
+    kp_html = ""
+    if key_points:
+        items = ""
+        for kp in key_points[:3]:
+            text = _esc(kp.get("text","") if isinstance(kp,dict) else str(kp))
+            src  = _esc(kp.get("source_id","") if isinstance(kp,dict) else "")
+            src_tag = f'<span class="kp-src">📄 {src}</span>' if src else ''
+            items += f'<li class="kp-item"><span class="kp-dot" style="background:{a}"></span><span class="kp-text">{text}</span>{src_tag}</li>'
+        kp_html = f'<ul class="key-points">{items}</ul>'
 
-    # Diagram HTML
-    diag_html = ""
+    # Page range badge
+    page_badge = f'<div class="page-badge">📄 {page_range}</div>' if page_range else ''
 
     # Image HTML
     img_html = ""
@@ -176,15 +167,12 @@ def _slide_content(s: dict, i: int, tot: int, t: dict, img: any, caption: str = 
         src = img.get("url") if isinstance(img, dict) else img
         if src:
             safe_src = src.replace("'", "%27").replace('"', '&quot;')
-            cap_esc = _esc(caption)
-            
-            # Extract source info from caption
+            cap_esc  = _esc(caption)
             src_info = ""
             if caption:
                 m = re.search(r'(Figure|Fig\.?|Table|Chart)\s*[\d\-\.]+', caption, re.IGNORECASE)
                 if m:
                     src_info = m.group(0)
-            
             img_html = f'''
             <div class="media-card image-card" onclick="openLightbox('{safe_src}','{cap_esc}','{_esc(src_info)}')">
               <img src="{safe_src}" alt="Slide visual" class="card-image"/>
@@ -193,16 +181,10 @@ def _slide_content(s: dict, i: int, tot: int, t: dict, img: any, caption: str = 
                 <span>Click to enlarge</span>
               </div>
               {f'<div class="image-caption">{cap_esc}</div>' if caption else ''}
-            </div>
-            '''
+            </div>'''
 
-    # Layout
-    has_media = bool(img_html)
-    layout_class = "layout-split" if has_media else "layout-full"
-
-    media_col = ""
-    if img_html:
-        media_col = f'<div class="media-column">{img_html}</div>'
+    layout_class = "layout-split" if img_html else "layout-full"
+    media_col    = f'<div class="media-column">{img_html}</div>' if img_html else ""
 
     return (f'''
 <section class="slide s-content" data-idx="{i}" style="--a:{a};--a2:{a2};--a3:{a3}">
@@ -218,7 +200,9 @@ def _slide_content(s: dict, i: int, tot: int, t: dict, img: any, caption: str = 
     </header>
     <div class="slide-body {layout_class}">
       <div class="text-column">
-        <div class="bullet-list">{bhtml}</div>
+        <p class="slide-paragraph">{paragraph}</p>
+        {kp_html}
+        {page_badge}
       </div>
       {media_col}
     </div>
@@ -230,19 +214,31 @@ def _slide_content(s: dict, i: int, tot: int, t: dict, img: any, caption: str = 
 
 
 def _slide_intro(s: dict, i: int, tot: int, t: dict, img: any, caption: str = "") -> tuple:
-    title = _esc(s.get("title", ""))
-    bullets = s.get("bullets", [])
+    title     = _esc(s.get("title", ""))
+    paragraph = _esc(s.get("paragraph", ""))
+    key_points = s.get("key_points", [])
+    page_range = _esc(s.get("page_range", ""))
+    if not paragraph:
+        bullets = s.get("bullets", [])
+        paragraph = _esc(" ".join(
+            (b.get("text","") if isinstance(b,dict) else str(b)) for b in bullets
+        ))
     notes = _esc(s.get("speaker_notes", ""))
-    num = f"{i + 1}/{tot}"
+    num   = f"{i + 1}/{tot}"
     a, a2, a3 = t["a"], t["a2"], t["a3"]
 
-    points = "".join(
-        f'''<div class="intro-point" style="--delay:{0.2 + j * 0.08:.2f}s">
-          <span class="point-marker" style="--marker-c:{a2 if j % 2 else a}"></span>
-          <span class="point-text">{_esc(bu.get("text", "") if isinstance(bu, dict) else str(bu))}</span>
-        </div>'''
-        for j, bu in enumerate(bullets)
-    )
+    kp_html = ""
+    if key_points:
+        items = "".join(
+            f'<div class="intro-point" style="--delay:{0.35+j*0.08:.2f}s">'
+            f'<span class="point-marker" style="--marker-c:{a2 if j%2 else a}"></span>'
+            f'<span class="point-text">{_esc(kp.get("text","") if isinstance(kp,dict) else str(kp))}</span>'
+            f'</div>'
+            for j, kp in enumerate(key_points)
+        )
+        kp_html = f'<div class="intro-points">{items}</div>'
+
+    page_badge = f'<div class="page-badge" style="margin-top:16px">📄 {page_range}</div>' if page_range else ''
 
     return (f'''
 <section class="slide s-intro" data-idx="{i}" style="--a:{a};--a2:{a2};--a3:{a3}">
@@ -253,7 +249,9 @@ def _slide_intro(s: dict, i: int, tot: int, t: dict, img: any, caption: str = ""
     <div class="slide-badge centered" style="--badge-c:{a}">INTRODUCTION</div>
     <h2 class="intro-title">{title}</h2>
     <div class="intro-line" style="--line-c:linear-gradient(90deg,transparent,{a},{a2},transparent)"></div>
-    <div class="intro-points">{points}</div>
+    <p class="intro-para">{paragraph}</p>
+    {kp_html}
+    {page_badge}
   </div>
   <div class="slide-number">{num}</div>
   <div class="notes" data-n="{notes}">{s.get("speaker_notes", "")}</div>
@@ -498,15 +496,8 @@ html, body {{
 }}
 
 /* ── Slide Inner ── */
-.slide-inner {{
-  position: relative;
-  z-index: 5;
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  padding: 56px 72px 48px;
-}}
+.slide-inner{{position:relative;z-index:5;display:flex;flex-direction:column;width:100%;height:100%;padding:40px 56px 36px;gap:0}}
+
 
 /* ── Slide Header ── */
 .slide-header {{
@@ -586,79 +577,16 @@ html, body {{
 }}
 .media-column.stacked {{ gap: 16px; }}
 
-/* ── Bullet Cards ── */
-.bullet-list {{
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}}
+/* ── Paragraph + Key Points Layout ── */
+.slide-paragraph{{font-size:16px;font-weight:400;line-height:1.75;color:{ink};opacity:0;animation:fade-up .6s ease .15s forwards;margin-bottom:20px}}
 
-.bullet-card {{
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  padding: 16px 20px;
-  background: {card};
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba({r},{g},{b},0.12);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--radius-sm);
-  opacity: 0;
-  animation: fade-up 0.5s ease var(--delay) forwards;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}}
-.bullet-card:hover {{
-  transform: translateX(4px);
-  box-shadow: var(--shadow-sm);
-}}
+.key-points{{list-style:none;display:flex;flex-direction:column;gap:8px;margin-bottom:14px}}
+.kp-item{{display:flex;align-items:flex-start;gap:10px;opacity:0;animation:fade-up .5s ease both var(--delay,0.3s)}}
+.kp-dot{{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:7px}}
+.kp-text{{font-size:13.5px;font-weight:500;color:{muted};line-height:1.5;flex:1}}
+.kp-src{{font-size:10px;color:{a};font-weight:500;margin-left:6px;opacity:.8;flex-shrink:0}}
 
-.bullet-index {{
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(var(--accent-rgb), 0.12);
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 700;
-  font-family: 'JetBrains Mono', monospace;
-  border-radius: 8px;
-}}
-
-.bullet-content {{
-  flex: 1;
-  min-width: 0;
-}}
-
-.bullet-keyword {{
-  display: block;
-  font-size: 19px;
-  font-weight: 700;
-  color: var(--accent);
-  line-height: 1.3;
-  margin-bottom: 4px;
-}}
-
-.bullet-rest {{
-  display: block;
-  font-size: 17px;
-  font-weight: 400;
-  color: var(--muted);
-  line-height: 1.6;
-}}
-
-.bullet-source {{
-  display: inline-block;
-  margin-top: 8px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--muted);
-  background: rgba({r},{g},{b},0.08);
-  padding: 3px 10px;
-  border-radius: 4px;
-}}
+.page-badge{{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:{a};background:rgba({r},{g},{b},.1);padding:4px 12px;border-radius:20px;border:1px solid rgba({r},{g},{b},.2);opacity:0;animation:fade-up .5s ease .5s forwards}}
 
 /* ── Media Cards ── */
 .media-card {{
@@ -860,13 +788,24 @@ html, body {{
   height: 2px;
   background: var(--line-c);
   border-radius: 2px;
-  margin-bottom: 36px;
+  margin-bottom: 24px;
+}}
+
+.intro-para {{
+  font-size: 17px;
+  line-height: 1.75;
+  color: var(--muted);
+  max-width: 680px;
+  text-align: left;
+  opacity: 0;
+  animation: fade-up 0.6s ease 0.3s forwards;
+  margin-bottom: 20px;
 }}
 
 .intro-points {{
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   text-align: left;
   max-width: 700px;
 }}
@@ -1383,18 +1322,19 @@ def render(
         img = (images or {}).get(i) or (images or {}).get(s.get("image_id"))
         cap = s.get("caption") or captions.get(i, "")
 
-        if i == 0:
+        if stype == "intro":
+            h, _ = _slide_intro(s, i, total, theme, img, cap)
+        elif i == 0:
             h, _ = _slide_cover(s, i, total, theme, img)
         elif i == total - 1:
             h, _ = _slide_outro(s, i, total, theme, img, topic)
         elif stype == "comparison":
             h, _ = _slide_comparison(s, i, total, theme, img, cap)
-        elif stype == "intro":
-            h, _ = _slide_intro(s, i, total, theme, img, cap)
         elif stype == "stats" or s.get("chart_data"):
             h, _ = _slide_stats(s, i, total, theme, img, cap)
         else:
             h, _ = _slide_content(s, i, total, theme, img, cap)
+
 
         sections.append(h)
 

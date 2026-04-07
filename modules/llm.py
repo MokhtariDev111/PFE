@@ -98,35 +98,64 @@ class LLMEngine:
                 {"role": "user", "content": prompt}
             ],
             "temperature": self.temp,
-            "max_tokens": 2048,
+            "max_tokens": 4096,
         }
         
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
+            
+        fallback_models = [
+            self.groq_model,
+            "llama-3.1-8b-instant",
+            "mixtral-8x7b-32768",
+            "gemma2-9b-it",
+            "llama-3.2-3b-preview"
+        ]
         
         async def _make_request() -> str:
+            # Recompute model in case of fallback
+            current_model = payload["model"]
+            headers["Authorization"] = f"Bearer {self.groq_api_key}"
+            
             async with httpx.AsyncClient(timeout=120.0) as client:
                 response = await client.post(self.groq_url, json=payload, headers=headers)
                 
-                # Handle rate limiting
-                
-                if response.status_code == 429:
-                    # Try next Groq key before falling back to Gemini
+                # Handle rate limiting (429) & input/output cap violations (400)
+                if response.status_code in (429, 400):
+                    reason = "Rate limited" if response.status_code == 429 else "Context/Format limit"
+                    # Try next Groq key first
                     next_index = self._groq_key_index + 1
                     if next_index < len(self.groq_api_keys):
                         self._groq_key_index = next_index
                         self.groq_api_key = self.groq_api_keys[next_index]
-                        headers["Authorization"] = f"Bearer {self.groq_api_key}"
-                        log.warning(f"Groq key {next_index} rate limited — switching to key {next_index + 1}")
+                        log.warning(f"Groq {current_model} key {next_index} {reason} — switching to key {next_index + 1}")
                         raise ConnectionError("Switching Groq key, retrying...")
-                    log.warning("All Groq keys rate limited — falling back to Gemini")
-                    raise ConnectionError("ALL_KEYS_EXHAUSTED")
-
-                    
+                    else:
+                        # If keys exhausted, switch to next model and reset keys
+                        # Each model has a separate quota bucket on Groq!
+                        try:
+                            current_model_idx = fallback_models.index(current_model)
+                        except ValueError:
+                            current_model_idx = -1
+                            
+                        next_model_idx = current_model_idx + 1
+                        if next_model_idx < len(fallback_models):
+                            new_model = fallback_models[next_model_idx]
+                            payload["model"] = new_model
+                            self._groq_key_index = 0
+                            self.groq_api_key = self.groq_api_keys[0]
+                            log.warning(f"All Groq keys {reason} for {current_model} — switching model to {new_model} & resetting keys")
+                            raise ConnectionError("Switching Groq model, retrying...")
+                        
+                        log.warning(f"All Groq keys and fallback models {reason} — falling back to Gemini")
+                        raise ConnectionError("ALL_KEYS_EXHAUSTED")
                 
                 # Handle other retryable errors
                 if response.status_code in RETRYABLE_STATUS_CODES:
                     raise ConnectionError(f"Server error {response.status_code}")
+                
+                if not response.is_success:
+                    log.error(f"Groq API Error {response.status_code}: {response.text}")
                 
                 response.raise_for_status()
                 self._rate_limiter.reset()  # Success — reset rate limiter
@@ -135,14 +164,14 @@ class LLMEngine:
                 result = data["choices"][0]["message"]["content"].strip()
                 
                 # Cache successful response
-                set_cached(prompt, model, result)
+                set_cached(prompt, current_model, result)
                 
                 return result
         
         try:
             return await retry_async(
                 _make_request,
-                max_attempts=len(self.groq_api_keys),
+                max_attempts=len(self.groq_api_keys) * len(fallback_models) + 1,
                 base_delay=0.5,
             )
         
@@ -291,27 +320,28 @@ class LLMEngine:
         language: str = "English",
         available_images: list = None,
         image_contexts: dict = None,
+        section_outline: list = None,
     ) -> list[dict]:
         """
         Generate ALL slides in a single LLM call.
         Much faster than sequential generation (1 call vs N calls).
         """
         
-        # Build image info for prompt
+        # We no longer pass available images to the LLM to save tokens.
+        # The python backend (image_matcher) perfectly handles image linking
+        # by regex-matching the Figure references in the generated text!
         image_block = ""
-        if available_images:
-            img_lines = []
-            for img_id in available_images[:15]:
-                ctx = (image_contexts or {}).get(img_id, "")
-                if ctx:
-                    img_lines.append(f'  - "{img_id}": {ctx[:80]}...')
-                else:
-                    img_lines.append(f'  - "{img_id}"')
-            image_block = f"""
-Available images (use image_id field to assign):
-{chr(10).join(img_lines)}
-"""
         
+        outline_block = ""
+        if section_outline:
+            outline_lines = "\n".join(f"  {j+1}. {s}" for j, s in enumerate(section_outline))
+            outline_block = f"""
+DOCUMENT STRUCTURE (sections found in the PDF — use this as your slide outline):
+{outline_lines}
+
+IMPORTANT: Create EXACTLY one slide per section listed above. Each section must appear as a slide title EXACTLY ONCE. Do not create two slides with the same title. If you have more slides than sections, add detail slides using subsection names. Never repeat a section title.
+"""
+
         prompt = f"""You are an expert AI teaching assistant creating an educational presentation.
 
 Generate exactly {num_slides} slides about: {query}
@@ -321,42 +351,40 @@ Language: {language}
 CONTEXT FROM DOCUMENTS:
 {context_text}
 
+{outline_block}
 {image_block}
 
 OUTPUT FORMAT - Return a JSON object with this exact structure:
 {{
   "slides": [
     {{
-      "slide_type": "intro|definition|concept|example|comparison|summary",
-      "title": "Slide Title",
-      "bullets": [
-        {{"text": "Specific fact or concept with concrete details", "source_id": "Page X"}},{{"text": "Specific fact or concept with a full explanation of 15-25 words including context or example", "source_id": "Page X"}},
-        {{"text": "Second distinct point explained in detail with supporting evidence or elaboration", "source_id": "Page Y"}},
-        {{"text": "Third point with a concrete example, application, or consequence described in full", "source_id": "Page Z"}}
+      "slide_type": "title|intro|concept|example|comparison|summary",
+      "title": "Section title from the document",
+      "paragraph": "A clear, well-written paragraph of 200-400 words that explains the section content in simple teaching language. This is the MAIN content of the slide. Write it as if explaining to a student — use the document's facts, terms, and examples but rephrase for clarity.",
+      "key_points": [
+        {{"text": "One key highlight from this section", "source_id": "Page X"}},
+        {{"text": "Another key highlight", "source_id": "Page Y"}}
       ],
-      "key_message": "One-sentence synthesis of this slide's main takeaway",
+      "page_range": "Page X" or "Pages X–Y",
       "visual_hint": "none",
-      "image_id": "IMG_001 or null",
-      "speaker_notes": "Brief explanation for presenter"
+      "image_id": null,
+      "speaker_notes": "Brief note for presenter"
     }}
   ]
 }}
 
 RULES:
-1. Each slide MUST have 4-6 bullets. Each bullet MUST be a complete, detailed sentence of 15-25 words — no one-liners, no vague statements. Include context, explanation, or example in every bullet.
-2. NO repetition between slides - each slide covers different aspects
-3. visual_hint: none
-4. image_id: Assign relevant images from the list above, or null if none fit
-5. Slide types should follow a logical teaching arc:
-   - Start with intro/definition
-   - Middle slides: concept, example, comparison — these MUST be content-rich:
-     * concept slides: explain the idea deeply, include how it works, why it matters, and its components
-     * example slides: give a real-world scenario, walk through it step by step, explain the outcome
-     * comparison slides: contrast two approaches across multiple dimensions (speed, cost, use case, pros/cons)
-   - End with summary
-6. For middle slides specifically, aim for 5-6 bullets, each 20-30 words, covering different angles of the topic
-
-7. All content must be in {language}
+1. Slide 1: type "title", empty paragraph "", empty key_points [].
+2. PARAGRAPH is mandatory for all other slides. Write 120-500 words per paragraph. Extract ALL key ideas from the source context — do not summarize too briefly. Include: what the concept is, how it works, why it matters, specific techniques or strategies mentioned, and any examples or datasets referenced. The paragraph should feel like a complete explanation, not a one-liner.
+3. KEY POINTS: 3-5 short highlights (10-30 words each) that complement the paragraph. These are the most important facts from the section.
+4. PAGE RANGE: Track which pages the content comes from. If one page: "Page 84". If multiple: "Pages 84–86".
+5. Each slide covers ONE section from the document outline. Use the section heading as the title.
+6. STRICT NO REPETITION: No fact or concept should appear in more than one slide.
+7. When the context mentions a figure (e.g. "Figure 2-22"), include that reference in the paragraph.
+8. Slide types: title → intro → concept/example/comparison (based on content) → summary.
+9. All content must be in {language}.
+10. Stay faithful to the source — every claim must be grounded in the provided context.
+11. Each slide covers a DIFFERENT aspect of the topic. If two sections seem similar, focus on what makes each one UNIQUE. Never repeat the same example, dataset name, or concept across two slides.
 
 Generate the {num_slides} slides now as valid JSON:"""
 

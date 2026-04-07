@@ -23,7 +23,7 @@ ocr:
 
 # Step 4 — Text Processing
 text_processing:
-  chunk_size: 512
+  chunk_size: 800
   chunk_overlap: 64
 
 # Step 5 — Embeddings

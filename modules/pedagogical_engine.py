@@ -104,8 +104,15 @@ def _extract_pdf_sections(chunks: list, query: str) -> list[str]:
 
     Only the sub-heading part (after " > ") is returned so it reads naturally
     as a slide title. Falls back to an empty list if no headings are found.
+
+    Bug 2 fix: Uses fuzzy bidirectional substring matching instead of exact
+    token-in-heading checks. This catches "KNeighborsClassifier" for query
+    "k-Nearest Neighbors" because "neighbor" is a substring of "kneighbors..."
     """
     query_lower = query.lower()
+    # Split on spaces AND hyphens to handle "k-nearest" → ["k", "nearest"]
+    query_tokens = [t for t in re.split(r'[\s\-]+', query_lower) if len(t) > 2]
+
     seen        = set()
     sections    = []
 
@@ -114,8 +121,19 @@ def _extract_pdf_sections(chunks: list, query: str) -> list[str]:
         if not heading:
             continue
 
-        # Only keep headings that relate to the query topic
-        if not any(tok in heading.lower() for tok in query_lower.split() if len(tok) > 3):
+        heading_lower = heading.lower()
+        heading_words = re.split(r'[\s\-]+', heading_lower)
+
+        # Match if any query token is a substring of any heading word
+        # OR any heading word is a substring of any query token
+        # This catches: query "neighbors" ↔ heading word "kneighborsclassifier"
+        match = any(
+            (tok in hw or hw in tok)
+            for tok in query_tokens
+            for hw in heading_words
+            if len(hw) > 2
+        )
+        if not match:
             continue
 
         # Extract sub-section (part after " > "), or use full heading if no ">"
@@ -237,7 +255,9 @@ def _build_slide_prompt(
     quality_feedback: str = "",
     available_images: list[str] | None = None,
     image_contexts: dict[str, str] | None = None,
-    pdf_section: str = "",          # Bug F fix: the exact PDF sub-section to cover
+    pdf_section: str = "",
+    mentioned_figures: list[str] | None = None,      # NEW
+    figure_ref_map: dict | None = None,              # NEW
 ) -> str:
     prior_str  = "\n".join(f"- {t}" for t in prior_titles[-6:]) or "(none)"
     used_hints = ", ".join(prior_hints[-4:]) or "(none)"
@@ -268,21 +288,61 @@ def _build_slide_prompt(
         )
 
     # PDF images: tell LLM it can embed one if it matches slide content
+    # PDF images: tell LLM it can embed one if it matches slide content
     image_rule = ""
     if available_images:
         ctx = image_contexts or {}
+        
+        # NEW: Build priority list from mentioned figures
+        priority_imgs = []
+        if mentioned_figures and figure_ref_map:
+            for fig_num in mentioned_figures:
+                # Try different formats: "figure 2-11", "figure 2.11"
+                for ref_key in [
+                    f"figure {fig_num}".lower(),
+                    f"fig. {fig_num}".lower(),
+                    f"table {fig_num}".lower(),
+                ]:
+                    if ref_key in figure_ref_map:
+                        img_id = figure_ref_map[ref_key]
+                        if img_id not in priority_imgs:
+                            priority_imgs.append(img_id)
+                        break
+        
+        # Build image list with PRIORITY images first
         img_lines = []
-        for x in available_images[:12]:
-            desc = ctx.get(x, "")
+        
+        # Add priority images first
+        for img_id in priority_imgs[:3]:  # Top 3 mentioned figures
+            desc = ctx.get(img_id, "")
             if desc:
-                img_lines.append(f'  - "{x}" (context: {desc[:120]}...)')
+                img_lines.append(f'  - "{img_id}" ⭐ PRIORITY (mentioned in context: {desc[:100]}...)')
             else:
-                img_lines.append(f'  - "{x}"')
+                img_lines.append(f'  - "{img_id}" ⭐ PRIORITY')
+        
+        # Add remaining images
+        for x in available_images[:12]:
+            if x not in priority_imgs:
+                desc = ctx.get(x, "")
+                if desc:
+                    img_lines.append(f'  - "{x}" (context: {desc[:120]}...)')
+                else:
+                    img_lines.append(f'  - "{x}"')
+        
         img_block = "\n".join(img_lines)
+        
+        # Build instruction
+        priority_note = ""
+        if mentioned_figures:
+            priority_note = f"\n   ⚠️ The source context mentions: {', '.join(mentioned_figures)}. Use the corresponding ⭐ PRIORITY image if relevant."
+        
         image_rule = f"""
 10. image_id: PROMPTING PRIORITY — If an embedded PDF image matches this slide's content, 
-    you MUST set image_id to its exact ID. Available:
+    you MUST set image_id to its exact ID.{priority_note}
+    
+    Available images:
 {img_block}
+    
     If image_id is used, set visual_hint to "none". Otherwise use null for image_id."""
 
     return f"""You are an expert AI teaching assistant. Output ONLY a valid JSON object for ONE slide.
@@ -296,14 +356,13 @@ JSON schema:
 
 Rules:
 1. slide_type must be exactly: {slide_type}
-2. **CONTENT CREATIVITY**: Use analogies and fresh examples. DO NOT copy text verbatim from the context. Re-explain in a teaching tone.
-3. **CONTENT DEPTH**: Every bullet MUST contain a specific fact, date, statistic, or mechanism. No generic filler.
+2. **SUMMARIZE, DO NOT COPY**: Each bullet must EXPLAIN the main idea from the context in clear, simple language. Do NOT copy-paste from the document. Re-explain as if teaching a student. Use 15-25 words per bullet.
+3. **CONTENT DEPTH**: Include specific terms, names, and concepts from the source — but always rephrase and simplify them. No generic filler.
 4. **NO REPETITION**: Check previous slides: {prior_str}. DO NOT repeat information or sentence structures.
 5. **KEY MESSAGE**: A strategic takeaway or analogy that summarizes the slide's purpose.
 6. **VISUAL HINT**: Mandatory. Suggested: "{suggested}". Choose from: flowchart, mindmap, timeline, comparison, process, hierarchy, none.
-7. **MOTION HINTS**: For each bullet, focus on a "stepwise build". Mention in speaker_notes how the animator should handle the build for maximum impact.
-8. All content in {language}.
-9. Output starts with {{ and ends with }}. No markdown. No conversational filler.
+7. All content in {language}.
+8. Output starts with {{ and ends with }}. No markdown. No conversational filler.
 {image_rule}
 
 Context from documents:

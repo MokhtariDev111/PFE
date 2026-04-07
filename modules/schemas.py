@@ -196,17 +196,22 @@ def validate_and_fix_slide(raw_data: dict) -> dict:
             if len(text) >= 10:
                 fixed_bullets.append({"text": text, "source_id": b.get("source_id")})
     
-    # Ensure at least one bullet
-    if not fixed_bullets:
+    # Ensure at least one bullet (allow empty for title/paragraph slides)
+    if not fixed_bullets and not raw_data.get("paragraph"):
         fixed_bullets = [{"text": "Content to be added.", "source_id": None}]
-    
+
     raw_data["bullets"] = fixed_bullets
     
     # Try to validate
     slide, error = validate_slide(raw_data)
     
     if slide:
-        return slide.to_dict()
+        result = slide.to_dict()
+        # Inject new fields that Pydantic schema doesn't know about
+        result["paragraph"] = raw_data.get("paragraph", "")
+        result["key_points"] = raw_data.get("key_points", [])
+        result["page_range"] = raw_data.get("page_range", "")
+        return result
     else:
         # Return cleaned raw data as fallback
         log.warning(f"Using fallback slide data: {error[:50] if error else 'unknown'}")
@@ -214,6 +219,9 @@ def validate_and_fix_slide(raw_data: dict) -> dict:
             "slide_type": raw_data.get("slide_type", "concept"),
             "title": raw_data.get("title", "Untitled"),
             "bullets": fixed_bullets,
+            "paragraph": raw_data.get("paragraph", ""),
+            "key_points": raw_data.get("key_points", []),
+            "page_range": raw_data.get("page_range", ""),
             "key_message": raw_data.get("key_message", ""),
             "visual_hint": raw_data.get("visual_hint", "none"),
             "image_id": raw_data.get("image_id"),

@@ -1,7 +1,18 @@
 """
-ingestion.py  —  Step 2: Data Ingestion
-Loads PDFs (text) and images from data/raw/.
-Produces a list of DocumentPage dicts for downstream steps.
+ingestion.py  —  v3: Better Figure Reference Extraction
+========================================================
+FIXES:
+1. Each image stores its own figure_ref (e.g., "Figure 2-7") extracted from its caption
+2. Images NO LONGER inherit section_heading from the page (causes wrong matches)
+3. New field: figure_number for normalized matching (e.g., "2-7", "2.8")
+
+This allows the image assignment logic to match:
+- Slide text: "as shown in Figure 2-8"
+- Image: figure_ref="Figure 2-8" ✓
+
+Instead of wrong matching:
+- Slide title: "k-neighbors regression" 
+- Image: section_heading="k-neighbors regression" but figure_ref="Figure 2-7" ✗
 """
 
 from pathlib import Path
@@ -11,6 +22,7 @@ from PIL import Image
 import base64
 import io
 import logging
+import re
 
 log = logging.getLogger("ingestion")
 if not log.hasHandlers():
@@ -25,11 +37,13 @@ TXT_EXT   = {".txt"}
 class DocumentPage:
     source: str
     page:   int          # 1-based for PDFs, 0 for images/txt
-    type:   str          # "pdf" | "image" | "txt"
+    type:   str          # "pdf" | "image" | "txt" | "pdf_image"
     text:   str = ""     # empty for images → filled by OCR (Step 3)
     image:  object = field(default=None, repr=False)
-    caption: str = ""    # Figure caption
-    section_heading: str = ""   # Nearest parent heading detected from font size (Bug A fix)
+    caption: str = ""           # Full caption text
+    figure_ref: str = ""        # Normalized figure reference e.g. "Figure 2-22"
+    figure_number: str = ""     # Just the number part for matching e.g. "2-22"
+    section_heading: str = ""   # Nearest parent heading (for TEXT pages only)
 
 
 def load_txt(path: Path) -> DocumentPage:
@@ -46,47 +60,53 @@ def _pil_to_base64(img: Image.Image) -> str:
     return base64.b64encode(buffered.getvalue()).decode("utf-8")
 
 
-
-# ── Heading detection thresholds (Bug A fix) ──────────────────────────────────
-# Derived from font-size survey of this book and generalised for most PDFs.
-# Anything >= H1_SIZE is a chapter title, >= H2_SIZE is a section heading.
-# Body text in this book is 10.5pt; we pick thresholds safely above that.
-_H1_SIZE = 14.0   # chapter-level  (e.g. "Ensembles of Decision Trees" 15.8pt)
-_H2_SIZE = 11.0   # section-level  (e.g. "Building decision trees" 11.6pt)
-_BODY_MAX = 10.9  # anything at or below this is body / caption / footer
+# ── Heading detection thresholds ──────────────────────────────────────────────
+_H1_SIZE = 14.0   # chapter-level
+_H2_SIZE = 11.0   # section-level
+_BODY_MAX = 10.9  # body text
 
 
 def _extract_headings_from_page(page_dict: dict) -> list[tuple[float, str]]:
     """
-    Return list of (font_size, heading_text) for every span on this page
-    whose font size is above _H2_SIZE.  Results are in reading order.
+    Return list of (font_size, heading_text) for headings on this page.
+
+    Detection strategy:
+      1. Font size >= _H2_SIZE (11.0)  → heading (original logic)
+      2. Bold text with size >= 10.0   → heading (catches academic PDFs that
+         use bold rather than larger font for section titles)
     """
     headings = []
     for block in page_dict.get("blocks", []):
-        if block.get("type") != 0:       # 0 = text block
+        if block.get("type") != 0:
             continue
         for line in block.get("lines", []):
             line_text_parts = []
             max_size = 0.0
+            is_bold = False
             for span in line.get("spans", []):
                 sz = span.get("size", 0)
                 t  = span.get("text", "").strip()
+                flags = span.get("flags", 0)
                 if not t:
                     continue
                 max_size = max(max_size, sz)
+                # PyMuPDF: bit 4 of flags = bold (value 16)
+                if flags & (1 << 4):
+                    is_bold = True
                 line_text_parts.append(t)
             line_text = " ".join(line_text_parts).strip()
-            # Accept as heading only if large enough and not a page-number/footer
-            # Also cap length: real headings are short; long lines are body text
-            if max_size >= _H2_SIZE and line_text and 3 < len(line_text) <= 80:
-                # Reject obvious page numbers / footer lines (short all-numeric)
+
+            # Accept as heading if font is large enough OR if bold with decent size
+            is_heading = (max_size >= _H2_SIZE) or (is_bold and max_size >= 10.0)
+
+            if is_heading and line_text and 3 < len(line_text) <= 80:
                 if not line_text.replace("|", "").replace(" ", "").isdigit():
                     headings.append((max_size, line_text))
     return headings
 
 
 def _page_plain_text(page_dict: dict) -> str:
-    """Reconstruct plain text from a page dict (preserves paragraph breaks)."""
+    """Reconstruct plain text from a page dict."""
     lines = []
     for block in page_dict.get("blocks", []):
         if block.get("type") != 0:
@@ -99,43 +119,121 @@ def _page_plain_text(page_dict: dict) -> str:
     return "\n\n".join(lines).strip()
 
 
+def _extract_figure_caption(text: str, page_num: int = 0) -> str:
+    """
+    Extract figure/table caption from page text.
+    Returns the full caption line.
+    """
+    if not text:
+        return ""
+    
+    patterns = [
+        r'(Figure\s+\d+[-.\d]*[.:]\s*[^\n]+)',
+        r'(Fig\.\s*\d+[-.\d]*[.:]\s*[^\n]+)',
+        r'(Table\s+\d+[-.\d]*[.:]\s*[^\n]+)',
+        r'(Diagram\s+\d+[-.\d]*[.:]\s*[^\n]+)',
+        r'(Chart\s+\d+[-.\d]*[.:]\s*[^\n]+)',
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            caption = match.group(1).strip()
+            if len(caption) > 150:
+                caption = caption[:147] + "..."
+            return caption
+    
+    return ""
+
+
+def _extract_figure_ref(caption: str) -> str:
+    """Extract normalized figure reference like 'Figure 2-22' from caption."""
+    if not caption:
+        return ""
+    m = re.match(r'(Figure\s+[\d][-.\d]*|Fig\.\s*[\d][-.\d]*|Table\s+[\d][-.\d]*)', caption, re.IGNORECASE)
+    return m.group(1).strip() if m else ""
+
+
+def _extract_figure_number(figure_ref: str) -> str:
+    """
+    Extract just the number part for easier matching.
+    'Figure 2-22' -> '2-22'
+    'Fig. 3.5' -> '3.5'
+    'Table 1' -> '1'
+    """
+    if not figure_ref:
+        return ""
+    # Remove prefix and normalize
+    num = re.sub(r'^(Figure|Fig\.?|Table|Diagram|Chart)\s*', '', figure_ref, flags=re.IGNORECASE)
+    return num.strip()
+
+
+def _find_all_figure_references_in_text(text: str) -> list[str]:
+    """
+    Find ALL figure references mentioned in text (not just captions).
+    Returns list of figure numbers like ['2-7', '2-8', '3-1'].
+    
+    This is used to:
+    1. Know which figures are actually referenced in each section
+    2. Match slide content to the correct figure
+    """
+    if not text:
+        return []
+    
+    patterns = [
+        r'Figure\s+([\d][-.\d]*)',
+        r'Fig\.\s*([\d][-.\d]*)',
+        r'Table\s+([\d][-.\d]*)',
+    ]
+    
+    refs = []
+    for pattern in patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        refs.extend(matches)
+    
+    # Deduplicate while preserving order
+    seen = set()
+    unique = []
+    for r in refs:
+        if r not in seen:
+            seen.add(r)
+            unique.append(r)
+    
+    return unique
+
+
 def load_pdf(path: Path) -> list[DocumentPage]:
     """
     Load a PDF and return DocumentPage objects.
-    Bug A fix: uses get_text("dict") to detect headings by font size.
-    Each page's section_heading is set to the most recent h1/h2 seen so far,
-    so every chunk knows which section of the document it belongs to.
+    
+    v3 FIX: Images get their own figure_ref from their caption,
+    NOT the section_heading of the page (which caused mismatches).
     """
     doc = fitz.open(str(path))
     pages = []
     total_pages = len(doc)
 
-    # Skip preliminary pages (covers, TOC, preface)
+    # Skip preliminary pages
     skip_count = max(2, min(6, int(total_pages * 0.08)))
 
-    # Running state: track the current section as we walk through pages
-    current_h1 = ""   # chapter-level heading
-    current_h2 = ""   # section-level heading
+    # Running state for TEXT pages
+    current_h1 = ""
+    current_h2 = ""
 
     try:
         for i in range(len(doc)):
             page = doc[i]
-
-            # ── 1. Extract structured page dict (font sizes + text) ──────────
             page_dict = page.get_text("dict")
 
-            # ── 2. Detect any new headings on this page ──────────────────────
+            # Detect headings
             for size, heading_text in _extract_headings_from_page(page_dict):
                 if size >= _H1_SIZE:
                     current_h1 = heading_text
-                    current_h2 = ""          # reset sub-heading on new chapter
-                    log.debug(f"  H1 on p{i+1}: {heading_text!r}")
+                    current_h2 = ""
                 elif size >= _H2_SIZE:
                     current_h2 = heading_text
-                    log.debug(f"  H2 on p{i+1}: {heading_text!r}")
 
-            # Build the section label that will tag every chunk from this page.
-            # Format: "Chapter > Section" or just "Section" or just "Chapter"
+            # Section label for TEXT pages
             if current_h1 and current_h2:
                 section_label = f"{current_h1} > {current_h2}"
             elif current_h2:
@@ -143,9 +241,13 @@ def load_pdf(path: Path) -> list[DocumentPage]:
             else:
                 section_label = current_h1
 
-            # ── 3. Reconstruct plain text ────────────────────────────────────
+            # Plain text
             text = _page_plain_text(page_dict)
+            
+            # Find all figure references in text (for context)
+            figure_refs_in_text = _find_all_figure_references_in_text(text)
 
+            # Add TEXT page (with section_heading)
             pages.append(
                 DocumentPage(
                     source=path.name,
@@ -160,13 +262,16 @@ def load_pdf(path: Path) -> list[DocumentPage]:
             if i < skip_count:
                 continue
 
-            # ── 4. Detect full-page diagrams (little text + many drawings) ───
+            # ── Full-page diagrams ───────────────────────────────────────────
             drawings = page.get_drawings()
             if len(text) < 500 and len(drawings) > 2:
                 try:
                     pix = page.get_pixmap(dpi=120)
                     img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                    caption = _extract_figure_caption(text)
+                    caption = _extract_figure_caption(text, i + 1)
+                    fig_ref = _extract_figure_ref(caption)
+                    fig_num = _extract_figure_number(fig_ref)
+                    
                     pages.append(
                         DocumentPage(
                             source=f"{path.name} (Full Page {i+1} Diagram)",
@@ -174,13 +279,16 @@ def load_pdf(path: Path) -> list[DocumentPage]:
                             type="pdf_image",
                             image=_pil_to_base64(img),
                             caption=caption,
-                            section_heading=section_label,   # inherit section
+                            figure_ref=fig_ref,
+                            figure_number=fig_num,
+                            # NOTE: No section_heading for images!
+                            section_heading="",  
                         )
                     )
                 except Exception as e:
-                    log.warning(f"Failed to extract Page {i+1} diagram from {path.name}: {e}")
+                    log.warning(f"Failed to extract Page {i+1} diagram: {e}")
 
-            # ── 5. Extract first embedded raster image per page ──────────────
+            # ── Embedded raster images ───────────────────────────────────────
             img_list = page.get_images(full=True)
             if img_list:
                 xref = img_list[0][0]
@@ -190,7 +298,10 @@ def load_pdf(path: Path) -> list[DocumentPage]:
                         pil_img = Image.open(io.BytesIO(base_img["image"])).convert("RGB")
                         if pil_img.width >= 150 and pil_img.height >= 150:
                             b64_img = _pil_to_base64(pil_img)
-                            caption = _extract_figure_caption(text)
+                            caption = _extract_figure_caption(text, i + 1)
+                            fig_ref = _extract_figure_ref(caption)
+                            fig_num = _extract_figure_number(fig_ref)
+                            
                             pages.append(
                                 DocumentPage(
                                     source=f"{path.name} (page {i+1} img)",
@@ -198,7 +309,10 @@ def load_pdf(path: Path) -> list[DocumentPage]:
                                     type="pdf_image",
                                     image=b64_img,
                                     caption=caption,
-                                    section_heading=section_label,  # inherit section
+                                    figure_ref=fig_ref,
+                                    figure_number=fig_num,
+                                    # NOTE: No section_heading for images!
+                                    section_heading="",
                                 )
                             )
                     except Exception as e:
@@ -207,48 +321,15 @@ def load_pdf(path: Path) -> list[DocumentPage]:
     finally:
         doc.close()
 
-    # ── Logging ───────────────────────────────────────────────────────────────
+    # Logging
     img_count  = sum(1 for p in pages if p.type == "pdf_image")
     txt_count  = sum(1 for p in pages if p.type == "pdf")
-    head_count = sum(1 for p in pages if p.section_heading)
+    fig_count  = sum(1 for p in pages if p.figure_ref)
     log.info(
         f"[PDF] {path.name} → {txt_count} text pg(s), {img_count} img(s), "
-        f"{head_count} pages with section_heading, skipped first {skip_count} for images"
+        f"{fig_count} with figure_ref, skipped first {skip_count} for images"
     )
     return pages
-
-def _extract_figure_caption(text: str) -> str:
-    """
-    Extract figure/table caption from page text.
-    Looks for patterns like:
-      - "Figure 3-23. Description here"
-      - "Fig. 5: Some caption"
-      - "Table 2.1 - Data overview"
-    """
-    import re
-    
-    if not text:
-        return ""
-    
-    # Common figure/table caption patterns
-    patterns = [
-        r'(Figure\s+\d+[-.\d]*[.:]\s*[^\n]+)',      # Figure 3-23. Description
-        r'(Fig\.\s*\d+[-.\d]*[.:]\s*[^\n]+)',       # Fig. 5: Description
-        r'(Table\s+\d+[-.\d]*[.:]\s*[^\n]+)',       # Table 2.1. Description
-        r'(Diagram\s+\d+[-.\d]*[.:]\s*[^\n]+)',     # Diagram 1: Description
-        r'(Chart\s+\d+[-.\d]*[.:]\s*[^\n]+)',       # Chart 3. Description
-    ]
-    
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            caption = match.group(1).strip()
-            # Limit length
-            if len(caption) > 150:
-                caption = caption[:147] + "..."
-            return caption
-    
-    return ""
 
 
 def load_image(path: Path) -> DocumentPage:
@@ -282,6 +363,57 @@ def ingest_directory(raw_dir: str | Path) -> list[DocumentPage]:
     return results
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# HELPER: Get content by type (for enrichment pipeline)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def get_content_by_type(pages: list[DocumentPage], content_type: str) -> list[DocumentPage]:
+    """
+    Filter pages by content_type.
+    content_type: 'text' | 'image' | 'table' | 'code'
+    """
+    type_map = {
+        'text': lambda p: p.type in ('pdf', 'txt'),
+        'image': lambda p: p.type in ('pdf_image', 'image'),
+        'table': lambda p: getattr(p, 'content_type', None) == 'table',
+        'code': lambda p: getattr(p, 'content_type', None) == 'code',
+    }
+    
+    filter_fn = type_map.get(content_type, lambda p: False)
+    return [p for p in pages if filter_fn(p)]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# HELPER: Build figure reference index
+# ══════════════════════════════════════════════════════════════════════════════
+
+def build_figure_index(pages: list[DocumentPage]) -> dict:
+    """
+    Build an index mapping figure numbers to image data.
+    
+    Returns: {
+        "2-7": {"image_id": "IMG_001", "caption": "...", "page": 5},
+        "2-8": {"image_id": "IMG_002", "caption": "...", "page": 5},
+        ...
+    }
+    """
+    figure_index = {}
+    img_counter = 0
+    
+    for page in pages:
+        if page.type == "pdf_image" and page.figure_number:
+            img_counter += 1
+            img_id = f"IMG_{img_counter:03d}"
+            figure_index[page.figure_number] = {
+                "image_id": img_id,
+                "caption": page.caption,
+                "figure_ref": page.figure_ref,
+                "page": page.page,
+            }
+    
+    return figure_index
+
+
 # ── Quick run ─────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import sys
@@ -289,10 +421,13 @@ if __name__ == "__main__":
     from modules.config_loader import CONFIG
 
     pages = ingest_directory(CONFIG["paths"]["data_raw"])
-    pdfs  = [p for p in pages if p.type == "pdf"]
-    imgs  = [p for p in pages if p.type == "image"]
-    empty = [p for p in pdfs  if not p.text]
-
-    print(f"PDF pages : {len(pdfs)}")
-    print(f"Images    : {len(imgs)}")
-    print(f"Empty(OCR): {len(empty)}")
+    
+    print("\n── Figure Reference Summary ──")
+    for p in pages:
+        if p.type == "pdf_image" and p.figure_ref:
+            print(f"  Page {p.page}: {p.figure_ref} (number: {p.figure_number})")
+    
+    print(f"\n── Building Figure Index ──")
+    fig_index = build_figure_index(pages)
+    for fig_num, info in fig_index.items():
+        print(f"  {fig_num}: {info['image_id']} - {info['caption'][:50]}...")

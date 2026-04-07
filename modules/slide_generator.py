@@ -29,6 +29,9 @@ class SlideData:
     slide_type:       str
     title:            str
     bullets:          list = field(default_factory=list)
+    paragraph:        str  = ""
+    key_points:       list = field(default_factory=list)
+    page_range:       str  = ""
     speaker_notes:    str  = ""
     key_message:      str  = ""
     visual_hint:      str  = "none"

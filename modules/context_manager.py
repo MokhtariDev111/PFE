@@ -175,8 +175,34 @@ def prepare_context_for_slides(
     """
     base_tokens   = 2000
     scaled_tokens = base_tokens + (num_slides * tokens_per_slide)
-    max_tokens    = min(scaled_tokens, 3500)   
+    # Bug 1 fix: raised from 3500 → 6000.  Per-section generation keeps
+    # individual calls small, so this cap only constrains the global pool.
+    max_tokens    = min(scaled_tokens, 6000)
 
-    log.info(f"Context budget for {num_slides} slides: {max_tokens} tokens (cap was 3500)")
+    log.info(f"Context budget for {num_slides} slides: {max_tokens} tokens")
 
     return prepare_context(chunks, max_tokens=max_tokens)
+
+def extract_section_outline(chunks: list) -> list[str]:
+    """
+    Extract unique ordered section headings from retrieved chunks.
+
+    Bug 3 fix: returns the sub-section name (after " > ") rather than the
+    full "Parent > Child" path.  This produces cleaner slide titles and
+    simpler section labels for the LLM prompt.
+    """
+    seen_full = set()   # track full headings to avoid duplicates
+    seen_sub  = set()   # track sub-section names to avoid duplicate labels
+    sections  = []
+    for chunk in chunks:
+        heading = getattr(chunk, 'section_heading', '') or ''
+        if not heading or heading in seen_full:
+            continue
+        seen_full.add(heading)
+        # Extract sub-section part for a cleaner label
+        sub = heading.split(" > ", 1)[-1].strip() if " > " in heading else heading
+        if sub and sub not in seen_sub:
+            seen_sub.add(sub)
+            sections.append(sub)
+    log.info(f"Section outline: {len(sections)} unique sections from {len(chunks)} chunks")
+    return sections

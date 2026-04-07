@@ -22,6 +22,10 @@ import re
 from pathlib import Path
 from datetime import datetime
 
+from matplotlib.pyplot import title
+
+from modules.pedagogical_engine import _build_slide_prompt
+
 ROOT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT_DIR))
 
@@ -38,7 +42,7 @@ from modules.retrieval import Retriever, _load_reranker
 from modules.slide_generator import SlideData
 from modules.history_store import record_presentation, load_history, clear_history
 from modules.html_renderer import render as render_html
-from modules.context_manager import prepare_context_for_slides
+from modules.context_manager import prepare_context_for_slides, extract_section_outline
 from modules.llm_cache import clear_cache, cache_stats
 from modules.evaluation import RAGEvaluator
 from modules.health import full_health_check, quick_status
@@ -126,16 +130,69 @@ def _build_image_registry(pages: list, chunks: list) -> tuple[dict, list, dict, 
         else:
             image_contexts[simple_id] = caption or f"Image: {page.source[:100]}"
     
-    return pdf_images, list(pdf_images.keys()), image_contexts, image_captions
+    figure_ref_map = {}
+    for img_id, page in zip(list(pdf_images.keys()), pdf_img_pages):
+        ref = getattr(page, 'figure_ref', '') or ''
+        if ref:
+            # Store multiple key variants to handle different formats
+            key = ref.lower().strip().rstrip('.:')
+            figure_ref_map[key] = img_id
+            # Also store just the number part e.g. "2-23"
+            num_match = re.search(r'[\d]+[-\.][\d]+', key)
+            if num_match:
+                figure_ref_map[f"figure {num_match.group(0)}"] = img_id
+                figure_ref_map[f"fig. {num_match.group(0)}"] = img_id
 
+    return pdf_images, list(pdf_images.keys()), image_contexts, image_captions, figure_ref_map
 
-def _assign_fallback_images(slides: list, pdf_images: dict, image_contexts: dict) -> dict:
+def _extract_figure_refs_from_chunks(chunks: list) -> list[str]:
+    """
+    Extract all figure references mentioned in chunks.
+    Returns list like ['2-11', '2-12', '3-5']
+    """
+    mentioned = []
+    for chunk in chunks:
+        text = getattr(chunk, 'text', '')
+        # Find patterns like "Figure 2-11", "Fig. 2-12", "Table 3-5"
+        refs = re.findall(
+            r'(?:Figure|Fig\.|Table)\s+([\d]+[-\.][\d]+(?:[-\.][\d]+)*)',
+            text,
+            re.IGNORECASE
+        )
+        mentioned.extend(refs)
+    
+    # Deduplicate while preserving order
+    seen = set()
+    unique = []
+    for ref in mentioned:
+        if ref not in seen:
+            seen.add(ref)
+            unique.append(ref)
+    
+    return unique
+
+def _assign_fallback_images(slides: list, pdf_images: dict, image_contexts: dict, figure_ref_map: dict = None, chunks: list = None) -> dict:
     """Auto-assign images to slides without image_id based on content matching."""
     if not pdf_images:
         return {}
     
     used_images = set()
     render_images = {}
+
+    # Build section → figure refs map from original chunks
+    section_fig_map = {}
+    if chunks and figure_ref_map:
+        for chunk in chunks:
+            section = getattr(chunk, 'section_heading', '') or ''
+            if not section:
+                continue
+            fig_refs = re.findall(r'figure\s+[\d]+[-\.][\d]+', chunk.text, re.IGNORECASE)
+            if section not in section_fig_map:
+                section_fig_map[section] = []
+            for ref in fig_refs:
+                norm = ref.lower().strip()
+                if norm not in section_fig_map[section]:
+                    section_fig_map[section].append(norm)
     
     for i, slide in enumerate(slides):
         iid = slide.get("image_id") if isinstance(slide, dict) else getattr(slide, "image_id", None)
@@ -151,13 +208,56 @@ def _assign_fallback_images(slides: list, pdf_images: dict, image_contexts: dict
             continue
         
         # Build slide text
+        # Build slide text - INCLUDE PARAGRAPH where batch mode puts figure refs
         title = slide.get("title", "") if isinstance(slide, dict) else getattr(slide, "title", "")
         bullets = slide.get("bullets", []) if isinstance(slide, dict) else getattr(slide, "bullets", [])
+        paragraph = slide.get("paragraph", "") if isinstance(slide, dict) else getattr(slide, "paragraph", "")
+        key_points = slide.get("key_points", []) if isinstance(slide, dict) else getattr(slide, "key_points", [])
+
+        # Combine all text fields
         bullet_texts = [b.get("text", "") if isinstance(b, dict) else str(b) for b in bullets]
-        slide_text = f"{title} {' '.join(bullet_texts)}".lower()
+        keypoint_texts = [kp.get("text", "") if isinstance(kp, dict) else str(kp) for kp in key_points]
+
+        slide_text = f"{title} {paragraph} {' '.join(bullet_texts)} {' '.join(keypoint_texts)}".lower()
         
+        # Priority match: figure reference mentioned in slide text
+        # Priority match: figure reference mentioned in slide text
+        fig_mentioned = False
+        if figure_ref_map:
+            fig_match = re.search(r'figure\s+([\d]+[-\.][\d]+(?:[-\.][\d]+)*)|fig\.\s*([\d]+[-\.][\d]+(?:[-\.][\d]+)*)', slide_text, re.IGNORECASE)
+            if fig_match:
+                fig_mentioned = True  # text explicitly names a figure
+                fig_num = (fig_match.group(1) or fig_match.group(2) or "").strip()
+                ref_key = f"figure {fig_num}".lower()
+                if ref_key in figure_ref_map and figure_ref_map[ref_key] not in used_images:
+                    img_id = figure_ref_map[ref_key]
+                    render_images[i] = f"data:image/jpeg;base64,{pdf_images[img_id]}"
+                    used_images.add(img_id)
+                    continue
+                # Figure mentioned but not found in map — skip, don't assign wrong image
+                continue
+
+        # Fallback: look up figure refs from the PDF section this slide belongs to
+        if not fig_mentioned and section_fig_map:
+            slide_section = slide.get("title", "") if isinstance(slide, dict) else ""
+            for section, refs in section_fig_map.items():
+                if section.lower() == slide_section.lower():
+                    for ref in refs:
+                        if ref in figure_ref_map and figure_ref_map[ref] not in used_images:
+                            img_id = figure_ref_map[ref]
+                            render_images[i] = f"data:image/jpeg;base64,{pdf_images[img_id]}"
+                            used_images.add(img_id)
+                            fig_mentioned = True
+                            break
+                if fig_mentioned:
+                    break
+
+        # Keyword matching only when no figure is explicitly mentioned
+        if fig_mentioned:
+            continue
+
+
         # Strict matching: Find best matching unused image
-        import re
         slide_words = set(re.findall(r'\b[a-z]{5,}\b', slide_text))
         best_match, best_score = None, 0
         for img_id, context in image_contexts.items():
@@ -174,7 +274,59 @@ def _assign_fallback_images(slides: list, pdf_images: dict, image_contexts: dict
     
     return render_images
 
-
+    # ===== DEBUG OUTPUT =====
+    print(f"\n{'='*70}")
+    print(f"🖼️ IMAGE ASSIGNMENT DEBUG")
+    print(f"{'='*70}")
+    print(f"Total slides: {len(slides)}")
+    print(f"Images assigned: {len(render_images)}")
+    print(f"\nPer-slide breakdown:")
+    
+    for i, slide in enumerate(slides):
+        title = slide.get("title", "")
+        paragraph = slide.get("paragraph", "")[:150]
+        assigned_img = render_images.get(i)
+        
+        print(f"\n--- SLIDE {i+1}: {title} ---")
+        
+        # Show paragraph snippet
+        if paragraph:
+            print(f"Paragraph: {paragraph}...")
+        
+        # Search for figure refs in this slide
+        full_text = f"{title} {slide.get('paragraph', '')} {' '.join([str(b) for b in slide.get('bullets', [])])}"
+        fig_refs = re.findall(r'(?:Figure|Fig\.|Table)\s+([\d]+[-\.][\d]+)', full_text, re.IGNORECASE)
+        
+        if fig_refs:
+            print(f"Figure refs found: {fig_refs}")
+            
+            # Check if they're in the map
+            for ref in fig_refs:
+                key = f"figure {ref}".lower()
+                if key in figure_ref_map:
+                    expected_img = figure_ref_map[key]
+                    print(f"  '{key}' maps to: {expected_img}")
+                    if expected_img in image_captions:
+                        print(f"    Caption: {image_captions[expected_img]}")
+        else:
+            print(f"No figure references found in text")
+        
+        # Show what was assigned
+        if assigned_img:
+            # Extract image ID from the base64 data URL
+            for img_id, b64 in pdf_images.items():
+                if b64 in assigned_img:
+                    caption = image_captions.get(img_id, "No caption")
+                    print(f"✅ ASSIGNED: {img_id}")
+                    print(f"   Caption: {caption}")
+                    break
+        else:
+            print(f"❌ NO IMAGE ASSIGNED")
+    
+    print(f"{'='*70}\n")
+    # ===== END DEBUG =====
+    
+    return render_images
 # ── Startup ──────────────────────────────────────────────────────────────────
 @app.on_event("startup")
 async def startup_event():
@@ -266,6 +418,7 @@ async def generate_stream(
                 available_image_ids = cached.get("available_image_ids", [])
                 image_contexts = cached.get("image_contexts", {})
                 image_captions = cached.get("image_captions", {})
+                figure_ref_map = cached.get("figure_ref_map", {})
                 yield _emit("status", {"step": "indexing", "message": "Using cached index…"})
             else:
                 print(f"🆕 CACHE MISS: Building new index (hash: {file_hash[:12]}...)", flush=True)
@@ -303,9 +456,9 @@ async def generate_stream(
                 chunks, pages = await asyncio.to_thread(_process_sync)
                 
                 if use_pdf_images:
-                    pdf_images, available_image_ids, image_contexts, image_captions = _build_image_registry(pages, chunks)
+                    pdf_images, available_image_ids, image_contexts, image_captions, figure_ref_map = _build_image_registry(pages, chunks)
                 else:
-                    pdf_images, available_image_ids, image_contexts, image_captions = {}, [], {}, {}
+                    pdf_images, available_image_ids, image_contexts, image_captions, figure_ref_map = {}, [], {}, {}, {}
                 
                 isolated_index = tmp_dir / "faiss"
                 build_vector_db(chunks, index_path=isolated_index)
@@ -317,6 +470,7 @@ async def generate_stream(
                     "available_image_ids": available_image_ids,
                     "image_contexts": image_contexts,
                     "image_captions": image_captions,
+                    "figure_ref_map": figure_ref_map,
                 }
                 print(f"💾 Cached index for future requests", flush=True)
                 yield _emit("status", {"step": "indexing", "message": "Index built successfully…"})
@@ -324,8 +478,31 @@ async def generate_stream(
             # 3. Retrieve
             yield _emit("status", {"step": "retrieving", "message": "Retrieving context…"})
             retriever = Retriever(index_path=isolated_index)
-            results = retriever.search_expanded(prompt, top_k=top_k)
-            
+            # First pass: global search to get section outline
+            results = retriever.search_expanded(prompt, top_k=max(top_k, 12))
+            section_outline = extract_section_outline(results)
+
+            # Second pass: retrieve chunks per section for accurate context
+            if section_outline:
+                per_section_chunks = []
+                seen_ids = set()
+                for section in section_outline:
+                    section_chunks = retriever.search_for_section(
+                        section, section_heading=section, top_k=5
+                    )
+                    # Keep only chunks from this section
+                    section_chunks = [
+                        c for c in section_chunks
+                        if section.lower() in (getattr(c, 'section_heading', '') or '').lower()
+                    ] or section_chunks  # fallback to unfiltered if nothing matches
+
+                    for c in section_chunks:
+                        cid = getattr(c, 'chunk_id', None) or hash(c.text[:100])
+                        if cid not in seen_ids:
+                            seen_ids.add(cid)
+                            per_section_chunks.append(c)
+                results = per_section_chunks if per_section_chunks else results
+
             context_text = prepare_context_for_slides(
                 chunks=results,
                 num_slides=num_slides,
@@ -351,6 +528,8 @@ async def generate_stream(
                     language=lang_label,
                     available_images=available_image_ids,
                     image_contexts=image_contexts,
+                    section_outline=section_outline,
+
                 )
                 
                 slides_raw = []
@@ -385,16 +564,46 @@ async def generate_stream(
                     slide_chunks = retriever.search(sub_q, top_k=5) or results
                     ctx_text = _prepare_context(slide_chunks)
                     
+                    # NEW: Extract figure references from retrieved chunks
+                    mentioned_figures = _extract_figure_refs_from_chunks(slide_chunks)
+                    print(f"\n{'='*60}")
+                    print(f"🔍 SLIDE {i+1} - Figure Extraction Debug")
+                    print(f"{'='*60}")
+                    print(f"📄 Retrieved {len(slide_chunks)} chunks")
+                    print(f"🎯 Extracted figures: {mentioned_figures}")
+
+                    if mentioned_figures and figure_ref_map:
+                        print(f"🗺️ Figure mappings found:")
+                        for fig_num in mentioned_figures:
+                            key = f"figure {fig_num}".lower()
+                            if key in figure_ref_map:
+                                img_id = figure_ref_map[key]
+                                caption = image_captions.get(img_id, "No caption")
+                                print(f"  {key} → {img_id}")
+                                print(f"    Caption: {caption}")
+                    print(f"{'='*60}\n")
                     slide = None
                     for attempt in range(2):
                         slide_prompt = _build_slide_prompt(
                             prompt, ctx_text, stype, i+1, num_slides, lang_label,
                             prior_titles, prior_hints,
                             available_images=available_image_ids,
-                            image_contexts=image_contexts
+                            image_contexts=image_contexts,
+                            mentioned_figures=mentioned_figures,  # NEW parameter
+                            figure_ref_map=figure_ref_map,        # NEW parameter
                         )
                         raw = await llm.generate_async(prompt, slide_chunks, prompt_override=slide_prompt)
                         parsed = _extract_slide_json(raw)
+                        if parsed:
+                            llm_image_id = parsed.get('image_id')
+                            print(f"🤖 LLM RESPONSE:")
+                            print(f"   Title: {parsed.get('title', 'N/A')}")
+                            print(f"   Image ID assigned by LLM: {llm_image_id}")
+                            if llm_image_id and llm_image_id in image_captions:
+                                print(f"   Caption: {image_captions[llm_image_id]}")
+                            elif llm_image_id:
+                                print(f"   ⚠️ Image ID not found in captions!")
+                            print()
                         if parsed and _slide_fingerprint(parsed) not in prior_fps:
                             slide = parsed
                             break
@@ -419,6 +628,9 @@ async def generate_stream(
                 s_obj = SlideData(
                     title=slide.get("title", ""),
                     bullets=slide.get("bullets", []),
+                    paragraph=slide.get("paragraph", ""),
+                    key_points=slide.get("key_points", []),
+                    page_range=slide.get("page_range", ""),
                     speaker_notes=slide.get("speaker_notes", ""),
                     slide_type=slide.get("slide_type", "content"),
                     visual_hint=slide.get("visual_hint", "none"),
@@ -445,7 +657,10 @@ async def generate_stream(
 
                 html_slides.append({
                     "title": s.title,
-                    "bullets": html_bullets,
+                    "bullets": s.bullets,
+                    "paragraph": s.paragraph,
+                    "key_points": s.key_points,
+                    "page_range": s.page_range,
                     "speaker_notes": s.speaker_notes,
                     "slide_type": s.slide_type,
                     "image_id": img_id_val,
@@ -455,7 +670,7 @@ async def generate_stream(
                 })
 
             # 8. Assign images
-            render_images = _assign_fallback_images(html_slides, pdf_images, image_contexts)
+            render_images = _assign_fallback_images(html_slides, pdf_images, image_contexts, figure_ref_map, chunks)
             print(f"🖼️ Assigned {len(render_images)} images", flush=True)
 
             # Build image captions for renderer
