@@ -12,6 +12,7 @@ import json
 import asyncio
 import logging
 import os
+import re
 from pathlib import Path
 import sys
 from modules.llm_cache import get_cached, set_cached
@@ -342,6 +343,17 @@ DOCUMENT STRUCTURE (sections found in the PDF — use this as your slide outline
 IMPORTANT: Create EXACTLY one slide per section listed above. Each section must appear as a slide title EXACTLY ONCE. Do not create two slides with the same title. If you have more slides than sections, add detail slides using subsection names. Never repeat a section title.
 """
 
+        # NEW: Extract figure references from context and tell LLM to include them
+        figure_refs = re.findall(r'(?:see |shown in |refer to )?(?:Figure|Fig\.|Table)\s+([\d]+[-\.][\d]+)', context_text, re.IGNORECASE)
+        figure_block = ""
+        if figure_refs:
+            unique_figs = list(dict.fromkeys(figure_refs))  # Remove duplicates, preserve order
+            figure_block = f"""
+FIGURES MENTIONED IN SOURCE:
+The context mentions these figures: {', '.join(unique_figs)}
+You MUST include these figure references in your paragraphs where relevant. Copy them exactly as "Figure X-Y" or "Table X-Y".
+"""
+
         prompt = f"""You are an expert AI teaching assistant creating an educational presentation.
 
 Generate exactly {num_slides} slides about: {query}
@@ -352,7 +364,7 @@ CONTEXT FROM DOCUMENTS:
 {context_text}
 
 {outline_block}
-{image_block}
+{figure_block}
 
 OUTPUT FORMAT - Return a JSON object with this exact structure:
 {{
@@ -380,7 +392,7 @@ RULES:
 4. PAGE RANGE: Track which pages the content comes from. If one page: "Page 84". If multiple: "Pages 84–86".
 5. Each slide covers ONE section from the document outline. Use the section heading as the title.
 6. STRICT NO REPETITION: No fact or concept should appear in more than one slide.
-7. When the context mentions a figure (e.g. "Figure 2-22"), include that reference in the paragraph.
+7. CRITICAL: When the context mentions a figure (e.g. "see Figure 2-22" or "shown in Figure 2-11"), you MUST include that EXACT figure reference in your paragraph. Copy the figure reference verbatim from the source. Example: "Linear models work by computing ŷ = w[0] * x[0] + b (see Figure 2-11)". DO NOT paraphrase or omit figure numbers.
 8. Slide types: title → intro → concept/example/comparison (based on content) → summary.
 9. All content must be in {language}.
 10. Stay faithful to the source — every claim must be grounded in the provided context.
