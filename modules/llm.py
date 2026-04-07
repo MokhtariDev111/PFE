@@ -310,6 +310,58 @@ class LLMEngine:
             return await self._call_ollama(prompt, model)
 
     # ══════════════════════════════════════════════════════════════════════════
+    # IDEA EXTRACTION — Split a section's content into distinct ideas
+    # ══════════════════════════════════════════════════════════════════════════
+
+    async def extract_ideas_from_section(
+        self,
+        section_name: str,
+        chunks_text: str,
+        max_ideas: int = 3,
+        language: str = "English",
+    ) -> list[str]:
+        """
+        Given a section name and its raw chunk text, extract 2-3 distinct ideas.
+        Returns a list of short focus descriptions (one per idea).
+        """
+        prompt = f"""You are analyzing a section of a textbook called "{section_name}".
+
+Here is the content of this section:
+{chunks_text[:3000]}
+
+Your task: identify exactly {max_ideas} COMPLETELY DIFFERENT ideas in this section.
+
+STRICT RULES:
+- Idea 2 must NOT mention any concept, dataset, figure, or formula already in Idea 1
+- Idea 3 must NOT mention anything already in Ideas 1 or 2
+- Each idea must be a different ASPECT: e.g. Idea 1 = theory/definition, Idea 2 = implementation/code, Idea 3 = limitations/tradeoffs
+- Use specific terms from the text (formulas, class names, dataset names, figure numbers)
+- If you cannot find {max_ideas} truly different ideas, return fewer
+
+Return a JSON object:
+{{
+  "ideas": [
+    "Idea 1: [theory/definition aspect — 15-25 words with specific terms]",
+    "Idea 2: [implementation/code aspect — 15-25 words, NO overlap with Idea 1]",
+    "Idea 3: [limitations/examples aspect — 15-25 words, NO overlap with Ideas 1-2]"
+  ]
+}}
+
+Language: {language}"""
+
+        try:
+            raw = await self.generate_async("", [], prompt_override=prompt)
+            data = json.loads(raw)
+            ideas = data.get("ideas", [])
+            # Clean and limit
+            ideas = [str(i).strip() for i in ideas if str(i).strip()][:max_ideas]
+            log.info(f"Extracted {len(ideas)} ideas from section '{section_name[:40]}'")
+            return ideas
+        except Exception as e:
+            log.warning(f"Idea extraction failed for '{section_name}': {e}")
+            return []
+
+    # ══════════════════════════════════════════════════════════════════════════
     # BATCH GENERATION - All slides in ONE call
     # ══════════════════════════════════════════════════════════════════════════
     
@@ -335,12 +387,20 @@ class LLMEngine:
         
         outline_block = ""
         if section_outline:
-            outline_lines = "\n".join(f"  {j+1}. {s}" for j, s in enumerate(section_outline))
+            lines = []
+            for j, entry in enumerate(section_outline):
+                if isinstance(entry, dict):
+                    # Idea-level entry: {section, focus}
+                    lines.append(f"  {j+1}. {entry['section']} — FOCUS: {entry['focus']}")
+                else:
+                    lines.append(f"  {j+1}. {entry}")
+            outline_lines = "\n".join(lines)
             outline_block = f"""
-DOCUMENT STRUCTURE (sections found in the PDF — use this as your slide outline):
+DOCUMENT STRUCTURE (sections and their specific focus for each slide):
 {outline_lines}
 
-IMPORTANT: Create EXACTLY one slide per section listed above. Each section must appear as a slide title EXACTLY ONCE. Do not create two slides with the same title. If you have more slides than sections, add detail slides using subsection names. Never repeat a section title.
+IMPORTANT: Create EXACTLY one slide per entry above. Use the section name as the slide title. The FOCUS tells you exactly which idea or concept this slide must cover — do not go beyond it.
+NOTE: Slide 1 is always type "title" (no content). Slide 2 is always type "intro" (overview of the topic). The last slide is always type "summary". The sections above fill the middle slides.
 """
 
         # NEW: Extract figure references from context and tell LLM to include them
@@ -387,16 +447,19 @@ OUTPUT FORMAT - Return a JSON object with this exact structure:
 
 RULES:
 1. Slide 1: type "title", empty paragraph "", empty key_points [].
-2. PARAGRAPH is mandatory for all other slides. Write 120-500 words per paragraph. Extract ALL key ideas from the source context — do not summarize too briefly. Include: what the concept is, how it works, why it matters, specific techniques or strategies mentioned, and any examples or datasets referenced. The paragraph should feel like a complete explanation, not a one-liner.
+2. Slide 2: type "intro". Write a SHORT, non-technical overview (2-3 sentences max, 40-60 words). Just answer: what is this topic and why does it matter? Do NOT include formulas, figures, or technical details in the intro slide.
+3. PARAGRAPH is mandatory for all other slides (slides 3 to last-1). Write 120-300 words per paragraph.
 3. KEY POINTS: 3-5 short highlights (10-30 words each) that complement the paragraph. These are the most important facts from the section.
 4. PAGE RANGE: Track which pages the content comes from. If one page: "Page 84". If multiple: "Pages 84–86".
-5. Each slide covers ONE section from the document outline. Use the section heading as the title.
-6. STRICT NO REPETITION: No fact or concept should appear in more than one slide.
-7. CRITICAL: When the context mentions a figure (e.g. "see Figure 2-22" or "shown in Figure 2-11"), you MUST include that EXACT figure reference in your paragraph. Copy the figure reference verbatim from the source. Example: "Linear models work by computing ŷ = w[0] * x[0] + b (see Figure 2-11)". DO NOT paraphrase or omit figure numbers.
+5. Each slide covers ONE section from the document outline. Use the section heading as the title. If a FOCUS is specified for the slide, write ONLY about that focus — nothing else.
+6. STRICT NO REPETITION: Each slide must introduce NEW information. If a FOCUS is given, it defines exactly what is new. Never write about the same concept as a previous slide even if the section title is the same.
+7. CRITICAL: When the context mentions a figure (e.g. "see Figure 2-22" or "shown in Figure 2-11"), you MUST include that EXACT figure reference in your paragraph. Copy the figure reference verbatim from the source. ONLY reference figures that appear in the context chunks provided for this slide. Do NOT reference figures from other sections or slides — if Figure 2-31 is not in this slide's context, do not mention it.
 8. Slide types: title → intro → concept/example/comparison (based on content) → summary.
 9. All content must be in {language}.
 10. Stay faithful to the source — every claim must be grounded in the provided context.
 11. Each slide covers a DIFFERENT aspect of the topic. If two sections seem similar, focus on what makes each one UNIQUE. Never repeat the same example, dataset name, or concept across two slides.
+12. For slides sharing the same section title: explicitly label what sub-topic each covers. Slide 1 of a section = theory/definition. Slide 2 = implementation/code/parameters. Slide 3 = limitations/comparison/examples. Never repeat the same sub-topic.
+13. A figure reference (e.g. Figure 2-18) must appear in AT MOST ONE slide across the entire presentation. If you already used Figure 2-18 in a previous slide, do not reference it again in any subsequent slide. This is a HARD rule — violating it is not allowed under any circumstances.
 
 Generate the {num_slides} slides now as valid JSON:"""
 

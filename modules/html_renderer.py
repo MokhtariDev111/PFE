@@ -99,6 +99,46 @@ def _rgb(h: str) -> tuple:
 
 # ── Slide Builders ────────────────────────────────────────────────────────────
 
+def _slide_toc(sections: list, i: int, tot: int, t: dict) -> tuple:
+    """Table of contents slide — vertical table with slide numbers."""
+    a, a2, a3 = t["a"], t["a2"], t["a3"]
+    r, g, b = _rgb(a)
+    num = f"{i + 1}/{tot}"
+
+    rows = ""
+    for entry in sections:
+        slide_num = entry["num"]
+        label     = entry["label"]
+        stype     = entry["type"]
+        delay     = 0.1 + (slide_num - 1) * 0.05
+        ac        = a2 if slide_num % 2 == 0 else a
+        ra, ga, ba = _rgb(ac)
+        type_badge = f'<span class="toc-type" style="background:rgba({ra},{ga},{ba},.12);color:{ac}">{stype.upper()}</span>'
+        rows += f'''<div class="toc-row" style="--delay:{delay:.2f}s">
+          <span class="toc-slide-num" style="color:{ac}">{slide_num:02d}</span>
+          <span class="toc-row-label">{_esc(label)}</span>
+          {type_badge}
+        </div>'''
+
+    return (f'''
+<section class="slide s-toc" data-idx="{i}" style="--a:{a};--a2:{a2};--a3:{a3}">
+  <div class="bg-gradient subtle"></div>
+  <div class="bg-orb orb-mini" style="--orb:{a}"></div>
+  <div class="bg-noise"></div>
+  <div class="accent-bar" style="--bar:linear-gradient(90deg,{a},{a2},{a3})"></div>
+  <div class="slide-inner">
+    <header class="slide-header">
+      <div class="slide-badge" style="--badge-c:{a}">TABLE OF CONTENTS</div>
+      <h2 class="slide-title">What We'll Cover</h2>
+      <div class="title-underline" style="--line-c:{a}"></div>
+    </header>
+    <div class="toc-table">{rows}</div>
+  </div>
+  <div class="slide-number">{num}</div>
+</section>
+'''), ""
+
+
 def _slide_cover(s: dict, i: int, tot: int, t: dict, img: any) -> tuple:
     title = _esc(s.get("title", ""))
     notes = _esc(s.get("speaker_notes", ""))
@@ -161,11 +201,15 @@ def _slide_content(s: dict, i: int, tot: int, t: dict, img: any, caption: str = 
     # Page range badge
     page_badge = f'<div class="page-badge">📄 {page_range}</div>' if page_range else ''
 
-    # Image HTML
+    # Image HTML — support single image or list of two images
     img_html = ""
     if img:
-        src = img.get("url") if isinstance(img, dict) else img
-        if src:
+        img_list = img if isinstance(img, list) else [img]
+        cards = []
+        for img_item in img_list[:2]:
+            src = img_item.get("url") if isinstance(img_item, dict) else img_item
+            if not src:
+                continue
             safe_src = src.replace("'", "%27").replace('"', '&quot;')
             cap_esc  = _esc(caption)
             src_info = ""
@@ -173,7 +217,7 @@ def _slide_content(s: dict, i: int, tot: int, t: dict, img: any, caption: str = 
                 m = re.search(r'(Figure|Fig\.?|Table|Chart)\s*[\d\-\.]+', caption, re.IGNORECASE)
                 if m:
                     src_info = m.group(0)
-            img_html = f'''
+            cards.append(f'''
             <div class="media-card image-card" onclick="openLightbox('{safe_src}','{cap_esc}','{_esc(src_info)}')">
               <img src="{safe_src}" alt="Slide visual" class="card-image"/>
               <div class="image-overlay">
@@ -181,7 +225,11 @@ def _slide_content(s: dict, i: int, tot: int, t: dict, img: any, caption: str = 
                 <span>Click to enlarge</span>
               </div>
               {f'<div class="image-caption">{cap_esc}</div>' if caption else ''}
-            </div>'''
+            </div>''')
+        if len(cards) == 2:
+            img_html = f'<div class="dual-images">{"".join(cards)}</div>'
+        elif cards:
+            img_html = cards[0]
 
     layout_class = "layout-split" if img_html else "layout-full"
     media_col    = f'<div class="media-column">{img_html}</div>' if img_html else ""
@@ -313,19 +361,33 @@ def _slide_comparison(s: dict, i: int, tot: int, t: dict, img: any, caption: str
 
 
 def _slide_outro(s: dict, i: int, tot: int, t: dict, img: any, topic: str) -> tuple:
-    title = _esc(s.get("title", "Conclusion"))
-    bullets = s.get("bullets", [])
-    notes = _esc(s.get("speaker_notes", ""))
-    num = f"{i + 1}/{tot}"
+    title     = _esc(s.get("title", "Conclusion"))
+    paragraph = _esc(s.get("paragraph", ""))
+    key_points = s.get("key_points", [])
+    page_range = _esc(s.get("page_range", ""))
+    notes     = _esc(s.get("speaker_notes", ""))
+    num       = f"{i + 1}/{tot}"
     a, a2, a3 = t["a"], t["a2"], t["a3"]
 
-    points = "".join(
-        f'''<div class="outro-point" style="--delay:{0.25 + j * 0.08:.2f}s">
-          <span class="outro-marker" style="--c:{a2 if j % 2 else a}"></span>
-          <span>{_esc(bu.get("text", "") if isinstance(bu, dict) else str(bu))}</span>
-        </div>'''
-        for j, bu in enumerate(bullets[:6])
-    )
+    # fallback: use bullets if no paragraph
+    if not paragraph:
+        bullets = s.get("bullets", [])
+        paragraph = _esc(" ".join(
+            (b.get("text","") if isinstance(b,dict) else str(b)) for b in bullets
+        ))
+
+    kp_html = ""
+    if key_points:
+        points = "".join(
+            f'''<div class="outro-point" style="--delay:{0.35 + j * 0.08:.2f}s">
+              <span class="outro-marker" style="--c:{a2 if j % 2 else a}"></span>
+              <span>{_esc(kp.get("text","") if isinstance(kp,dict) else str(kp))}</span>
+            </div>'''
+            for j, kp in enumerate(key_points[:5])
+        )
+        kp_html = f'<div class="outro-points">{points}</div>'
+
+    page_badge = f'<div class="page-badge" style="margin-top:16px">📄 {page_range}</div>' if page_range else ''
 
     return (f'''
 <section class="slide s-outro" data-idx="{i}" style="--a:{a};--a2:{a2};--a3:{a3}">
@@ -337,7 +399,9 @@ def _slide_outro(s: dict, i: int, tot: int, t: dict, img: any, topic: str) -> tu
     <div class="outro-icon" style="--icon-c:{a}">✦</div>
     <h2 class="outro-title" style="--title-grad:linear-gradient(135deg,{a},{a2})">{title}</h2>
     <div class="outro-line" style="--line-c:linear-gradient(90deg,{a},{a2},{a3})"></div>
-    <div class="outro-points">{points}</div>
+    <p class="outro-para">{paragraph}</p>
+    {kp_html}
+    {page_badge}
     <div class="outro-topic" style="--topic-c:{a2}">{_esc(topic)}</div>
   </div>
   <div class="slide-number">{num}</div>
@@ -612,6 +676,12 @@ html, body {{
 .image-card:hover .image-overlay {{
   opacity: 1;
 }}
+.dual-images {{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  height: 100%;
+}}
 
 .card-image {{
   width: 100%;
@@ -758,6 +828,52 @@ html, body {{
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   color: var(--ink);
+}}
+
+/* ── Table of Contents ── */
+.toc-table {{
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+}}
+.toc-row {{
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 20px;
+  border-radius: 10px;
+  background: rgba({r},{g},{b},.04);
+  border: 1px solid rgba({r},{g},{b},.1);
+  opacity: 0;
+  animation: fade-up .4s ease both var(--delay);
+  transition: background .2s;
+}}
+.toc-row:hover {{
+  background: rgba({r},{g},{b},.09);
+}}
+.toc-slide-num {{
+  font-size: 14px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  flex-shrink: 0;
+  width: 32px;
+}}
+.toc-row-label {{
+  font-size: 16px;
+  font-weight: 500;
+  color: {ink};
+  flex: 1;
+  line-height: 1.3;
+}}
+.toc-type {{
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  padding: 3px 10px;
+  border-radius: 20px;
+  flex-shrink: 0;
 }}
 
 /* ── Intro Slide ── */
@@ -997,6 +1113,17 @@ html, body {{
   opacity: 0.7;
   opacity: 0;
   animation: fade-up 0.5s ease 0.7s forwards;
+}}
+
+.outro-para {{
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--muted);
+  max-width: 640px;
+  text-align: left;
+  opacity: 0;
+  animation: fade-up 0.6s ease 0.3s forwards;
+  margin-bottom: 20px;
 }}
 
 /* ── HUD ── */
@@ -1310,30 +1437,65 @@ def render(
     images: dict = None,
     theme_name: str = None,
     captions: dict = None,
+    section_outline: list = None,
 ) -> str:
     html_theme = _PPTX_TO_HTML_THEME.get(theme_name, theme_name)
     theme = THEMES.get(html_theme) or THEMES[_auto_theme(session_id)]
-    total = len(slides)
+
+    # Build TOC entries — full slide list with numbers, types, labels
+    toc_entries = []
+    if section_outline:
+        # Slide 1 = cover (skip), Slide 2 = TOC (skip), Slide 3 = intro
+        # Then content slides, last = summary
+        slide_num = 3  # intro starts at 3 (after cover + TOC)
+        toc_entries.append({"num": slide_num, "label": "Introduction", "type": "intro"})
+        slide_num += 1
+
+        seen_toc = set()
+        for entry in section_outline:
+            label = entry.get('section', entry) if isinstance(entry, dict) else entry
+            clean = label.split(">")[-1].strip() if ">" in label else label
+            toc_entries.append({"num": slide_num, "label": clean, "type": "content"})
+            slide_num += 1
+
+        toc_entries.append({"num": slide_num, "label": "Summary", "type": "summary"})
+
+    # Inject TOC slide after cover (index 1), shift all other slides by 1
+    toc_injected = False
+    total = len(slides) + (1 if toc_entries else 0)
     sections = []
     captions = captions or {}
+    slide_offset = 0  # offset due to TOC injection
 
     for i, s in enumerate(slides):
+        actual_i = i + slide_offset
         stype = s.get("slide_type") or s.get("type") or "content"
         img = (images or {}).get(i) or (images or {}).get(s.get("image_id"))
         cap = s.get("caption") or captions.get(i, "")
 
+        # After cover (i==0), inject TOC
+        if i == 0:
+            h, _ = _slide_cover(s, actual_i, total, theme, img)
+            sections.append(h)
+            if toc_entries:
+                slide_offset = 1
+                actual_i = 1
+                toc_h, _ = _slide_toc(toc_entries, actual_i, total, theme)
+                sections.append(toc_h)
+            continue
+
+        actual_i = i + slide_offset
+
         if stype == "intro":
-            h, _ = _slide_intro(s, i, total, theme, img, cap)
-        elif i == 0:
-            h, _ = _slide_cover(s, i, total, theme, img)
-        elif i == total - 1:
-            h, _ = _slide_outro(s, i, total, theme, img, topic)
+            h, _ = _slide_intro(s, actual_i, total, theme, img, cap)
+        elif actual_i == total - 1:
+            h, _ = _slide_outro(s, actual_i, total, theme, img, topic)
         elif stype == "comparison":
-            h, _ = _slide_comparison(s, i, total, theme, img, cap)
+            h, _ = _slide_comparison(s, actual_i, total, theme, img, cap)
         elif stype == "stats" or s.get("chart_data"):
-            h, _ = _slide_stats(s, i, total, theme, img, cap)
+            h, _ = _slide_stats(s, actual_i, total, theme, img, cap)
         else:
-            h, _ = _slide_content(s, i, total, theme, img, cap)
+            h, _ = _slide_content(s, actual_i, total, theme, img, cap)
 
 
         sections.append(h)
