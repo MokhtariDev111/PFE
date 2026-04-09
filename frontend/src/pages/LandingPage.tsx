@@ -6,6 +6,7 @@ import TextType from "@/components/reactbits/TextType";
 import BorderGlow from "@/components/reactbits/BorderGlow";
 import DarkVeil from "@/components/reactbits/DarkVeil";
 import GlareHover from "@/components/reactbits/GlareHover";
+import { useTheme } from "@/components/ThemeProvider";
 
 // ── Aurora animated background ───────────────────────────────────────────────
 function AuroraBackground() {
@@ -20,8 +21,8 @@ function AuroraBackground() {
       {/* Animated aurora blobs */}
       {[
         { color: "hsl(var(--primary)/0.12)", x: "10%", y: "20%", size: "600px", dur: "18s" },
-        { color: "hsl(var(--accent)/0.08)",  x: "70%", y: "60%", size: "500px", dur: "22s" },
-        { color: "hsl(235,80%,70%,0.07)",    x: "40%", y: "80%", size: "400px", dur: "15s" },
+        { color: "hsl(var(--accent)/0.08)", x: "70%", y: "60%", size: "500px", dur: "22s" },
+        { color: "hsl(235,80%,70%,0.07)", x: "40%", y: "80%", size: "400px", dur: "15s" },
       ].map((b, i) => (
         <div
           key={i}
@@ -99,74 +100,7 @@ function ParticleBackground() {
   return <canvas ref={canvasRef} className="fixed inset-0 pointer-events-none z-0" style={{ opacity: 0.5 }} />;
 }
 
-// ── Welcome avatar ────────────────────────────────────────────────────────────
-function WelcomeAvatar() {
-  const [visible, setVisible] = useState(true);
-
-  useEffect(() => {
-    const t = setTimeout(() => setVisible(false), 8000);
-    return () => clearTimeout(t);
-  }, []);
-
-  return (
-    <AnimatePresence>
-      {visible && (
-        <motion.div
-          initial={{ opacity: 0, y: 60, scale: 0.85 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 30, scale: 0.9 }}
-          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-          className="fixed bottom-10 right-10 z-50 flex items-end gap-4"
-        >
-          {/* Speech bubble */}
-          <motion.div
-            initial={{ opacity: 0, x: 30, scale: 0.9 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            transition={{ delay: 0.4, duration: 0.5, ease: "easeOut" }}
-            className="relative max-w-[280px]"
-            style={{
-              background: "linear-gradient(135deg, hsl(var(--card)/0.95), hsl(var(--card)/0.85))",
-              border: "1px solid hsl(var(--primary)/0.3)",
-              borderRadius: "20px 20px 4px 20px",
-              padding: "18px 22px",
-              backdropFilter: "blur(20px)",
-              boxShadow: "0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px hsl(var(--primary)/0.1)",
-            }}
-          >
-            <p className="text-base font-bold text-foreground mb-1">
-              Welcome to TEKUP AI! 👋
-            </p>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              Transform your PDFs into stunning presentations, quizzes & more.
-            </p>
-            <motion.div
-              className="mt-3 h-0.5 rounded-full"
-              style={{ background: "linear-gradient(90deg, hsl(var(--primary)), hsl(var(--accent)))" }}
-              initial={{ scaleX: 0 }}
-              animate={{ scaleX: 1 }}
-              transition={{ delay: 0.8, duration: 7, ease: "linear" }}
-              style2={{ transformOrigin: "left" }}
-            />
-          </motion.div>
-
-          {/* Avatar circle */}
-          <motion.div
-            initial={{ scale: 0, rotate: -20 }}
-            animate={{ scale: 1, rotate: 0 }}
-            transition={{ delay: 0.2, duration: 0.6, type: "spring", stiffness: 200 }}
-            className="w-20 h-20 rounded-full flex-shrink-0 flex items-center justify-center shadow-2xl"
-            style={{
-              background: "linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)))",
-              boxShadow: "0 0 40px hsl(var(--primary)/0.5), 0 20px 40px rgba(0,0,0,0.4)",
-            }}
-          >
-            <GraduationCap className="w-10 h-10 text-white" />
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-}
+// Removed WelcomeAvatar (now in GlobalAssistant)
 
 // ── Meteor effect ────────────────────────────────────────────────────────────
 function Meteors({ count = 18 }: { count?: number }) {
@@ -273,26 +207,10 @@ const features = [
 
 export default function LandingPage() {
   const navigate = useNavigate();
-  const [isDark, setIsDark] = useState(true);
-
-  // Force dark mode when landing page mounts, restore on unmount
-  useEffect(() => {
-    const root = document.documentElement;
-    root.classList.add("dark");
-    return () => {
-      // Restore to whatever the user had before
-      root.classList.remove("dark");
-    };
-  }, []);
+  const { isDark, setTheme } = useTheme();
 
   const toggleTheme = () => {
-    const root = document.documentElement;
-    if (isDark) {
-      root.classList.remove("dark");
-    } else {
-      root.classList.add("dark");
-    }
-    setIsDark(!isDark);
+    setTheme(isDark ? "light" : "dark");
   };
 
   return (
@@ -304,7 +222,6 @@ export default function LandingPage() {
       <AuroraBackground />
       <ParticleBackground />
       <FloatingPhotos />
-      <WelcomeAvatar />
 
       {/* Gradient orbs */}
       <div className="fixed inset-0 pointer-events-none z-0">
@@ -427,17 +344,16 @@ export default function LandingPage() {
                   transition={{ duration: 0.5, delay: i * 0.1 }}
                   whileHover={{ y: -6, scale: 1.02 }}
                   onClick={() => navigate("/dashboard")}
+                  className="h-full flex"
                 >
-                  <BorderGlow
-                    borderRadius={16}
-                    glowRadius={32}
-                    backgroundColor="hsl(var(--card))"
-                    colors={['#c084fc', '#818cf8', '#38bdf8']}
-                    glowColor="235 80 65"
-                    fillOpacity={0.3}
-                    className="h-full cursor-pointer"
+                  <GlareHover
+                    width="100%"
+                    height="100%"
+                    background="hsl(var(--card))"
+                    borderRadius="16px"
+                    className="cursor-pointer border border-border"
                   >
-                    <div className="p-6 group">
+                    <div className="p-6 group h-full relative z-10">
                       <div className={`w-12 h-12 rounded-xl ${f.bg} flex items-center justify-center mb-4`}>
                         <div className={`bg-gradient-to-br ${f.color} rounded-lg p-2`}>
                           <Icon className="w-5 h-5 text-white" />
@@ -448,7 +364,7 @@ export default function LandingPage() {
                       </h3>
                       <p className="text-muted-foreground text-sm leading-relaxed">{f.desc}</p>
                     </div>
-                  </BorderGlow>
+                  </GlareHover>
                 </motion.div>
               );
             })}

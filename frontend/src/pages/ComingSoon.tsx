@@ -42,7 +42,7 @@ export default function ComingSoon({ title, description, icon }: ComingSoonProps
             Back to Dashboard
           </button>
           <button
-            onClick={() => navigate("/generate")}
+            onClick={() => navigate("/generate_from_doc")}
             className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-medium text-white transition-all hover:scale-105"
             style={{
               background: "linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)))",

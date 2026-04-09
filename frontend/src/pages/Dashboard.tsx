@@ -51,9 +51,9 @@ export default function Dashboard() {
       const avgTime =
         history.length > 0
           ? (
-              history.reduce((sum, h) => sum + (h.elapsed_seconds || 0), 0) /
-              history.length
-            ).toFixed(1)
+            history.reduce((sum, h) => sum + (h.elapsed_seconds || 0), 0) /
+            history.length
+          ).toFixed(1)
           : 0;
 
       setStats({
@@ -132,7 +132,7 @@ export default function Dashboard() {
             <Button
               size="lg"
               className="launch-button"
-              onClick={() => navigate("/generate")}
+              onClick={() => navigate("/generate_from_doc")}
             >
               <Zap className="w-5 h-5" />
               Create Presentation

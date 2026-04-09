@@ -142,7 +142,7 @@ export default function HistoryPage() {
                   </p>
                   <Button
                     className="launch-button"
-                    onClick={() => navigate("/generate")}
+                    onClick={() => navigate("/generate_from_doc")}
                   >
                     Create Presentation
                   </Button>

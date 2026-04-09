@@ -5,9 +5,8 @@ import { Sparkles, LayoutDashboard, History, BarChart3, FileText } from "lucide-
 
 const navLinks = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/generate",  label: "Create",    icon: FileText },
-  { path: "/history",   label: "History",   icon: History },
-  { path: "/stats",     label: "Stats",     icon: BarChart3 },
+  { path: "/history", label: "History", icon: History },
+  { path: "/stats", label: "Stats", icon: BarChart3 },
 ];
 
 export function Navbar() {

@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
+import ShinyText from "./reactbits/ShinyText";
 
 export function SplashScreen({ onComplete }: { onComplete: () => void }) {
   const [visible, setVisible] = useState(true);
@@ -30,9 +31,9 @@ export function SplashScreen({ onComplete }: { onComplete: () => void }) {
             initial={{ scale: 0.6, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             transition={{ type: "spring", stiffness: 80, damping: 14 }}
-            src="/TEK-UP.png"
+            src="/tekup3.png"
             alt="TEKUP"
-            className="w-36 md:w-44 mb-8 drop-shadow-[0_0_40px_rgba(99,102,241,0.3)] relative z-10"
+            className="w-48 md:w-56 mb-8 drop-shadow-[0_0_40px_rgba(99,102,241,0.3)] relative z-10"
           />
 
           {/* Text */}
@@ -44,10 +45,10 @@ export function SplashScreen({ onComplete }: { onComplete: () => void }) {
                 transition={{ duration: 0.6 }}
                 className="text-center relative z-10"
               >
-                <h1 className="text-3xl md:text-4xl font-bold tracking-tight mb-2">
-                  <span className="shimmer-text">TEKUP AI</span>
+                <h1 className="text-5xl md:text-6xl font-bold tracking-tight mb-3">
+                  <ShinyText text="TEKUP AI" disabled={false} speed={2} className="shimmer-text" />
                 </h1>
-                <p className="text-muted-foreground font-light text-sm tracking-widest uppercase">
+                <p className="text-muted-foreground font-light text-base tracking-widest uppercase">
                   Teaching Assistant
                 </p>
               </motion.div>
