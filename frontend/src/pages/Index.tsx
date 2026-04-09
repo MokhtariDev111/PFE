@@ -69,7 +69,7 @@ const Index = () => {
 
   return (
     <>
-      {/* {!splashFinished && <SplashScreen onComplete={() => setSplashFinished(true)} />} */}
+      {!splashFinished && <SplashScreen onComplete={() => setSplashFinished(true)} />}
 
       <CompletionBurst trigger={showBurst} onDone={() => setShowBurst(false)} />
 

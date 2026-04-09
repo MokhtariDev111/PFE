@@ -467,6 +467,81 @@ html, body {{
   cursor: none;
 }}
 
+/* ── Intro Overlay ── */
+#intro-overlay {{
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: {bg};
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: overlay-out 0.6s ease 2.8s forwards;
+}}
+@keyframes overlay-out {{
+  from {{ opacity: 1; transform: scale(1); }}
+  to   {{ opacity: 0; transform: scale(1.04); pointer-events: none; }}
+}}
+#intro-overlay-inner {{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+  animation: overlay-in 0.7s ease forwards;
+}}
+@keyframes overlay-in {{
+  from {{ opacity: 0; transform: translateY(20px); }}
+  to   {{ opacity: 1; transform: none; }}
+}}
+#intro-logo {{
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: clamp(32px, 5vw, 64px);
+  font-weight: 800;
+  letter-spacing: -2px;
+  background: linear-gradient(135deg, var(--a), var(--a2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}}
+#intro-divider {{
+  width: 80px;
+  height: 3px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--a), var(--a2), var(--a3));
+}}
+#intro-ready {{
+  font-size: 18px;
+  font-weight: 400;
+  color: {muted};
+  letter-spacing: 0.02em;
+}}
+#intro-topic {{
+  font-size: clamp(20px, 3vw, 36px);
+  font-weight: 700;
+  color: {ink};
+  max-width: 600px;
+  line-height: 1.3;
+}}
+#intro-dots {{
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}}
+#intro-dots span {{
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--a);
+  animation: dot-pulse 1.2s ease-in-out infinite;
+}}
+#intro-dots span:nth-child(2) {{ animation-delay: 0.2s; background: var(--a2); }}
+#intro-dots span:nth-child(3) {{ animation-delay: 0.4s; background: var(--a3); }}
+@keyframes dot-pulse {{
+  0%, 100% {{ opacity: 0.3; transform: scale(0.8); }}
+  50%       {{ opacity: 1;   transform: scale(1.2); }}
+}}
+
 /* ── Custom Cursor ── */
 #cursor {{
   position: fixed;
@@ -1464,6 +1539,12 @@ _JS = r'''
   slides[0].classList.add('active');
   update();
 
+  // Remove intro overlay after animation completes
+  const overlay = document.getElementById('intro-overlay');
+  if (overlay) {
+    setTimeout(() => { overlay.style.display = 'none'; }, 3500);
+  }
+
   // ── Floating Particles ──────────────────────────────────────────────────
   (function initParticles() {
     document.querySelectorAll('.slide-particles').forEach(canvas => {
@@ -1592,6 +1673,21 @@ def render(
   <style>{_css(theme)}</style>
 </head>
 <body>
+  <!-- Intro Overlay -->
+  <div id="intro-overlay">
+    <div id="intro-overlay-inner">
+      <div id="intro-logo">TEKUP AI</div>
+      <div id="intro-divider"></div>
+      <div id="intro-ready">Your presentation is ready</div>
+      <div id="intro-topic">{title_esc}</div>
+      <div id="intro-dots">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+    </div>
+  </div>
+
   <!-- Custom Cursor -->
   <div id="cursor"></div>
   <div id="cursor-ring"></div>

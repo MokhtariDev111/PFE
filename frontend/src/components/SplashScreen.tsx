@@ -30,7 +30,7 @@ export function SplashScreen({ onComplete }: { onComplete: () => void }) {
             initial={{ scale: 0.6, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             transition={{ type: "spring", stiffness: 80, damping: 14 }}
-            src="/tekup.png"
+            src="/TEK-UP.png"
             alt="TEKUP"
             className="w-36 md:w-44 mb-8 drop-shadow-[0_0_40px_rgba(99,102,241,0.3)] relative z-10"
           />
