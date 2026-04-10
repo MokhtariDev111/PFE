@@ -3,10 +3,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import { FileText, Brain, Zap, BarChart3, ArrowRight, Sparkles, GraduationCap, Sun, Moon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import TextType from "@/components/reactbits/TextType";
-import BorderGlow from "@/components/reactbits/BorderGlow";
+import ShinyText from "@/components/reactbits/ShinyText";
 import DarkVeil from "@/components/reactbits/DarkVeil";
 import GlareHover from "@/components/reactbits/GlareHover";
 import { useTheme } from "@/components/ThemeProvider";
+import { Brain3D } from "@/components/Brain3D";
 
 // ── Aurora animated background ───────────────────────────────────────────────
 function AuroraBackground() {
@@ -152,7 +153,7 @@ function FloatingPhotos() {
         className="flex gap-6 items-end"
         style={{
           width: "max-content",
-          animation: "photo-scroll 30s linear infinite",
+          animation: "photo-scroll 23s linear infinite",
         }}
       >
         {all.map((src, i) => (
@@ -215,10 +216,12 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
-      {/* DarkVeil WebGL background — full screen */}
-      <div className="fixed inset-0 z-0 pointer-events-none" style={{ opacity: 0.7 }}>
-        <DarkVeil speed={0.4} hueShift={0} noiseIntensity={0} warpAmount={0.3} />
-      </div>
+      {/* DarkVeil — dark mode only */}
+      {isDark && (
+        <div className="fixed inset-0 z-0 pointer-events-none" style={{ opacity: 0.7 }}>
+          <DarkVeil speed={0.4} hueShift={0} noiseIntensity={0} warpAmount={0.3} />
+        </div>
+      )}
       <AuroraBackground />
       <ParticleBackground />
       <FloatingPhotos />
@@ -228,6 +231,9 @@ export default function LandingPage() {
         <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] bg-primary/8 rounded-full blur-[120px]" />
         <div className="absolute bottom-[-10%] right-[-5%] w-[500px] h-[500px] bg-accent/6 rounded-full blur-[100px]" />
       </div>
+
+      {/* 3D Brain — dark mode only */}
+      {isDark && <Brain3D />}
 
       <div className="relative z-10">
         {/* ── Floating nav on landing ── */}
@@ -247,12 +253,18 @@ export default function LandingPage() {
           </button>
         </nav>
         {/* ── Hero ── */}
-        <section className="flex flex-col items-center justify-center text-center px-6 pt-32 pb-24">
+        <section className="flex flex-col items-center justify-center text-center px-6 pt-32 pb-24 relative">
+          {/* Backdrop to isolate text from brain animation behind */}
+          <div className="absolute inset-0 pointer-events-none" style={{
+            background: isDark
+              ? "radial-gradient(ellipse 70% 60% at 50% 40%, rgba(0,0,0,0.45) 0%, transparent 100%)"
+              : "radial-gradient(ellipse 70% 60% at 50% 40%, rgba(255,255,255,0.5) 0%, transparent 100%)"
+          }} />
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary text-sm font-medium mb-8"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary text-sm font-medium mb-8 relative z-20"
           >
             <GraduationCap className="w-4 h-4" />
             Built for students & educators
@@ -262,14 +274,28 @@ export default function LandingPage() {
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.1 }}
-            className="text-5xl md:text-7xl font-bold tracking-tight mb-6 max-w-4xl"
+            className="text-5xl md:text-7xl font-bold tracking-tight mb-6 max-w-4xl relative z-20 isolate"
           >
-            <span className="bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-transparent">
-              AI-Powered
+            <span className={isDark ? "drop-shadow-[0_2px_12px_rgba(0,0,0,0.9)]" : ""}>
+              <ShinyText
+                text="AI-Powered"
+                speed={3}
+                color={isDark ? "#f0f4ff" : "#1e1b4b"}
+                shineColor={isDark ? "#ffffff" : "#6366f1"}
+                spread={90}
+              />
             </span>
             <br />
-            <span className="bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent">
-              Learning Assistant
+            <span
+              style={{ filter: `drop-shadow(0 0 32px hsl(var(--primary)/${isDark ? "0.8" : "0.3"}))` }}
+            >
+              <ShinyText
+                text="Learning Assistant"
+                speed={3}
+                color={isDark ? "#c084fc" : "#7c3aed"}
+                shineColor="#ffffff"
+                spread={90}
+              />
             </span>
           </motion.h1>
 
@@ -277,7 +303,7 @@ export default function LandingPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.2 }}
-            className="text-xl text-muted-foreground max-w-2xl mb-10 leading-relaxed"
+            className="text-xl text-muted-foreground max-w-2xl mb-10 leading-relaxed relative z-20 [text-shadow:0_1px_8px_rgba(0,0,0,0.9)]"
           >
             <TextType
               text={[
@@ -301,7 +327,7 @@ export default function LandingPage() {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.35 }}
-            className="flex flex-col sm:flex-row gap-4"
+            className="flex flex-col sm:flex-row gap-4 relative z-20"
           >
             <button
               onClick={() => navigate("/dashboard")}
@@ -372,16 +398,19 @@ export default function LandingPage() {
         </section>
 
         {/* ── CTA banner ── */}
-        <section className="px-6 pb-24 max-w-4xl mx-auto">
+        <section className="px-6 pb-24 max-w-4xl mx-auto relative z-20">
           <motion.div
             initial={{ opacity: 0, scale: 0.97 }}
             whileInView={{ opacity: 1, scale: 1 }}
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
-            className="rounded-3xl p-10 text-center relative overflow-hidden"
+            className="rounded-3xl p-10 text-center relative overflow-hidden backdrop-blur-md"
             style={{
-              background: "linear-gradient(135deg, hsl(var(--primary)/0.15), hsl(var(--accent)/0.1))",
-              border: "1px solid hsl(var(--primary)/0.2)",
+              background: isDark
+                ? "linear-gradient(135deg, hsl(var(--background)/0.85), hsl(var(--card)/0.9))"
+                : "linear-gradient(135deg, hsl(var(--background)/0.95), hsl(var(--card)))",
+              border: "1px solid hsl(var(--primary)/0.25)",
+              boxShadow: "0 8px 40px -8px hsl(var(--primary)/0.2)",
             }}
           >
             <h2 className="text-3xl font-bold mb-3">Ready to study smarter?</h2>
@@ -400,6 +429,55 @@ export default function LandingPage() {
             </button>
           </motion.div>
         </section>
+
+        {/* ── Footer ── */}
+        <footer className="relative z-20 border-t border-border/40 backdrop-blur-md px-8 py-12 max-w-7xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+
+            {/* About — left */}
+            <div>
+              <h4 className="font-semibold text-sm mb-3 text-foreground">About</h4>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                TEKUP AI is a final-year project (PFE) that transforms academic documents into
+                interactive learning materials — presentations, quizzes, flashcards and diagrams.
+              </p>
+            </div>
+
+            {/* Contact — right */}
+            <div className="md:flex md:flex-col md:items-end">
+              <div>
+                <h4 className="font-semibold text-sm mb-3 text-foreground">Contact</h4>
+                <div className="flex flex-col gap-2">
+                  <a
+                    href="mailto:mohmedazizmokhtari@gmail.com"
+                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors"
+                  >
+                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25H4.5a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5H4.5a2.25 2.25 0 00-2.25 2.25m19.5 0l-9.75 7.5-9.75-7.5" />
+                    </svg>
+                    mohmedazizmokhtari@gmail.com
+                  </a>
+                  <a
+                    href="https://www.linkedin.com/in/mohamed-aziz-mokhtari-469777365"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors"
+                  >
+                    <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                    </svg>
+                    Mohamed Aziz Mokhtari
+                  </a>
+                </div>
+              </div>
+            </div>
+
+          </div>
+          <div className="mt-10 pt-6 border-t border-border/30 text-center text-xs text-muted-foreground">
+            © {new Date().getFullYear()} TEKUP AI — PFE Project. All rights reserved.
+          </div>
+        </footer>
+
       </div>
     </div>
   );
