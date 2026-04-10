@@ -1,5 +1,16 @@
 [
   {
+    "id": "1c181d1d-fef8-446c-9e2e-7fffb70ce525",
+    "created_at": "2026-04-10T21:08:49",
+    "prompt": "Decision Trees",
+    "topic": "Decision Trees",
+    "num_slides": 10,
+    "theme": "Dark Navy",
+    "model": "groq",
+    "html_path": "C:\\Users\\mokht\\AppData\\Local\\Temp\\edu_1c181d1d_umf2pbhq\\html\\pres_1c181d1d.html",
+    "slides": []
+  },
+  {
     "id": "9963f786-5de6-45c8-9f05-f9cbc063bc2b",
     "created_at": "2026-04-10T20:40:48",
     "prompt": "Decision Trees",

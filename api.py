@@ -653,7 +653,16 @@ async def generate_stream(
                 section_outline=final_outline,
             )
 
-            _session_store[session_id] = {"html_path": html_path, "tmp_dir": str(tmp_dir)}
+            _session_store[session_id] = {
+                "html_path": html_path,
+                "tmp_dir": str(tmp_dir),
+                "slides": html_slides,
+                "images": render_images,
+                "captions": render_captions,
+                "topic": prompt[:50],
+                "theme": theme,
+                "section_outline": final_outline,
+            }
             record_presentation(html_path, prompt, prompt[:50], len(slides_obj), theme, model or llm.backend, session_id=session_id)
 
             elapsed = time.time() - start_time
@@ -685,6 +694,38 @@ async def view_presentation(session_id: str):
             return FileResponse(match["html_path"])
         raise HTTPException(404, "Presentation not found")
     return FileResponse(sess["html_path"])
+
+
+@app.post("/reorder/{session_id}")
+async def reorder_presentation(session_id: str, body: dict):
+    """Re-render the presentation with a new slide order.
+    Body: { "order": [0, 3, 1, 2, 4] } — indices into the original slides list.
+    Title (index 0), intro (index 1), and summary (last) are locked by the frontend.
+    """
+    sess = _session_store.get(session_id)
+    if not sess or "slides" not in sess:
+        raise HTTPException(404, "Session not found or slides not available")
+
+    order = body.get("order", [])
+    slides = sess["slides"]
+
+    if not order or len(order) > len(slides):
+        raise HTTPException(400, f"Invalid order: got {len(order)}, expected at most {len(slides)}")
+
+    reordered = [slides[i] for i in order]
+
+    html_path = render_html(
+        topic=sess["topic"],
+        slides=reordered,
+        session_id=session_id,
+        output_dir=str(Path(sess["tmp_dir"]) / "html"),
+        images=sess.get("images", {}),
+        theme_name=sess["theme"],
+        captions=sess.get("captions", {}),
+        section_outline=sess.get("section_outline"),
+    )
+    sess["html_path"] = html_path
+    return {"html_url": f"/view/{session_id}"}
 
 
 @app.get("/history")

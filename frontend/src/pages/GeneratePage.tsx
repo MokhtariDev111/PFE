@@ -1,9 +1,8 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import LiquidEther from "@/components/reactbits/LiquidEther";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -13,7 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Upload, Zap, Eye, X, Check, AlertCircle, ArrowRight, Settings } from "lucide-react";
+import { Upload, Zap, Eye, X, Check, ArrowRight, Settings, GripVertical, Lock } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
 interface Slide {
@@ -42,15 +41,58 @@ export default function GeneratePage() {
   // Generation state
   const [isLoading, setIsLoading] = useState(false);
   const [slides, setSlides] = useState<Slide[]>([]);
-  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
-  const [generationStatus, setGenerationStatus] =
-    useState<GenerationStatus | null>(null);
+  const [generationStatus, setGenerationStatus] = useState<GenerationStatus | null>(null);
   const [themes, setThemes] = useState<string[]>([]);
   const [sessionId, setSessionId] = useState("");
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [progress, setProgress] = useState(0);
+
+  // Reorder state
+  const [orderedSlides, setOrderedSlides] = useState<Slide[]>([]);
+  const [isReordering, setIsReordering] = useState(false);
+  const dragIdx = useRef<number | null>(null);
+
+  // Sync orderedSlides when slides change
+  useEffect(() => { setOrderedSlides(slides); }, [slides]);
+
+  const isLocked = (slide: Slide) =>
+    slide.slideType === "title" || slide.slideType === "intro" || slide.slideType === "summary";
+
+  const handleDragStart = (i: number) => { dragIdx.current = i; };
+  const handleDragOver = (e: React.DragEvent, i: number) => {
+    e.preventDefault();
+    const from = dragIdx.current;
+    if (from === null || from === i) return;
+    // Don't allow dragging over locked slides
+    if (isLocked(orderedSlides[i])) return;
+    const next = [...orderedSlides];
+    const [moved] = next.splice(from, 1);
+    next.splice(i, 0, moved);
+    dragIdx.current = i;
+    setOrderedSlides(next);
+  };
+
+  const handleConfirmOrder = useCallback(async () => {
+    if (!sessionId) return;
+    setIsReordering(true);
+    // Map orderedSlides back to original indices (handles deletions too)
+    const order = orderedSlides.map(s => slides.indexOf(s)).filter(i => i !== -1);
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/reorder/${sessionId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order }),
+      });
+      if (!res.ok) throw new Error("Reorder failed");
+      window.open(`http://127.0.0.1:8000/view/${sessionId}`, "_blank");
+    } catch {
+      toast({ title: "Error", description: "Could not apply changes", variant: "destructive" });
+    } finally {
+      setIsReordering(false);
+    }
+  }, [sessionId, orderedSlides, slides, toast]);
 
   // Fetch available themes
   useEffect(() => {
@@ -82,7 +124,7 @@ export default function GeneratePage() {
 
     setIsLoading(true);
     setSlides([]);
-    setCurrentSlideIndex(0);
+    setOrderedSlides([]);
     setProgress(0);
     setSessionId("");
 
@@ -180,8 +222,6 @@ export default function GeneratePage() {
       setIsLoading(false);
     }
   };
-
-  const currentSlide = slides[currentSlideIndex];
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -486,97 +526,76 @@ export default function GeneratePage() {
               </motion.div>
             )}
 
-            {/* Slide Preview */}
-            {slides.length > 0 && currentSlide && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="space-y-4"
-              >
-                {/* Slide Card */}
-                <div className="slide-card p-6 rounded-2xl">
+            {/* Slide Reorder / Preview */}
+            {orderedSlides.length > 0 && (
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
+                <div className="flex items-center justify-between">
                   <div>
-                    <span className="text-xs font-medium text-blue-400 mb-3 block">
-                      {(currentSlide.slideType || 'content').toUpperCase()}
-                    </span>
-                    <h3 className="slide-title mb-4 text-xl md:text-2xl">
-                      {currentSlide.title}
-                    </h3>
-                    <ul className="space-y-2.5">
-                      {currentSlide.bullets?.map((bullet: any, i: number) => {
-                        const text = typeof bullet === 'string'
-                          ? bullet
-                          : (bullet?.text || bullet?.content || bullet?.fact || bullet?.bullet || '');
-                        if (!text) return null;
-                        return (
-                          <li key={i} className="bullet-item">
-                            <span className="bullet-icon">→</span>
-                            <span className="bullet-text text-sm leading-snug">
-                              {text}
-                              {bullet?.source_id && (
-                                <span className="inline-block ml-2 px-2 py-0.5 text-[10px] font-medium bg-blue-500/10 text-blue-400 rounded">
-                                  📄 {bullet.source_id}
-                                </span>
-                              )}
-                            </span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                  <div className="text-xs text-muted-foreground text-right mt-4 pt-3 border-t border-border/40">
-                    Slide {currentSlideIndex + 1} / {slides.length}
+                    <p className="text-sm font-medium">
+                      {orderedSlides.length} slides generated
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Drag to reorder · locked slides can't be moved
+                    </p>
                   </div>
                 </div>
 
-                {/* Navigation */}
-                <div className="flex gap-3 justify-between">
-                  <Button
-                    variant="outline"
-                    onClick={() =>
-                      setCurrentSlideIndex(Math.max(0, currentSlideIndex - 1))
-                    }
-                    disabled={currentSlideIndex === 0}
-                  >
-                    ← Previous
-                  </Button>
-
-                  <div className="flex gap-2 items-center flex-wrap justify-center">
-                    {slides.map((_, i) => (
-                      <motion.button
-                        key={i}
-                        onClick={() => setCurrentSlideIndex(i)}
-                        className={`w-2 h-2 rounded-full transition ${i === currentSlideIndex ? "bg-primary w-6" : "bg-muted"
-                          }`}
-                        whileHover={{ scale: 1.2 }}
-                      />
-                    ))}
-                  </div>
-
-                  <Button
-                    variant="outline"
-                    onClick={() =>
-                      setCurrentSlideIndex(
-                        Math.min(slides.length - 1, currentSlideIndex + 1)
-                      )
-                    }
-                    disabled={currentSlideIndex === slides.length - 1}
-                  >
-                    Next →
-                  </Button>
+                <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                  {orderedSlides.map((slide, i) => {
+                    const locked = isLocked(slide);
+                    return (
+                      <div
+                        key={`${slide.title}-${i}`}
+                        draggable={!locked}
+                        onDragStart={() => !locked && handleDragStart(i)}
+                        onDragOver={(e) => !locked && handleDragOver(e, i)}
+                        className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
+                          locked
+                            ? "bg-muted/40 border-border/30 opacity-70 cursor-not-allowed"
+                            : "bg-card border-border hover:border-primary/40 cursor-grab active:cursor-grabbing hover:shadow-sm"
+                        }`}
+                      >
+                        <div className="flex-shrink-0 text-muted-foreground">
+                          {locked
+                            ? <Lock className="w-4 h-4" />
+                            : <GripVertical className="w-4 h-4" />}
+                        </div>
+                        <div className="flex-shrink-0 w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold flex items-center justify-center">
+                          {i + 1}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{slide.title || "Untitled"}</p>
+                          <p className="text-xs text-muted-foreground capitalize">{slide.slideType}</p>
+                        </div>
+                        {locked && (
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                            LOCKED
+                          </span>
+                        )}
+                        {!locked && (
+                          <button
+                            onClick={() => setOrderedSlides(prev => prev.filter((_, idx) => idx !== i))}
+                            className="p-1 rounded-md hover:bg-destructive/10 hover:text-destructive text-muted-foreground transition-colors"
+                            title="Remove slide"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
-                {/* View Full Button */}
-                {sessionId && (
-                  <Button
-                    className="launch-button w-full"
-                    size="lg"
-                    onClick={() => window.open(`http://127.0.0.1:8000/view/${sessionId}`, "_blank")}
-                  >
-                    <Eye className="w-5 h-5" />
-                    View Full Presentation
-                  </Button>
-                )}
+                <Button
+                  className="launch-button w-full"
+                  size="lg"
+                  onClick={handleConfirmOrder}
+                  disabled={isReordering || !sessionId}
+                >
+                  <Eye className="w-5 h-5" />
+                  {isReordering ? "Rendering..." : "Confirm Order & View"}
+                  <ArrowRight className="w-5 h-5" />
+                </Button>
               </motion.div>
             )}
 
