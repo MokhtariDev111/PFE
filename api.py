@@ -140,7 +140,7 @@ async def transcribe_audio(file: UploadFile = File(...)):
 async def generate_stream(
     prompt: str = Form(...),
     theme: str = Form("Dark Navy"),
-    max_slides: int = Form(12),
+    max_slides: int = Form(20),
     model: str = Form(""),
     language: str = Form("English"),
     files: list[UploadFile] = File(default=[]),
@@ -256,62 +256,75 @@ async def generate_stream(
             # 3. Retrieve
             yield _emit("status", {"step": "retrieving", "message": "Retrieving context…"})
             retriever = Retriever(index_path=isolated_index)
-            # First pass: global search to get section outline
-            # Use a large top_k to cast a wide net across the whole document
-            results = retriever.search_expanded(prompt, top_k=25)
+
+            # ── Content-driven slide count ────────────────────────────────────
+            # 1. Cast a wide net to find all relevant sections
+            results = retriever.search_expanded(prompt, top_k=40)
             section_outline = extract_section_outline(results)
 
-            # Auto-set num_slides from the actual document structure, capped by user's max
-            # Content slots = sections found, but never exceed (max_slides - 2) to leave room for title + summary
-            max_content = min(len(section_outline), max_slides - 2)
-            section_outline = section_outline[:max_content]
-            num_slides = max_content + 2  # title + content + summary
-            print(f"📊 Auto-calculated: {max_content} sections → {num_slides} slides (max={max_slides})", flush=True)
+            # 2. For each section, fetch its chunks to measure content volume
+            section_chunk_bank = {}
+            for section in section_outline:
+                raw = retriever.search_for_section(
+                    section, section_heading=section, top_k=20
+                )
+                strict = [
+                    c for c in raw
+                    if section.lower() in (getattr(c, 'section_heading', '') or '').lower()
+                ] or raw[:4]
+                strict.sort(key=lambda c: getattr(c, 'page', 0))
+                section_chunk_bank[section] = strict
 
-            # Second pass: retrieve chunks per section for accurate context
+            # 3. Assign slides proportionally to content volume
+            # Sections with more chunks get more slides (up to 3 per section)
+            # Sections with very few chunks (≤2) get 1 slide
+            CHUNKS_PER_SLIDE = 4   # ~4 chunks worth of content per slide
+            expanded_outline = []  # final list of (section, slide_count) pairs
+            for section in section_outline:
+                chunk_count = len(section_chunk_bank.get(section, []))
+                slides_for_section = max(1, min(3, round(chunk_count / CHUNKS_PER_SLIDE)))
+                expanded_outline.append((section, slides_for_section))
+
+            total_content_slides = sum(c for _, c in expanded_outline)
+            # Cap at user's max (leave 2 for title + summary)
+            content_cap = max_slides - 2
+            if total_content_slides > content_cap:
+                # Scale down proportionally
+                scale = content_cap / total_content_slides
+                expanded_outline = [
+                    (s, max(1, round(c * scale))) for s, c in expanded_outline
+                ]
+                total_content_slides = sum(c for _, c in expanded_outline)
+
+            num_slides = total_content_slides + 2  # +2 for title + summary
+            # Rebuild section_outline with repetitions for multi-slide sections
+            section_outline = []
+            for section, count in expanded_outline:
+                for _ in range(count):
+                    section_outline.append(section)
+
+            print(f"📊 Content-driven: {len(expanded_outline)} sections → {total_content_slides} content slides → {num_slides} total (max={max_slides})", flush=True)
+            for sec, cnt in expanded_outline:
+                print(f"   {'📄' if cnt == 1 else '📚'} {sec[:50]} → {cnt} slide{'s' if cnt > 1 else ''}", flush=True)
+
+            yield _emit("status", {"step": "retrieving", "message": "Retrieving context…"})
+
+            # 4. Build per-section chunk pool for context
             if section_outline:
                 per_section_chunks = []
                 seen_ids = set()
-
-                # Each section gets exactly one slide (1:1 mapping)
-                section_slide_count = {s: 1 for s in section_outline}
-                extra = 0
-                # Build a per-section chunk bank sorted by PAGE ORDER
-                section_chunk_bank = {}
-                for section in section_outline:
-                    if section in section_chunk_bank:
-                        continue  # already fetched
-                    raw = retriever.search_for_section(
-                        section, section_heading=section, top_k=20
-                    )
-                    strict = [
-                        c for c in raw
-                        if section.lower() in (getattr(c, 'section_heading', '') or '').lower()
-                    ] or raw[:4]
-                    # Sort by page number so sequential slides get different parts
-                    strict.sort(key=lambda c: getattr(c, 'page', 0))
-                    section_chunk_bank[section] = strict
-
-                # Assign chunks to slides sequentially — each slide gets a unique page range
                 section_slide_idx = {}
+
                 for section in section_outline:
-                    all_chunks_for_section = section_chunk_bank.get(section, [])
+                    all_chunks = section_chunk_bank.get(section, [])
                     idx = section_slide_idx.get(section, 0)
                     section_slide_idx[section] = idx + 1
-
-                    total_occurrences = section_outline.count(section)
-                    chunk_count = len(all_chunks_for_section)
-
-                    # Divide chunks evenly — each slide gets a non-overlapping slice
-                    slice_size = max(2, chunk_count // total_occurrences)
+                    total_occ = section_outline.count(section)
+                    chunk_count = len(all_chunks)
+                    slice_size = max(2, chunk_count // total_occ)
                     start = idx * slice_size
-                    # Last occurrence gets remaining chunks
-                    end = start + slice_size if idx < total_occurrences - 1 else chunk_count
-                    slice_chunks = all_chunks_for_section[start:end]
-
-                    # Fallback: if slice is empty, use first 2 chunks
-                    if not slice_chunks:
-                        slice_chunks = all_chunks_for_section[:2]
+                    end = start + slice_size if idx < total_occ - 1 else chunk_count
+                    slice_chunks = all_chunks[start:end] or all_chunks[:2]
 
                     for c in slice_chunks:
                         cid = getattr(c, 'chunk_id', None) or hash(c.text[:100])

@@ -36,7 +36,7 @@ export default function GeneratePage() {
   const [prompt, setPrompt] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [theme, setTheme] = useState("Dark Navy");
-  const [maxSlides, setMaxSlides] = useState(12);
+  const [maxSlides, setMaxSlides] = useState(20);
   const [language, setLanguage] = useState("English");
 
   // Generation state
