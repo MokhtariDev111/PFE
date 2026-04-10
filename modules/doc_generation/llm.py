@@ -75,17 +75,18 @@ class LLMEngine:
     # GROQ BACKEND (Primary - Fast)
     # ══════════════════════════════════════════════════════════════════════════
     
-    async def _call_groq(self, prompt: str, model: str = None, json_mode: bool = True) -> str:
+    async def _call_groq(self, prompt: str, model: str = None, json_mode: bool = True, use_cache: bool = True) -> str:
         """Call Groq API with caching and retry logic."""
         import httpx
         
         model = model or self.groq_model
         
-        # Check cache first
-        cached = get_cached(prompt, model)
-        if cached:
-            log.info(f"  ⚡ Cache HIT for Groq ({model})")
-            return cached
+        # Skip cache for large batch prompts (always unique, never hit)
+        if use_cache:
+            cached = get_cached(prompt, model)
+            if cached:
+                log.debug(f"  ⚡ Cache HIT Groq ({model})")
+                return cached
         
         headers = {
             "Authorization": f"Bearer {self.groq_api_key}",
@@ -293,6 +294,7 @@ class LLMEngine:
         context_chunks: list,
         prompt_override: str = None,
         model_override: str = None,
+        use_cache: bool = True,
     ) -> str:
         """Main generation call - routes to best available backend."""
         if not context_chunks and not prompt_override:
@@ -302,11 +304,11 @@ class LLMEngine:
         
         if self.backend == "groq":
             model = model_override if model_override in ["llama-3.3-70b-versatile", "mixtral-8x7b-32768", "llama-3.1-8b-instant"] else self.groq_model
-            log.info(f"Generating with Groq ({model})")
-            return await self._call_groq(prompt, model)
+            log.debug(f"Groq ({model})  cache={use_cache}")
+            return await self._call_groq(prompt, model, use_cache=use_cache)
         else:
             model = model_override or self.ollama_model
-            log.info(f"Generating with Ollama ({model})")
+            log.debug(f"Ollama ({model})")
             return await self._call_ollama(prompt, model)
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -471,7 +473,7 @@ RULES:
 Generate the {num_slides} slides now as valid JSON:"""
 
         try:
-            raw = await self.generate_async(query, [], prompt_override=prompt)
+            raw = await self.generate_async(query, [], prompt_override=prompt, use_cache=False)
             data = json.loads(raw)
             slides = data.get("slides", [])
             
