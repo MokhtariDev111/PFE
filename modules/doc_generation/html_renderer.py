@@ -177,7 +177,7 @@ def _slide_cover(s: dict, i: int, tot: int, t: dict, img: any) -> tuple:
 '''), ""
 
 
-def _slide_content(s: dict, i: int, tot: int, t: dict, img: any, caption: str = "") -> tuple:
+def _slide_content(s: dict, i: int, tot: int, t: dict, img: any, caption: str = "", display_num: str = "") -> tuple:
     title      = _esc(s.get("title", ""))
     paragraph  = _esc(s.get("paragraph", ""))
     key_points = s.get("key_points", [])
@@ -189,7 +189,7 @@ def _slide_content(s: dict, i: int, tot: int, t: dict, img: any, caption: str = 
             (b.get("text","") if isinstance(b,dict) else str(b)) for b in bullets
         ))
     notes  = _esc(s.get("speaker_notes", ""))
-    num    = f"{i + 1}/{tot}"
+    num    = display_num or f"{i + 1}/{tot}"
     a, a2, a3 = t["a"], t["a2"], t["a3"]
     r, g, b = _rgb(a)
 
@@ -268,7 +268,7 @@ def _slide_content(s: dict, i: int, tot: int, t: dict, img: any, caption: str = 
 '''), ""
 
 
-def _slide_intro(s: dict, i: int, tot: int, t: dict, img: any, caption: str = "") -> tuple:
+def _slide_intro(s: dict, i: int, tot: int, t: dict, img: any, caption: str = "", display_num: str = "") -> tuple:
     title     = _esc(s.get("title", ""))
     paragraph = _esc(s.get("paragraph", ""))
     key_points = s.get("key_points", [])
@@ -279,7 +279,7 @@ def _slide_intro(s: dict, i: int, tot: int, t: dict, img: any, caption: str = ""
             (b.get("text","") if isinstance(b,dict) else str(b)) for b in bullets
         ))
     notes = _esc(s.get("speaker_notes", ""))
-    num   = f"{i + 1}/{tot}"
+    num   = display_num or f"{i + 1}/{tot}"
     a, a2, a3 = t["a"], t["a2"], t["a3"]
 
     kp_html = ""
@@ -315,11 +315,11 @@ def _slide_intro(s: dict, i: int, tot: int, t: dict, img: any, caption: str = ""
 '''), ""
 
 
-def _slide_comparison(s: dict, i: int, tot: int, t: dict, img: any, caption: str = "") -> tuple:
+def _slide_comparison(s: dict, i: int, tot: int, t: dict, img: any, caption: str = "", display_num: str = "") -> tuple:
     title = _esc(s.get("title", ""))
     bullets = s.get("bullets", [])
     notes = _esc(s.get("speaker_notes", ""))
-    num = f"{i + 1}/{tot}"
+    num = display_num or f"{i + 1}/{tot}"
     a, a2, a3 = t["a"], t["a2"], t["a3"]
     r, g, b = _rgb(a)
     r2, g2, b2 = _rgb(a2)
@@ -368,13 +368,13 @@ def _slide_comparison(s: dict, i: int, tot: int, t: dict, img: any, caption: str
 '''), ""
 
 
-def _slide_outro(s: dict, i: int, tot: int, t: dict, img: any, topic: str) -> tuple:
+def _slide_outro(s: dict, i: int, tot: int, t: dict, img: any, topic: str, display_num: str = "") -> tuple:
     title     = _esc(s.get("title", "Conclusion"))
     paragraph = _esc(s.get("paragraph", ""))
     key_points = s.get("key_points", [])
     page_range = _esc(s.get("page_range", ""))
     notes     = _esc(s.get("speaker_notes", ""))
-    num       = f"{i + 1}/{tot}"
+    num       = display_num or f"{i + 1}/{tot}"
     a, a2, a3 = t["a"], t["a2"], t["a3"]
 
     # fallback: use bullets if no paragraph
@@ -419,9 +419,8 @@ def _slide_outro(s: dict, i: int, tot: int, t: dict, img: any, topic: str) -> tu
 '''), ""
 
 
-def _slide_stats(s: dict, i: int, tot: int, t: dict, img: any, caption: str = "") -> tuple:
-    # For simplicity, treat stats like content slides
-    return _slide_content(s, i, tot, t, img, caption)
+def _slide_stats(s: dict, i: int, tot: int, t: dict, img: any, caption: str = "", display_num: str = "") -> tuple:
+    return _slide_content(s, i, tot, t, img, caption, display_num)
 
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
@@ -1603,30 +1602,30 @@ def render(
     html_theme = _PPTX_TO_HTML_THEME.get(theme_name, theme_name)
     theme = THEMES.get(html_theme) or THEMES[_auto_theme(session_id)]
 
-    # Build TOC entries — full slide list with numbers, types, labels
+    # Build TOC entries from actual slide titles (not raw section outline)
+    # This ensures TOC labels match exactly what's shown on each slide
     toc_entries = []
-    if section_outline:
-        # Slide 1 = cover (skip), Slide 2 = TOC (skip), Slide 3 = intro
-        # Then content slides, last = summary
-        slide_num = 3  # intro starts at 3 (after cover + TOC)
-        toc_entries.append({"num": slide_num, "label": "Introduction", "type": "intro"})
-        slide_num += 1
-
-        seen_toc = set()
-        for entry in section_outline:
-            label = entry.get('section', entry) if isinstance(entry, dict) else entry
-            clean = label.split(">")[-1].strip() if ">" in label else label
-            toc_entries.append({"num": slide_num, "label": clean, "type": "content"})
+    if slides:
+        # Slide layout: cover(0) → TOC(injected) → intro(1) → content... → summary(last)
+        # After TOC injection: cover=1, TOC=2, intro=3, content=4..N-1, summary=N
+        slide_num = 3  # intro starts at slide 3 (after cover + TOC)
+        for s in slides:
+            stype = s.get("slide_type") or s.get("type") or "content"
+            title = s.get("title", "")
+            if stype == "title" or not title:
+                continue  # skip cover slide
+            toc_entries.append({"num": slide_num, "label": title, "type": stype})
             slide_num += 1
-
-        toc_entries.append({"num": slide_num, "label": "Summary", "type": "summary"})
 
     # Inject TOC slide after cover (index 1), shift all other slides by 1
     toc_injected = False
     total = len(slides) + (1 if toc_entries else 0)
+    # content_total = slides excluding cover and TOC (for display numbering)
+    content_total = len([s for s in slides if (s.get("slide_type") or s.get("type") or "content") != "title"])
     sections = []
     captions = captions or {}
     slide_offset = 0  # offset due to TOC injection
+    content_counter = 0  # counts only intro+content+summary slides
 
     for i, s in enumerate(slides):
         actual_i = i + slide_offset
@@ -1646,18 +1645,19 @@ def render(
             continue
 
         actual_i = i + slide_offset
+        content_counter += 1
+        display_num = f"{content_counter}/{content_total}"
 
         if stype == "intro":
-            h, _ = _slide_intro(s, actual_i, total, theme, img, cap)
+            h, _ = _slide_intro(s, actual_i, total, theme, img, cap, display_num)
         elif actual_i == total - 1:
-            h, _ = _slide_outro(s, actual_i, total, theme, img, topic)
+            h, _ = _slide_outro(s, actual_i, total, theme, img, topic, display_num)
         elif stype == "comparison":
-            h, _ = _slide_comparison(s, actual_i, total, theme, img, cap)
+            h, _ = _slide_comparison(s, actual_i, total, theme, img, cap, display_num)
         elif stype == "stats" or s.get("chart_data"):
-            h, _ = _slide_stats(s, actual_i, total, theme, img, cap)
+            h, _ = _slide_stats(s, actual_i, total, theme, img, cap, display_num)
         else:
-            h, _ = _slide_content(s, actual_i, total, theme, img, cap)
-
+            h, _ = _slide_content(s, actual_i, total, theme, img, cap, display_num)
 
         sections.append(h)
 

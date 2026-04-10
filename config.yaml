@@ -43,7 +43,7 @@ retrieval:
   bm25_weight: 0.5           # 0.0 = dense only, 1.0 = BM25 only (RRF makes this soft)
 
   # Cross-encoder reranker — runs on top-N candidates after hybrid search
-  use_reranker: false
+  use_reranker: true
   reranker_model: "BAAI/bge-reranker-base"
   reranker_top_n: 5
 
