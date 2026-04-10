@@ -1,0 +1,79 @@
+[
+  {
+    "id": "ca588fdf-ceeb-4ee3-8229-a8e86cc9dbe4",
+    "created_at": "2026-04-10T20:14:35",
+    "prompt": "Decision Trees",
+    "topic": "Decision Trees",
+    "num_slides": 10,
+    "theme": "Dark Navy",
+    "model": "groq",
+    "html_path": "C:\\Users\\mokht\\AppData\\Local\\Temp\\edu_ca588fdf_6lt3uvse\\html\\pres_ca588fdf.html",
+    "slides": []
+  },
+  {
+    "id": "1ba7b18f-aeac-4b28-9e22-4bff150675e1",
+    "created_at": "2026-04-10T20:07:55",
+    "prompt": "Decision Trees",
+    "topic": "Decision Trees",
+    "num_slides": 10,
+    "theme": "Dark Navy",
+    "model": "groq",
+    "html_path": "C:\\Users\\mokht\\AppData\\Local\\Temp\\edu_1ba7b18f_u6av30le\\html\\pres_1ba7b18f.html",
+    "slides": []
+  },
+  {
+    "id": "463cface-796d-4336-8f4b-ad2c1b223b94",
+    "created_at": "2026-04-10T20:04:16",
+    "prompt": "Decision Trees",
+    "topic": "Decision Trees",
+    "num_slides": 7,
+    "theme": "Dark Navy",
+    "model": "groq",
+    "html_path": "C:\\Users\\mokht\\AppData\\Local\\Temp\\edu_463cface_ung_2qw4\\html\\pres_463cface.html",
+    "slides": []
+  },
+  {
+    "id": "6f129554-1a93-4492-8603-348618f4b5e6",
+    "created_at": "2026-04-10T19:57:45",
+    "prompt": "Decision Trees",
+    "topic": "Decision Trees",
+    "num_slides": 7,
+    "theme": "Dark Navy",
+    "model": "groq",
+    "html_path": "C:\\Users\\mokht\\AppData\\Local\\Temp\\edu_6f129554_t3miwurt\\html\\pres_6f129554.html",
+    "slides": []
+  },
+  {
+    "id": "0a619c65-5f62-4c61-9802-68647666c804",
+    "created_at": "2026-04-10T19:53:36",
+    "prompt": "Decision Trees",
+    "topic": "Decision Trees",
+    "num_slides": 7,
+    "theme": "Dark Navy",
+    "model": "groq",
+    "html_path": "C:\\Users\\mokht\\AppData\\Local\\Temp\\edu_0a619c65_elud6zdp\\html\\pres_0a619c65.html",
+    "slides": []
+  },
+  {
+    "id": "6d103438-14af-4859-aa26-357946e14d84",
+    "created_at": "2026-04-10T19:33:46",
+    "prompt": "Decision Trees",
+    "topic": "Decision Trees",
+    "num_slides": 10,
+    "theme": "Dark Navy",
+    "model": "groq",
+    "html_path": "C:\\Users\\mokht\\AppData\\Local\\Temp\\edu_6d103438_71jbgfxm\\html\\pres_6d103438.html",
+    "slides": []
+  },
+  {
+    "id": "9011e876-3dbe-45cc-b321-73165544609c",
+    "created_at": "2026-04-10T19:31:31",
+    "prompt": "Decision Trees",
+    "topic": "Decision Trees",
+    "num_slides": 10,
+    "theme": "Dark Navy",
+    "model": "groq",
+    "html_path": "C:\\Users\\mokht\\AppData\\Local\\Temp\\edu_9011e876_k53m8pgk\\html\\pres_9011e876.html",
+    "slides": []
+  }
+]

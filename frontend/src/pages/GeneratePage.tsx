@@ -36,9 +36,8 @@ export default function GeneratePage() {
   const [prompt, setPrompt] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [theme, setTheme] = useState("Dark Navy");
-  const [numSlides, setNumSlides] = useState(5);
+  const [maxSlides, setMaxSlides] = useState(12);
   const [language, setLanguage] = useState("English");
-  const [topK, setTopK] = useState(4);
 
   // Generation state
   const [isLoading, setIsLoading] = useState(false);
@@ -90,9 +89,8 @@ export default function GeneratePage() {
     const formData = new FormData();
     formData.append("prompt", prompt);
     formData.append("theme", theme);
-    formData.append("num_slides", numSlides.toString());
+    formData.append("max_slides", maxSlides.toString());
     formData.append("language", language);
-    formData.append("top_k", topK.toString());
 
     files.forEach((file) => formData.append("files", file));
 
@@ -248,21 +246,21 @@ export default function GeneratePage() {
               </Select>
             </div>
 
-            {/* Number of Slides */}
+            {/* Max Slides */}
             <div>
               <label className="text-sm font-medium block mb-2">
-                Slides: <span className="text-primary font-bold">{numSlides}</span>
+                Max slides: <span className="text-primary font-bold">{maxSlides}</span>
               </label>
               <Slider
-                value={[numSlides]}
-                onValueChange={(v) => setNumSlides(v[0])}
-                min={3}
-                max={15}
+                value={[maxSlides]}
+                onValueChange={(v) => setMaxSlides(v[0])}
+                min={5}
+                max={20}
                 step={1}
                 disabled={isLoading}
               />
               <p className="text-xs text-muted-foreground mt-2">
-                3-15 slides recommended
+                AI picks the best count — won't exceed this
               </p>
             </div>
 
@@ -280,23 +278,6 @@ export default function GeneratePage() {
               </Select>
             </div>
 
-            {/* Top K */}
-            <div>
-              <label className="text-sm font-medium block mb-2">
-                Context Depth: <span className="text-primary font-bold">{topK}</span>
-              </label>
-              <Slider
-                value={[topK]}
-                onValueChange={(v) => setTopK(v[0])}
-                min={1}
-                max={10}
-                step={1}
-                disabled={isLoading}
-              />
-              <p className="text-xs text-muted-foreground mt-2">
-                Higher = more detailed (slower)
-              </p>
-            </div>
           </div>
         </div>
       </motion.div>

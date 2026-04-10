@@ -22,9 +22,9 @@ import re
 from pathlib import Path
 from datetime import datetime
 
-from matplotlib.pyplot import title
+from modules.doc_generation.pedagogical_engine import _build_slide_prompt
+from modules.doc_generation.image_pipeline import _build_image_registry, _extract_figure_refs_from_chunks, _assign_fallback_images
 
-from modules.pedagogical_engine import _build_slide_prompt
 
 ROOT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT_DIR))
@@ -33,19 +33,19 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
-from modules.config_loader import CONFIG
-from modules.ingestion import ingest_directory
-from modules.ocr import run_ocr, warm_ocr_engine
-from modules.text_processing import process_pages
-from modules.embeddings import build_vector_db
-from modules.retrieval import Retriever, _load_reranker
-from modules.slide_generator import SlideData
-from modules.history_store import record_presentation, load_history, clear_history
-from modules.html_renderer import render as render_html
-from modules.context_manager import prepare_context_for_slides, extract_section_outline
-from modules.llm_cache import clear_cache, cache_stats
-from modules.evaluation import RAGEvaluator
-from modules.health import full_health_check, quick_status
+from modules.core.config_loader import CONFIG
+from modules.ingestion.ingestion import ingest_directory
+from modules.ingestion.ocr import run_ocr, warm_ocr_engine
+from modules.ingestion.text_processing import process_pages
+from modules.retrieval.embeddings import build_vector_db
+from modules.retrieval.retrieval import Retriever, _load_reranker
+from modules.doc_generation.slide_generator import SlideData
+from modules.core.history_store import record_presentation, load_history, clear_history
+from modules.doc_generation.html_renderer import render as render_html
+from modules.retrieval.context_manager import prepare_context_for_slides, extract_section_outline
+from modules.core.llm_cache import clear_cache, cache_stats
+from modules.retrieval.evaluation import RAGEvaluator
+from modules.core.health import full_health_check, quick_status
 from dotenv import load_dotenv
 import time
 
@@ -88,7 +88,7 @@ def _get_llm_engine():
     """Get or create cached LLM engine instance."""
     global _llm_engine
     if _llm_engine is None:
-        from modules.llm import LLMEngine
+        from modules.doc_generation.llm import LLMEngine
         _llm_engine = LLMEngine()
     return _llm_engine
 
@@ -101,322 +101,15 @@ def _files_hash_from_content(files_data: list[tuple[str, bytes]]) -> str:
     return h.hexdigest()
 
 
-def _build_image_registry(pages: list, chunks: list) -> tuple[dict, list, dict, dict]:
-    """
-    Create simple image IDs (IMG_001) with context descriptions and captions.
-    Returns: (pdf_images, available_image_ids, image_contexts, image_captions)
-    """
-    pdf_images = {}
-    image_contexts = {}
-    image_captions = {}
-    
-    pdf_img_pages = [p for p in pages if p.type == "pdf_image" and isinstance(p.image, str)]
-    
-    for idx, page in enumerate(pdf_img_pages):
-        simple_id = f"IMG_{idx + 1:03d}"
-        pdf_images[simple_id] = page.image
-        
-        # Store caption if available
-        caption = getattr(page, 'caption', '') or ''
-        if caption:
-            image_captions[simple_id] = caption
-        
-        # Build context from nearby text chunks
-        match = re.match(r"^(.+?)\s*\(.*?page\s*(\d+).*\)$", page.source, re.IGNORECASE)
-        if match:
-            base_name, pg_num = match.group(1).strip(), int(match.group(2))
-            context_chunks = [c.text[:200] for c in chunks if c.source == base_name and c.page == pg_num]
-            image_contexts[simple_id] = " ".join(context_chunks)[:400] if context_chunks else f"Image from {base_name}, page {pg_num}"
-        else:
-            image_contexts[simple_id] = caption or f"Image: {page.source[:100]}"
-    
-    figure_ref_map = {}
-    img_page_map = {}  # IMG_001 → page number
-    for img_id, page in zip(list(pdf_images.keys()), pdf_img_pages):
-        ref = getattr(page, 'figure_ref', '') or ''
-        if ref:
-            key = ref.lower().strip().rstrip('.:')
-            figure_ref_map[key] = img_id
-            num_match = re.search(r'[\d]+[-\.][\d]+', key)
-            if num_match:
-                figure_ref_map[f"figure {num_match.group(0)}"] = img_id
-                figure_ref_map[f"fig. {num_match.group(0)}"] = img_id
-        img_page_map[img_id] = getattr(page, 'page', 0)
-
-    return pdf_images, list(pdf_images.keys()), image_contexts, image_captions, figure_ref_map, img_page_map
-
-def _extract_figure_refs_from_chunks(chunks: list) -> list[str]:
-    """
-    Extract all figure references mentioned in chunks.
-    Returns list like ['2-11', '2-12', '3-5']
-    """
-    mentioned = []
-    for chunk in chunks:
-        text = getattr(chunk, 'text', '')
-        # Find patterns like "Figure 2-11", "Fig. 2-12", "Table 3-5"
-        refs = re.findall(
-            r'(?:Figure|Fig\.|Table)\s+([\d]+[-\.][\d]+(?:[-\.][\d]+)*)',
-            text,
-            re.IGNORECASE
-        )
-        mentioned.extend(refs)
-    
-    # Deduplicate while preserving order
-    seen = set()
-    unique = []
-    for ref in mentioned:
-        if ref not in seen:
-            seen.add(ref)
-            unique.append(ref)
-    
-    return unique
-
-def _assign_fallback_images(slides: list, pdf_images: dict, image_contexts: dict, figure_ref_map: dict = None, chunks: list = None, image_captions: dict = None) -> dict:
-    """Auto-assign images to slides without image_id based on content matching."""
-    if image_captions is None:
-        image_captions = {}
-    if not pdf_images:
-        return {}
-    
-    used_images = set()
-    render_images = {}
-
-    # Build section → figure refs map from original chunks
-    section_fig_map = {}
-    if chunks and figure_ref_map:
-        for chunk in chunks:
-            section = getattr(chunk, 'section_heading', '') or ''
-            if not section:
-                continue
-            fig_refs = re.findall(r'figure\s+[\d]+[-\.][\d]+', chunk.text, re.IGNORECASE)
-            if section not in section_fig_map:
-                section_fig_map[section] = []
-            for ref in fig_refs:
-                norm = ref.lower().strip()
-                if norm not in section_fig_map[section]:
-                    section_fig_map[section].append(norm)
-    
-    for i, slide in enumerate(slides):
-        iid = slide.get("image_id") if isinstance(slide, dict) else getattr(slide, "image_id", None)
-        
-        if iid and iid in pdf_images:
-            render_images[i] = f"data:image/jpeg;base64,{pdf_images[iid]}"
-            used_images.add(iid)
-            continue
-        
-        # Skip title and summary slides entirely
-        slide_type = slide.get("slide_type") if isinstance(slide, dict) else getattr(slide, "slide_type", "")
-        if slide_type in ("title", "summary") or i == 0 or i == len(slides) - 1:
-            continue
-        
-        # Build slide text
-        # Build slide text - INCLUDE PARAGRAPH where batch mode puts figure refs
-        title = slide.get("title", "") if isinstance(slide, dict) else getattr(slide, "title", "")
-        bullets = slide.get("bullets", []) if isinstance(slide, dict) else getattr(slide, "bullets", [])
-        paragraph = slide.get("paragraph", "") if isinstance(slide, dict) else getattr(slide, "paragraph", "")
-        key_points = slide.get("key_points", []) if isinstance(slide, dict) else getattr(slide, "key_points", [])
-
-        # Combine all text fields
-        bullet_texts = [b.get("text", "") if isinstance(b, dict) else str(b) for b in bullets]
-        keypoint_texts = [kp.get("text", "") if isinstance(kp, dict) else str(kp) for kp in key_points]
-
-        slide_text = f"{title} {paragraph} {' '.join(bullet_texts)} {' '.join(keypoint_texts)}".lower()
-        
-        # Priority match: ALL figure references mentioned in slide text
-        fig_mentioned = False
-        if figure_ref_map:
-            all_fig_matches = re.findall(
-                r'figure\s+([\d]+[-\.][\d]+(?:[-\.][\d]+)*)|fig\.\s*([\d]+[-\.][\d]+(?:[-\.][\d]+)*)',
-                slide_text, re.IGNORECASE
-            )
-            matched_imgs = []
-            for m in all_fig_matches:
-                fig_num = (m[0] or m[1] or "").strip()
-                ref_key = f"figure {fig_num}".lower()
-                if ref_key in figure_ref_map and figure_ref_map[ref_key] not in used_images:
-                    img_id = figure_ref_map[ref_key]
-                    matched_imgs.append(f"data:image/jpeg;base64,{pdf_images[img_id]}")
-                    used_images.add(img_id)
-            if matched_imgs:
-                render_images[i] = matched_imgs if len(matched_imgs) > 1 else matched_imgs[0]
-                fig_mentioned = True
-                continue
-            if all_fig_matches:
-                # Figures mentioned but none found in map — skip keyword fallback
-                fig_mentioned = True
-                continue
-
-        # Fallback: look up figure refs from the PDF section this slide belongs to
-        if not fig_mentioned and section_fig_map:
-            slide_section = slide.get("title", "") if isinstance(slide, dict) else ""
-            slide_words = set(slide_section.lower().split())
-            best_section_match = None
-            best_overlap = 0
-            for section, refs in section_fig_map.items():
-                section_words = set(section.lower().replace('>', ' ').split())
-                overlap = len(slide_words & section_words)
-                # Require at least 3 words overlap OR exact substring match
-                if overlap > best_overlap and (
-                    overlap >= 3 or
-                    slide_section.lower() in section.lower() or
-                    section.lower().endswith(slide_section.lower())
-                ):
-                    best_overlap = overlap
-                    best_section_match = (section, refs)
-
-            if best_section_match:
-                section, refs = best_section_match
-                for ref in refs:
-                    if ref in figure_ref_map and figure_ref_map[ref] not in used_images:
-                        img_id = figure_ref_map[ref]
-                        render_images[i] = f"data:image/jpeg;base64,{pdf_images[img_id]}"
-                        used_images.add(img_id)
-                        fig_mentioned = True
-                        break
-
-        # Keyword matching disabled — too many false positives
-        # Only assign images when figure refs are explicitly known
-        continue
 
 
-        # Strict matching: Find best matching unused image
-        slide_words = set(re.findall(r'\b[a-z]{5,}\b', slide_text))
-        best_match, best_score = None, 0
-        for img_id, context in image_contexts.items():
-            if img_id in used_images:
-                continue
-            ctx_words = set(re.findall(r'\b[a-z]{5,}\b', context.lower()))
-            overlap = len(slide_words & ctx_words)
-            if overlap > best_score and overlap >= 3:
-                best_score, best_match = overlap, img_id
-        
-        if best_match:
-            render_images[i] = f"data:image/jpeg;base64,{pdf_images[best_match]}"
-            used_images.add(best_match)
-    
-    # ===== DEBUG OUTPUT =====
-    print(f"\n{'='*70}")
-    print(f"🖼️ IMAGE ASSIGNMENT DEBUG")
-    print(f"{'='*70}")
-    print(f"Total slides: {len(slides)}")
-    print(f"Images assigned: {len(render_images)}")
-    print(f"\nPer-slide breakdown:")
-    
-    for i, slide in enumerate(slides):
-        title = slide.get("title", "")
-        paragraph = slide.get("paragraph", "")
-        assigned_img = render_images.get(i)
-        
-        print(f"\n--- SLIDE {i+1}: {title} ---")
-        
-        # Search for figure refs in this slide
-        full_text = f"{title} {paragraph}"
-        for kp in slide.get('key_points', []):
-            if isinstance(kp, dict):
-                full_text += " " + kp.get('text', '')
-        
-        fig_refs = re.findall(r'(?:Figure|Fig\.|Table)\s+([\d]+[-\.][\d]+)', full_text, re.IGNORECASE)
-        
-        if fig_refs:
-            print(f"Figure refs found in text: {fig_refs}")
-            
-            # Check if they're in the map
-            for ref in fig_refs:
-                key = f"figure {ref}".lower()
-                if key in figure_ref_map:
-                    expected_img = figure_ref_map[key]
-                    print(f"  '{key}' maps to: {expected_img}")
-                    if expected_img in image_captions:
-                        print(f"    Expected caption: {image_captions[expected_img][:80]}...")
-                else:
-                    print(f"  ⚠️ '{key}' NOT in figure_ref_map!")
-        else:
-            print(f"No figure references found in text")
-        
-        # Show paragraph snippet
-        if paragraph:
-            print(f"Paragraph snippet: {paragraph[:150]}...")
-        
-        # Show what was assigned
-        if assigned_img:
-            # Extract image ID from the base64 data URL
-            for img_id, b64 in pdf_images.items():
-                if b64 in assigned_img:
-                    caption = image_captions.get(img_id, "No caption")
-                    if fig_refs and img_id != figure_ref_map.get(f"figure {fig_refs[0]}".lower()):
-                        print(f"❌ WRONG! Assigned: {img_id}")
-                        print(f"   Caption: {caption[:80]}...")
-                    else:
-                        print(f"✅ Assigned: {img_id}")
-                        print(f"   Caption: {caption[:80]}...")
-                    break
-        else:
-            print(f"❌ NO IMAGE ASSIGNED")
-    
-    print(f"{'='*70}\n")
-    # ===== END DEBUG =====
-    
-    return render_images
 
-    # ===== DEBUG OUTPUT =====
-    print(f"\n{'='*70}")
-    print(f"🖼️ IMAGE ASSIGNMENT DEBUG")
-    print(f"{'='*70}")
-    print(f"Total slides: {len(slides)}")
-    print(f"Images assigned: {len(render_images)}")
-    print(f"\nPer-slide breakdown:")
-    
-    for i, slide in enumerate(slides):
-        title = slide.get("title", "")
-        paragraph = slide.get("paragraph", "")[:150]
-        assigned_img = render_images.get(i)
-        
-        print(f"\n--- SLIDE {i+1}: {title} ---")
-        
-        # Show paragraph snippet
-        if paragraph:
-            print(f"Paragraph: {paragraph}...")
-        
-        # Search for figure refs in this slide
-        full_text = f"{title} {slide.get('paragraph', '')} {' '.join([str(b) for b in slide.get('bullets', [])])}"
-        fig_refs = re.findall(r'(?:Figure|Fig\.|Table)\s+([\d]+[-\.][\d]+)', full_text, re.IGNORECASE)
-        
-        if fig_refs:
-            print(f"Figure refs found: {fig_refs}")
-            
-            # Check if they're in the map
-            for ref in fig_refs:
-                key = f"figure {ref}".lower()
-                if key in figure_ref_map:
-                    expected_img = figure_ref_map[key]
-                    print(f"  '{key}' maps to: {expected_img}")
-                    if expected_img in image_captions:
-                        print(f"    Caption: {image_captions[expected_img]}")
-        else:
-            print(f"No figure references found in text")
-        
-        # Show what was assigned
-        if assigned_img:
-            # Extract image ID from the base64 data URL
-            for img_id, b64 in pdf_images.items():
-                if b64 in assigned_img:
-                    caption = image_captions.get(img_id, "No caption")
-                    print(f"✅ ASSIGNED: {img_id}")
-                    print(f"   Caption: {caption}")
-                    break
-        else:
-            print(f"❌ NO IMAGE ASSIGNED")
-    
-    print(f"{'='*70}\n")
-    # ===== END DEBUG =====
-    
-    return render_images
 # ── Startup ──────────────────────────────────────────────────────────────────
 @app.on_event("startup")
 async def startup_event():
     log.info("Pre-warming engines...")
     warm_ocr_engine()
-    from modules.embeddings import VectorDB
+    from modules.retrieval.embeddings import VectorDB
     VectorDB()._load_model()
     if CONFIG.get("retrieval", {}).get("use_reranker", False):
         _load_reranker(CONFIG["retrieval"]["reranker_model"])
@@ -431,7 +124,7 @@ async def root():
 
 @app.get("/themes")
 async def get_themes():
-    from modules.html_renderer import _PPTX_TO_HTML_THEME
+    from modules.doc_generation.html_renderer import _PPTX_TO_HTML_THEME
     return list(_PPTX_TO_HTML_THEME.keys())
 
 
@@ -447,13 +140,12 @@ async def transcribe_audio(file: UploadFile = File(...)):
 async def generate_stream(
     prompt: str = Form(...),
     theme: str = Form("Dark Navy"),
-    num_slides: int = Form(5),
-    model: str = Form(""),  # Empty = use default from config/env
-    top_k: int = Form(4),
+    max_slides: int = Form(12),
+    model: str = Form(""),
     language: str = Form("English"),
     files: list[UploadFile] = File(default=[]),
     use_pdf_images: bool = Form(True),
-    use_batch_mode: bool = Form(True),  # NEW: Enable batch generation
+    use_batch_mode: bool = Form(True),
 ):
     async def _stream():
         session_id = str(uuid.uuid4())
@@ -469,7 +161,7 @@ async def generate_stream(
             start_time = time.time()
             
             print(f"\n{'='*60}", flush=True)
-            print(f"🚀 OPTIMIZED GENERATION: {num_slides} slides", flush=True)
+            print(f"🚀 OPTIMIZED GENERATION: max_slides={max_slides}", flush=True)
             print(f"📝 Topic: '{prompt[:50]}...'", flush=True)
             print(f"⚡ Batch mode: {use_batch_mode}", flush=True)
             print(f"{'='*60}\n", flush=True)
@@ -565,28 +257,32 @@ async def generate_stream(
             yield _emit("status", {"step": "retrieving", "message": "Retrieving context…"})
             retriever = Retriever(index_path=isolated_index)
             # First pass: global search to get section outline
-            results = retriever.search_expanded(prompt, top_k=max(top_k, 12))
+            # Use a large top_k to cast a wide net across the whole document
+            results = retriever.search_expanded(prompt, top_k=25)
             section_outline = extract_section_outline(results)
+
+            # Auto-set num_slides from the actual document structure, capped by user's max
+            # Content slots = sections found, but never exceed (max_slides - 2) to leave room for title + summary
+            max_content = min(len(section_outline), max_slides - 2)
+            section_outline = section_outline[:max_content]
+            num_slides = max_content + 2  # title + content + summary
+            print(f"📊 Auto-calculated: {max_content} sections → {num_slides} slides (max={max_slides})", flush=True)
 
             # Second pass: retrieve chunks per section for accurate context
             if section_outline:
                 per_section_chunks = []
                 seen_ids = set()
 
-                # Count how many slides each section will produce
-                # (section_outline may have fewer entries than num_slides)
-                section_slide_count = {}
-                for section in section_outline:
-                    section_slide_count[section] = section_slide_count.get(section, 0) + 1
-                # If num_slides > sections, some sections will be split across multiple slides
-                extra = num_slides - len(section_outline)
+                # Each section gets exactly one slide (1:1 mapping)
+                section_slide_count = {s: 1 for s in section_outline}
+                extra = 0
                 # Build a per-section chunk bank sorted by PAGE ORDER
                 section_chunk_bank = {}
                 for section in section_outline:
                     if section in section_chunk_bank:
                         continue  # already fetched
                     raw = retriever.search_for_section(
-                        section, section_heading=section, top_k=10
+                        section, section_heading=section, top_k=20
                     )
                     strict = [
                         c for c in raw
@@ -631,7 +327,7 @@ async def generate_stream(
 
             # 3b. Extract ideas per section for multi-slide sections
             yield _emit("status", {"step": "generating", "message": "Analyzing section ideas…"})
-            from modules.llm import LLMEngine
+            from modules.doc_generation.llm import LLMEngine
             llm = LLMEngine()
             lang_label = "French" if language.lower() in ("fr", "french") else "English"
 
@@ -681,6 +377,16 @@ async def generate_stream(
             # Add title and summary slots
             final_outline = idea_outline  # title/summary handled by prompt rules
 
+            # Cap num_slides to avoid asking LLM for more slides than we have unique content.
+            # The batch prompt accounts for title (slide 1) + summary (last slide) automatically,
+            # so the content slots = len(final_outline). Total = content + title + summary.
+            max_content_slides = len(final_outline)
+            if max_content_slides > 0:
+                capped = max_content_slides + 2  # +2 for title and summary
+                if num_slides > capped:
+                    log.info(f"Capping num_slides from {num_slides} → {capped} (only {max_content_slides} unique sections)")
+                    num_slides = capped
+
             log.info(f"Idea outline: {len(final_outline)} entries for {num_slides} slides")
 
             # 4. Generate Slides
@@ -691,7 +397,7 @@ async def generate_stream(
             if use_batch_mode:
                 print("⚡ Using BATCH generation mode", flush=True)
                 
-                from modules.schemas import validate_and_fix_slide
+                from modules.core.schemas import validate_and_fix_slide
                 raw_list = await llm.generate_all_slides_batch(
                     query=prompt,
                     context_text=context_text,
@@ -727,6 +433,40 @@ async def generate_stream(
                             log.info(f"Removed duplicate figure ref '{ref}' from slide '{slide.get('title','')[:30]}'")
                         else:
                             used_fig_refs.add(norm)
+
+                # Post-process: remove near-duplicate slides (same title OR same opening content)
+                def _norm_title(t: str) -> str:
+                    # Normalize: lowercase, collapse spaces, strip trailing 's' for basic stemming
+                    return re.sub(r'\s+', ' ', t.lower().strip().rstrip('s'))
+
+                def _content_fingerprint(slide: dict) -> str:
+                    # First 80 chars of paragraph — catches slides with different titles but same content
+                    para = slide.get("paragraph", "") or ""
+                    return re.sub(r'\s+', ' ', para[:80].lower().strip())
+
+                seen_titles_norm = set()
+                seen_content_fps = set()
+                deduped_slides = []
+                for slide in slides_raw:
+                    stype = slide.get("slide_type", "")
+                    title_norm = _norm_title(slide.get("title", ""))
+                    content_fp = _content_fingerprint(slide)
+                    # Always keep title and summary slides
+                    if stype in ("title", "summary") or not title_norm:
+                        deduped_slides.append(slide)
+                        continue
+                    is_dup_title   = title_norm in seen_titles_norm
+                    is_dup_content = content_fp and content_fp in seen_content_fps
+                    if not is_dup_title and not is_dup_content:
+                        seen_titles_norm.add(title_norm)
+                        if content_fp:
+                            seen_content_fps.add(content_fp)
+                        deduped_slides.append(slide)
+                    else:
+                        reason = "title" if is_dup_title else "content"
+                        log.warning(f"Dropping duplicate slide ({reason}): '{slide.get('title', '')}'")
+                        print(f"⚠️ Dropped duplicate slide ({reason}): '{slide.get('title', '')}'", flush=True)
+                slides_raw = deduped_slides
                 
                 for i, slide in enumerate(slides_raw):
                     yield _emit("slide", {
@@ -738,11 +478,20 @@ async def generate_stream(
                         "image_id": slide.get("image_id"),
                     })
                     print(f"✅ Slide {i+1}: '{slide.get('title', '')}'", flush=True)
+                    para = slide.get("paragraph", "")
+                    kps  = slide.get("key_points", [])
+                    if para:
+                        print(f"   📝 {para[:400]}{'...' if len(para) > 400 else ''}", flush=True)
+                    if kps:
+                        for kp in kps:
+                            txt = kp.get("text", kp) if isinstance(kp, dict) else kp
+                            print(f"   • {txt}", flush=True)
+                    print(flush=True)
             
             else:
                 print("🐢 Using SEQUENTIAL generation mode", flush=True)
                 
-                from modules.pedagogical_engine import (
+                from modules.doc_generation.pedagogical_engine import (
                     SLIDE_ARC, _subquery_for_slide, _build_slide_prompt,
                     _extract_slide_json, _prepare_context, _slide_fingerprint,
                 )
@@ -829,10 +578,7 @@ async def generate_stream(
                 )
                 slides_obj.append(s_obj)
 
-            # 6. Generate Diagrams (skipped)
-            diag_map = {}
-
-            # 7. Build HTML slides
+                        # 7. Build HTML slides
             html_slides = []
             for idx, s in enumerate(slides_obj):
                 html_bullets = s.bullets
@@ -861,6 +607,7 @@ async def generate_stream(
                 })
 
             # 8. Assign images
+            diag_map = {}  # diagram generation not yet implemented
             render_images = _assign_fallback_images(html_slides, pdf_images, image_contexts, figure_ref_map, chunks, image_captions)
             print(f"🖼️ Assigned {len(render_images)} images", flush=True)
 
@@ -952,7 +699,7 @@ async def evaluate_query(
     top_k: int = Form(5),
 ):
     """Evaluate RAG pipeline quality for a query."""
-    from modules.retrieval import Retriever
+    from modules.retrieval.retrieval import Retriever
     
     retriever = Retriever()
     evaluator = RAGEvaluator()

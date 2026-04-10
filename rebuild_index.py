@@ -1,10 +1,10 @@
 """Rebuild the FAISS index with new semantic chunking."""
 from pathlib import Path
-from modules.config_loader import CONFIG
-from modules.ingestion import ingest_directory
-from modules.ocr import run_ocr
-from modules.text_processing import process_pages
-from modules.embeddings import build_vector_db
+from modules.core.config_loader import CONFIG
+from modules.ingestion.ingestion import ingest_directory
+from modules.ingestion.ocr import run_ocr
+from modules.ingestion.text_processing import process_pages
+from modules.retrieval.embeddings import build_vector_db
 
 print("=" * 50)
 print("REBUILDING VECTOR INDEX")
