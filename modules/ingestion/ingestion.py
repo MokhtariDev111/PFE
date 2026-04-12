@@ -29,6 +29,7 @@ if not log.hasHandlers():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s — %(message)s", datefmt="%H:%M:%S")
 
 PDF_EXT   = {".pdf"}
+DOCX_EXT  = {".docx"}
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp"}
 TXT_EXT   = {".txt"}
 
@@ -46,12 +47,120 @@ class DocumentPage:
     section_heading: str = ""   # Nearest parent heading (for TEXT pages only)
 
 
-def load_txt(path: Path) -> DocumentPage:
-    """Reads a plain text file."""
+def load_txt(path: Path) -> list[DocumentPage]:
+    """Reads a plain text file with basic heuristic heading detection."""
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         text = f.read().strip()
-    log.info(f"[TXT] {path.name}  →  {len(text)} chars")
-    return DocumentPage(source=path.name, page=0, type="txt", text=text)
+        
+    blocks = re.split(r'\n\s*\n', text)
+    pages = []
+    current_h1 = ""
+    current_text_blocks = []
+    
+    for block in blocks:
+        block = block.strip()
+        if not block:
+            continue
+            
+        lines = block.split('\n')
+        if len(lines) == 1:
+            line = lines[0]
+            if len(line) < 80 and not line.endswith(('.', ',', ';', ':')):
+                is_heading = line.istitle() or line.isupper()
+                if re.match(r'^[\d\.]*\s*[A-Z]', line) and len(line) < 60:
+                    is_heading = True
+                
+                if is_heading:
+                    if current_text_blocks:
+                        pages.append(DocumentPage(
+                            source=path.name,
+                            page=len(pages) + 1,
+                            type="txt",
+                            text="\n\n".join(current_text_blocks),
+                            section_heading=current_h1
+                        ))
+                        current_text_blocks = []
+                    current_h1 = line
+                    continue
+                    
+        current_text_blocks.append(block)
+        
+    if current_text_blocks:
+        pages.append(DocumentPage(
+            source=path.name,
+            page=len(pages) + 1,
+            type="txt",
+            text="\n\n".join(current_text_blocks),
+            section_heading=current_h1
+        ))
+
+    log.info(f"[TXT] {path.name} → {len(pages)} semantic parts")
+    return pages
+
+def load_docx(path: Path) -> list[DocumentPage]:
+    """
+    Reads a docx file using python-docx.
+    Extracts text and uses paragraph styles for headings.
+    """
+    try:
+        import docx
+    except ImportError:
+        log.error("python-docx is not installed. Please pip install python-docx")
+        return []
+
+    doc = docx.Document(path)
+    pages = []
+    
+    current_h1 = ""
+    current_h2 = ""
+    current_text_blocks = []
+    
+    for para in doc.paragraphs:
+        style_name = para.style.name.lower() if para.style else ""
+        text = para.text.strip()
+        if not text:
+            continue
+            
+        if "heading 1" in style_name or "title" in style_name:
+            if current_text_blocks:
+                sec_head = f"{current_h1} > {current_h2}" if current_h1 and current_h2 else current_h2 or current_h1
+                pages.append(DocumentPage(
+                    source=path.name,
+                    page=len(pages) + 1,
+                    type="docx",
+                    text="\n\n".join(current_text_blocks),
+                    section_heading=sec_head
+                ))
+                current_text_blocks = []
+            current_h1 = text
+            current_h2 = ""
+        elif "heading 2" in style_name or "heading 3" in style_name:
+            if current_text_blocks:
+                sec_head = f"{current_h1} > {current_h2}" if current_h1 and current_h2 else current_h2 or current_h1
+                pages.append(DocumentPage(
+                    source=path.name,
+                    page=len(pages) + 1,
+                    type="docx",
+                    text="\n\n".join(current_text_blocks),
+                    section_heading=sec_head
+                ))
+                current_text_blocks = []
+            current_h2 = text
+        else:
+            current_text_blocks.append(text)
+            
+    if current_text_blocks:
+        sec_head = f"{current_h1} > {current_h2}" if current_h1 and current_h2 else current_h2 or current_h1
+        pages.append(DocumentPage(
+            source=path.name,
+            page=len(pages) + 1,
+            type="docx",
+            text="\n\n".join(current_text_blocks),
+            section_heading=sec_head
+        ))
+        
+    log.info(f"[DOCX] {path.name} → {len(pages)} semantic parts")
+    return pages
 
 
 def _pil_to_base64(img: Image.Image) -> str:
@@ -354,10 +463,12 @@ def ingest_directory(raw_dir: str | Path) -> list[DocumentPage]:
         ext = f.suffix.lower()
         if ext in PDF_EXT:
             results.extend(load_pdf(f))
+        elif ext in DOCX_EXT:
+            results.extend(load_docx(f))
         elif ext in IMAGE_EXT:
             results.append(load_image(f))
         elif ext in TXT_EXT:
-            results.append(load_txt(f))
+            results.extend(load_txt(f))
             
     log.info(f"Total pages/images loaded: {len(results)}")
     return results

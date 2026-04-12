@@ -1,5 +1,82 @@
 [
   {
+    "id": "1711a530-bcc4-4db5-b189-0bfe164dd16a",
+    "created_at": "2026-04-12T02:52:06",
+    "prompt": "what is microsoft ? ",
+    "topic": "what is microsoft ? ",
+    "num_slides": 9,
+    "theme": "Dark Navy",
+    "model": "groq",
+    "html_path": "C:\\Users\\mokht\\AppData\\Local\\Temp\\edu_1711a530_nnne20wb\\html\\pres_1711a530.html",
+    "slides": []
+  },
+  {
+    "id": "44ae8fa2-b44d-4499-b5e6-5feb93cf74f9",
+    "created_at": "2026-04-12T02:48:32",
+    "prompt": "what is google and who created it ? ",
+    "topic": "what is google and who created it ? ",
+    "num_slides": 7,
+    "theme": "Dark Navy",
+    "model": "groq",
+    "html_path": "C:\\Users\\mokht\\AppData\\Local\\Temp\\edu_44ae8fa2_i2mjiuf9\\html\\pres_44ae8fa2.html",
+    "slides": []
+  },
+  {
+    "id": "70534cb7-b002-42eb-87ee-9194f644672d",
+    "created_at": "2026-04-12T02:39:14",
+    "prompt": "what is Microsoft and who created it and when?",
+    "topic": "what is Microsoft and who created it and when?",
+    "num_slides": 8,
+    "theme": "Dark Navy",
+    "model": "groq",
+    "html_path": "C:\\Users\\mokht\\AppData\\Local\\Temp\\edu_70534cb7_dfyfmm5m\\html\\pres_70534cb7.html",
+    "slides": []
+  },
+  {
+    "id": "47c0938f-04e4-43f5-a272-7b261f322ad7",
+    "created_at": "2026-04-12T02:33:54",
+    "prompt": "what is nvidia and who created nvidia?",
+    "topic": "what is nvidia and who created nvidia?",
+    "num_slides": 4,
+    "theme": "Dark Navy",
+    "model": "groq",
+    "html_path": "C:\\Users\\mokht\\AppData\\Local\\Temp\\edu_47c0938f_bufrzzmx\\html\\pres_47c0938f.html",
+    "slides": []
+  },
+  {
+    "id": "e468cd83-52a7-4f64-b6f5-2185c69944c4",
+    "created_at": "2026-04-12T02:33:50",
+    "prompt": "what is nvidia and who created nvidia?",
+    "topic": "what is nvidia and who created nvidia?",
+    "num_slides": 4,
+    "theme": "Dark Navy",
+    "model": "groq",
+    "html_path": "C:\\Users\\mokht\\AppData\\Local\\Temp\\edu_e468cd83_72gxgk0v\\html\\pres_e468cd83.html",
+    "slides": []
+  },
+  {
+    "id": "3d844c7b-94b4-43f0-b1a5-427808212909",
+    "created_at": "2026-04-12T02:33:29",
+    "prompt": "what is nvidia and who created nvidia?",
+    "topic": "what is nvidia and who created nvidia?",
+    "num_slides": 4,
+    "theme": "Dark Navy",
+    "model": "groq",
+    "html_path": "C:\\Users\\mokht\\AppData\\Local\\Temp\\edu_3d844c7b_a9n7y2ej\\html\\pres_3d844c7b.html",
+    "slides": []
+  },
+  {
+    "id": "9ac371b4-a22a-446e-85ad-dc9b795c1679",
+    "created_at": "2026-04-12T02:32:07",
+    "prompt": "what is nvidia ? ",
+    "topic": "what is nvidia ? ",
+    "num_slides": 5,
+    "theme": "Dark Navy",
+    "model": "groq",
+    "html_path": "C:\\Users\\mokht\\AppData\\Local\\Temp\\edu_9ac371b4_qd0pspoh\\html\\pres_9ac371b4.html",
+    "slides": []
+  },
+  {
     "id": "c7a0a1be-406d-4554-ac1c-4a19db7fd26a",
     "created_at": "2026-04-12T02:19:06",
     "prompt": "Decision trees",

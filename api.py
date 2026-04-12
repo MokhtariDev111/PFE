@@ -476,6 +476,20 @@ async def generate_stream(
                         else:
                             used_fig_refs.add(norm)
 
+                # Post-process: Add line breaks to long paragraphs for better aesthetics
+                for slide in slides_raw:
+                    para = slide.get("paragraph", "")
+                    if para and len(para) > 200:
+                        # Split after 2 or 3 sentences (roughly)
+                        sentences = re.split(r'(?<=[.!?])\s+', para)
+                        if len(sentences) > 3:
+                            new_para = ""
+                            for i, sent in enumerate(sentences):
+                                new_para += sent + " "
+                                if (i + 1) % 3 == 0 and (i + 1) < len(sentences):
+                                    new_para = new_para.strip() + "\n\n"
+                            slide["paragraph"] = new_para.strip()
+
                 # Post-process: remove near-duplicate slides (same title OR same opening content)
                 def _norm_title(t: str) -> str:
                     # Normalize: lowercase, collapse spaces, strip trailing 's' for basic stemming

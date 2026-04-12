@@ -26,6 +26,7 @@ outputs/*.json
 logs/*.log
 data/raw/**
 data/cache/**
+modules/data/cache/llm/**
 data/processed/*.index
 data/processed/*.pkl
 !data/raw/.gitkeep
