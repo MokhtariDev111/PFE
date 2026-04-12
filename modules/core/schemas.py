@@ -45,7 +45,7 @@ class SlideSchema(BaseModel):
     """
     slide_type: SlideType = Field(default="concept")
     title: str = Field(..., min_length=3, max_length=100)
-    bullets: list[BulletPoint] = Field(..., min_length=1, max_length=6)
+    bullets: list[BulletPoint] = Field(default=[], max_length=6)
     key_message: Optional[str] = Field(default="", max_length=200)
     visual_hint: VisualHint = Field(default="none")
     image_id: Optional[str] = Field(default=None)

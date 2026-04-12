@@ -21,6 +21,7 @@ import hashlib
 import re
 from pathlib import Path
 from datetime import datetime
+from collections import OrderedDict
 
 from modules.doc_generation.pedagogical_engine import _build_slide_prompt
 from modules.doc_generation.image_pipeline import _build_image_registry, _extract_figure_refs_from_chunks, _assign_fallback_images
@@ -50,35 +51,8 @@ from dotenv import load_dotenv
 import time
 
 load_dotenv()
-
-# ── Structured logging ────────────────────────────────────────────────────────
-class _SectionFormatter(logging.Formatter):
-    COLORS = {
-        logging.DEBUG:    "\033[90m",   # grey
-        logging.INFO:     "\033[36m",   # cyan
-        logging.WARNING:  "\033[33m",   # yellow
-        logging.ERROR:    "\033[31m",   # red
-        logging.CRITICAL: "\033[35m",   # magenta
-    }
-    RESET = "\033[0m"
-    BOLD  = "\033[1m"
-
-    def format(self, record):
-        color = self.COLORS.get(record.levelno, "")
-        ts    = self.formatTime(record, "%H:%M:%S")
-        name  = f"{record.name:<12}"
-        level = f"{record.levelname:<8}"
-        return f"{color}{ts}{self.RESET} {self.BOLD}{name}{self.RESET} {color}{level}{self.RESET} {record.getMessage()}"
-
-_handler = logging.StreamHandler()
-_handler.setFormatter(_SectionFormatter())
-logging.root.handlers = [_handler]
-logging.root.setLevel(logging.INFO)
-# Silence noisy third-party loggers
-for _noisy in ("httpx", "httpcore", "urllib3", "multipart", "sentence_transformers", "faiss"):
-    logging.getLogger(_noisy).setLevel(logging.WARNING)
-
 log = logging.getLogger("api")
+logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(
     title="EduGenius AI - Optimized",
@@ -107,7 +81,21 @@ app.add_middleware(
 )
 
 # ── Caches ───────────────────────────────────────────────────────────────────
-_index_cache: dict[str, dict] = {}
+class LRUCache(OrderedDict):
+    def __init__(self, maxsize=10):
+        super().__init__()
+        self.maxsize = maxsize
+    def __getitem__(self, key):
+        value = super().__getitem__(key)
+        self.move_to_end(key)
+        return value
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        if len(self) > self.maxsize:
+            oldest = next(iter(self))
+            del self[oldest]
+
+_index_cache = LRUCache(maxsize=10)
 _session_store: dict[str, dict] = {}
 _llm_engine = None
 
@@ -141,6 +129,13 @@ async def startup_event():
     if CONFIG.get("retrieval", {}).get("use_reranker", False):
         _load_reranker(CONFIG["retrieval"]["reranker_model"])
     log.info("✔ System Ready")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    engine = _get_llm_engine()
+    await engine.aclose()
+    log.info("HTTP clients closed.")
 
 
 @app.get("/")
@@ -186,11 +181,12 @@ async def generate_stream(
         try:
             
             start_time = time.time()
-
-            log.info("─" * 55)
-            log.info(f"🚀  NEW REQUEST  topic='{prompt[:45]}...'  max={max_slides}")
-            log.info(f"    batch={use_batch_mode}  lang={language}  theme={theme}")
-            log.info("─" * 55)
+            
+            print(f"\n{'='*60}", flush=True)
+            print(f"🚀 OPTIMIZED GENERATION: max_slides={max_slides}", flush=True)
+            print(f"📝 Topic: '{prompt[:50]}...'", flush=True)
+            print(f"⚡ Batch mode: {use_batch_mode}", flush=True)
+            print(f"{'='*60}\n", flush=True)
 
             yield _emit("status", {"step": "ingesting", "message": "Analyzing documents…"})
 
@@ -213,7 +209,7 @@ async def generate_stream(
             cached = _index_cache.get(file_hash)
 
             if cached:
-                log.info(f"♻️  INDEX CACHE HIT  hash={file_hash[:12]}")
+                print(f"♻️ CACHE HIT: Using cached index (hash: {file_hash[:12]}...)", flush=True)
                 chunks = cached["chunks"]
                 isolated_index = Path(cached["index_path"])
                 pdf_images = cached.get("pdf_images", {})
@@ -224,7 +220,7 @@ async def generate_stream(
                 img_page_map = cached.get("img_page_map", {})
                 yield _emit("status", {"step": "indexing", "message": "Using cached index…"})
             else:
-                log.info(f"🆕  INDEX CACHE MISS  hash={file_hash[:12]}  building...")
+                print(f"🆕 CACHE MISS: Building new index (hash: {file_hash[:12]}...)", flush=True)
                 
                 # Write files to disk ONLY on cache miss
                 for filename, content in files_data:
@@ -238,7 +234,7 @@ async def generate_stream(
                     text_pages = [p for p in pages if p.type != "pdf_image"]
                     image_pages = [p for p in pages if p.type == "pdf_image"]
                     if len(image_pages) > MAX_OCR_IMAGES:
-                        log.warning(f"⚠️  OCR limit: {MAX_OCR_IMAGES}/{len(image_pages)} images")
+                        print(f"⚠️ Limiting OCR: {MAX_OCR_IMAGES}/{len(image_pages)} images", flush=True)
                         image_pages_to_ocr = image_pages[:MAX_OCR_IMAGES]
                         image_pages_skipped = image_pages[MAX_OCR_IMAGES:]
                     else:
@@ -247,7 +243,8 @@ async def generate_stream(
     
     # Run OCR on limited set
                     if image_pages_to_ocr:
-                        log.info(f"🔍  OCR  {len(image_pages_to_ocr)} images processed")
+                        image_pages_to_ocr = run_ocr(image_pages_to_ocr)
+                        print(f"🔍 OCR processed {len(image_pages_to_ocr)} images", flush=True)
     
     # Combine: text + OCR'd images + skipped images (without OCR text)
                     all_pages = text_pages + image_pages_to_ocr + image_pages_skipped
@@ -275,7 +272,7 @@ async def generate_stream(
                     "figure_ref_map": figure_ref_map,
                     "img_page_map": img_page_map,
                 }
-                log.info("💾  Index cached for future requests")
+                print(f"💾 Cached index for future requests", flush=True)
                 yield _emit("status", {"step": "indexing", "message": "Index built successfully…"})
 
             # 3. Retrieve
@@ -328,9 +325,9 @@ async def generate_stream(
                 for _ in range(count):
                     section_outline.append(section)
 
-            log.info(f"📊  OUTLINE  {len(expanded_outline)} sections → {total_content_slides} content → {num_slides} total")
+            print(f"📊 Content-driven: {len(expanded_outline)} sections → {total_content_slides} content slides → {num_slides} total (max={max_slides})", flush=True)
             for sec, cnt in expanded_outline:
-                log.info(f"    {'·' if cnt == 1 else '··'} {sec[:50]}  ({cnt} slide{'s' if cnt > 1 else ''})")
+                print(f"   {'📄' if cnt == 1 else '📚'} {sec[:50]} → {cnt} slide{'s' if cnt > 1 else ''}", flush=True)
 
             yield _emit("status", {"step": "retrieving", "message": "Retrieving context…"})
 
@@ -339,12 +336,15 @@ async def generate_stream(
                 per_section_chunks = []
                 seen_ids = set()
                 section_slide_idx = {}
+                _section_occ: dict[str, int] = {}
+                for _s in section_outline:
+                    _section_occ[_s] = _section_occ.get(_s, 0) + 1
 
                 for section in section_outline:
                     all_chunks = section_chunk_bank.get(section, [])
                     idx = section_slide_idx.get(section, 0)
                     section_slide_idx[section] = idx + 1
-                    total_occ = section_outline.count(section)
+                    total_occ = _section_occ[section]
                     chunk_count = len(all_chunks)
                     slice_size = max(2, chunk_count // total_occ)
                     start = idx * slice_size
@@ -365,8 +365,7 @@ async def generate_stream(
 
             # 3b. Extract ideas per section for multi-slide sections
             yield _emit("status", {"step": "generating", "message": "Analyzing section ideas…"})
-            from modules.doc_generation.llm import LLMEngine
-            llm = LLMEngine()
+            llm = _get_llm_engine()
             lang_label = "French" if language.lower() in ("fr", "french") else "English"
 
             # Build idea-level outline
@@ -464,10 +463,15 @@ async def generate_stream(
                     for ref in fig_refs_in_slide:
                         norm = ref.lower().strip()
                         if norm in used_fig_refs:
-                            # Remove this duplicate reference from the paragraph
+                            # Remove this duplicate reference from the paragraph, along with common surrounding text
+                            pattern = r'(?i)(?:,\s*)?(?:as\s+)?(?:shown|seen)\s+in\s*' + re.escape(ref) + r'\b|\(?' + re.escape(ref) + r'\)?'
                             slide["paragraph"] = re.sub(
-                                re.escape(ref), '', slide["paragraph"], flags=re.IGNORECASE
+                                pattern, '', slide["paragraph"]
                             ).strip()
+                            # Clean up formatting artifacts left behind
+                            slide["paragraph"] = re.sub(r'\s+', ' ', slide["paragraph"])
+                            slide["paragraph"] = re.sub(r',\s*\.', '.', slide["paragraph"])
+                            slide["paragraph"] = re.sub(r'\(\s*\)', '', slide["paragraph"])
                             log.info(f"Removed duplicate figure ref '{ref}' from slide '{slide.get('title','')[:30]}'")
                         else:
                             used_fig_refs.add(norm)
@@ -502,7 +506,8 @@ async def generate_stream(
                         deduped_slides.append(slide)
                     else:
                         reason = "title" if is_dup_title else "content"
-                        log.warning(f"⚠️  DEDUP  dropped ({reason}): '{slide.get('title', '')[:40]}'")
+                        log.warning(f"Dropping duplicate slide ({reason}): '{slide.get('title', '')}'")
+                        print(f"⚠️ Dropped duplicate slide ({reason}): '{slide.get('title', '')}'", flush=True)
                 slides_raw = deduped_slides
                 
                 for i, slide in enumerate(slides_raw):
@@ -514,15 +519,16 @@ async def generate_stream(
                         "visualHint": slide.get("visual_hint", "none"),
                         "image_id": slide.get("image_id"),
                     })
-                    log.info(f"  [{i+1:02d}] {slide.get('title', '')[:55]}")
+                    print(f"✅ Slide {i+1}: '{slide.get('title', '')}'", flush=True)
                     para = slide.get("paragraph", "")
                     kps  = slide.get("key_points", [])
                     if para:
-                        log.info(f"       {para[:120]}{'…' if len(para) > 120 else ''}")
+                        print(f"   📝 {para[:400]}{'...' if len(para) > 400 else ''}", flush=True)
                     if kps:
-                        for kp in kps[:2]:
+                        for kp in kps:
                             txt = kp.get("text", kp) if isinstance(kp, dict) else kp
-                            log.info(f"       • {str(txt)[:80]}")
+                            print(f"   • {txt}", flush=True)
+                    print(flush=True)
             
             else:
                 print("🐢 Using SEQUENTIAL generation mode", flush=True)
@@ -540,8 +546,8 @@ async def generate_stream(
                     slide_chunks = retriever.search(sub_q, top_k=5) or results
                     ctx_text = _prepare_context(slide_chunks)
                     
-                    # NEW: Extract figure references from retrieved chunks
                     mentioned_figures = _extract_figure_refs_from_chunks(slide_chunks)
+                    log.debug("Slide %d: figures %s from %d chunks", i + 1, mentioned_figures, len(slide_chunks))
                     slide = None
                     for attempt in range(2):
                         slide_prompt = _build_slide_prompt(
@@ -549,13 +555,11 @@ async def generate_stream(
                             prior_titles, prior_hints,
                             available_images=available_image_ids,
                             image_contexts=image_contexts,
-                            mentioned_figures=mentioned_figures,  # NEW parameter
-                            figure_ref_map=figure_ref_map,        # NEW parameter
+                            mentioned_figures=mentioned_figures,
+                            figure_ref_map=figure_ref_map,
                         )
                         raw = await llm.generate_async(prompt, slide_chunks, prompt_override=slide_prompt)
                         parsed = _extract_slide_json(raw)
-                        if parsed:
-                            log.debug(f"  [{i+1:02d}] '{parsed.get('title','')[:50]}'  img={parsed.get('image_id')}")
                         if parsed and _slide_fingerprint(parsed) not in prior_fps:
                             slide = parsed
                             break
@@ -621,23 +625,25 @@ async def generate_stream(
             # 8. Assign images
             diag_map = {}  # diagram generation not yet implemented
             render_images = _assign_fallback_images(html_slides, pdf_images, image_contexts, figure_ref_map, chunks, image_captions)
-            log.info(f"🖼️  Images assigned: {len(render_images)}")
+            print(f"🖼️ Assigned {len(render_images)} images", flush=True)
 
             # Build image captions for renderer (caption + page number)
+            # Reverse map built once — avoids O(n·m) b64 substring search per slide
+            _b64_to_img_id = {v: k for k, v in pdf_images.items()}
             render_captions = {}
             for slide_idx, img_data in render_images.items():
                 img_data_str = img_data[0] if isinstance(img_data, list) else img_data
-                for img_id, b64 in pdf_images.items():
-                    if b64 in img_data_str:
-                        cap = image_captions.get(img_id, "")
-                        pg  = img_page_map.get(img_id, 0)
-                        if cap and pg:
-                            render_captions[slide_idx] = f"{cap} — Page {pg}"
-                        elif cap:
-                            render_captions[slide_idx] = cap
-                        elif pg:
-                            render_captions[slide_idx] = f"Page {pg}"
-                        break
+                b64_part = img_data_str.split(",", 1)[1] if "," in img_data_str else img_data_str
+                img_id = _b64_to_img_id.get(b64_part)
+                if img_id:
+                    cap = image_captions.get(img_id, "")
+                    pg  = img_page_map.get(img_id, 0)
+                    if cap and pg:
+                        render_captions[slide_idx] = f"{cap} — Page {pg}"
+                    elif cap:
+                        render_captions[slide_idx] = cap
+                    elif pg:
+                        render_captions[slide_idx] = f"Page {pg}"
 
             # 9. Render HTML
             yield _emit("status", {"step": "rendering", "message": "Rendering presentation…"})
@@ -665,8 +671,7 @@ async def generate_stream(
             record_presentation(html_path, prompt, prompt[:50], len(slides_obj), theme, model or llm.backend, session_id=session_id)
 
             elapsed = time.time() - start_time
-            log.info(f"✅  DONE  {elapsed:.1f}s  {len(slides_obj)} slides  {len(render_images)} images")
-            log.info("─" * 55)
+            print(f"\n✨ DONE in {elapsed:.1f}s ({len(slides_obj)} slides, {len(diag_map)} diagrams, {len(render_images)} images)\n", flush=True)
 
             yield _emit("done", {
                 "session_id": session_id,

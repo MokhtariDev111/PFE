@@ -125,8 +125,12 @@ class VectorDB:
 
         # NEW: Save BM25 tokenized corpus so retrieval.py can build BM25 without
         # re-loading the embedding model or re-reading the original text.
-        # Each entry is a list of lowercase tokens from the chunk text.
-        bm25_corpus = [c.text.lower().split() for c in self.chunks_store]
+        # Each entry is a list of lowercase tokens from the chunk text, filtered for stop words.
+        _STOPWORDS = {"the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "with", "by", "of", "is", "are", "was", "were", "be", "this", "that", "it", "as", "from", "le", "la", "les", "un", "une", "des", "et", "ou", "de", "du", "en", "pour", "dans", "sur", "avec", "par", "est", "sont"}
+        bm25_corpus = [
+            [tok for tok in c.text.lower().split() if tok not in _STOPWORDS] 
+            for c in self.chunks_store
+        ]
         bm25_path   = self.index_path.with_suffix(".bm25.json")
         with open(bm25_path, "w", encoding="utf-8") as f:
             json.dump(bm25_corpus, f, ensure_ascii=False)

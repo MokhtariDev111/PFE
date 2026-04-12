@@ -286,10 +286,10 @@ if __name__ == "__main__":
         print(f"  '{text[:40]}...' -> {refs}")
 
 
-def _build_image_registry(pages: list, chunks: list) -> tuple[dict, list, dict, dict]:
+def _build_image_registry(pages: list, chunks: list) -> tuple[dict, list, dict, dict, dict, dict]:
     """
     Create simple image IDs (IMG_001) with context descriptions and captions.
-    Returns: (pdf_images, available_image_ids, image_contexts, image_captions)
+    Returns: (pdf_images, available_image_ids, image_contexts, image_captions, figure_ref_map, img_page_map)
     """
     pdf_images = {}
     image_contexts = {}
@@ -463,136 +463,4 @@ def _assign_fallback_images(slides: list, pdf_images: dict, image_contexts: dict
         # Only assign images when figure refs are explicitly known
         continue
 
-
-        # Strict matching: Find best matching unused image
-        slide_words = set(re.findall(r'\b[a-z]{5,}\b', slide_text))
-        best_match, best_score = None, 0
-        for img_id, context in image_contexts.items():
-            if img_id in used_images:
-                continue
-            ctx_words = set(re.findall(r'\b[a-z]{5,}\b', context.lower()))
-            overlap = len(slide_words & ctx_words)
-            if overlap > best_score and overlap >= 3:
-                best_score, best_match = overlap, img_id
-        
-        if best_match:
-            render_images[i] = f"data:image/jpeg;base64,{pdf_images[best_match]}"
-            used_images.add(best_match)
-    
-    # ===== DEBUG OUTPUT =====
-    print(f"\n{'='*70}")
-    print(f"🖼️ IMAGE ASSIGNMENT DEBUG")
-    print(f"{'='*70}")
-    print(f"Total slides: {len(slides)}")
-    print(f"Images assigned: {len(render_images)}")
-    print(f"\nPer-slide breakdown:")
-    
-    for i, slide in enumerate(slides):
-        title = slide.get("title", "")
-        paragraph = slide.get("paragraph", "")
-        assigned_img = render_images.get(i)
-        
-        print(f"\n--- SLIDE {i+1}: {title} ---")
-        
-        # Search for figure refs in this slide
-        full_text = f"{title} {paragraph}"
-        for kp in slide.get('key_points', []):
-            if isinstance(kp, dict):
-                full_text += " " + kp.get('text', '')
-        
-        fig_refs = re.findall(r'(?:Figure|Fig\.|Table)\s+([\d]+[-\.][\d]+)', full_text, re.IGNORECASE)
-        
-        if fig_refs:
-            print(f"Figure refs found in text: {fig_refs}")
-            
-            # Check if they're in the map
-            for ref in fig_refs:
-                key = f"figure {ref}".lower()
-                if key in figure_ref_map:
-                    expected_img = figure_ref_map[key]
-                    print(f"  '{key}' maps to: {expected_img}")
-                    if expected_img in image_captions:
-                        print(f"    Expected caption: {image_captions[expected_img][:80]}...")
-                else:
-                    print(f"  ⚠️ '{key}' NOT in figure_ref_map!")
-        else:
-            print(f"No figure references found in text")
-        
-        # Show paragraph snippet
-        if paragraph:
-            print(f"Paragraph snippet: {paragraph[:150]}...")
-        
-        # Show what was assigned
-        if assigned_img:
-            # Extract image ID from the base64 data URL
-            for img_id, b64 in pdf_images.items():
-                if b64 in assigned_img:
-                    caption = image_captions.get(img_id, "No caption")
-                    if fig_refs and img_id != figure_ref_map.get(f"figure {fig_refs[0]}".lower()):
-                        print(f"❌ WRONG! Assigned: {img_id}")
-                        print(f"   Caption: {caption[:80]}...")
-                    else:
-                        print(f"✅ Assigned: {img_id}")
-                        print(f"   Caption: {caption[:80]}...")
-                    break
-        else:
-            print(f"❌ NO IMAGE ASSIGNED")
-    
-    print(f"{'='*70}\n")
-    # ===== END DEBUG =====
-    
-    return render_images
-
-    # ===== DEBUG OUTPUT =====
-    print(f"\n{'='*70}")
-    print(f"🖼️ IMAGE ASSIGNMENT DEBUG")
-    print(f"{'='*70}")
-    print(f"Total slides: {len(slides)}")
-    print(f"Images assigned: {len(render_images)}")
-    print(f"\nPer-slide breakdown:")
-    
-    for i, slide in enumerate(slides):
-        title = slide.get("title", "")
-        paragraph = slide.get("paragraph", "")[:150]
-        assigned_img = render_images.get(i)
-        
-        print(f"\n--- SLIDE {i+1}: {title} ---")
-        
-        # Show paragraph snippet
-        if paragraph:
-            print(f"Paragraph: {paragraph}...")
-        
-        # Search for figure refs in this slide
-        full_text = f"{title} {slide.get('paragraph', '')} {' '.join([str(b) for b in slide.get('bullets', [])])}"
-        fig_refs = re.findall(r'(?:Figure|Fig\.|Table)\s+([\d]+[-\.][\d]+)', full_text, re.IGNORECASE)
-        
-        if fig_refs:
-            print(f"Figure refs found: {fig_refs}")
-            
-            # Check if they're in the map
-            for ref in fig_refs:
-                key = f"figure {ref}".lower()
-                if key in figure_ref_map:
-                    expected_img = figure_ref_map[key]
-                    print(f"  '{key}' maps to: {expected_img}")
-                    if expected_img in image_captions:
-                        print(f"    Caption: {image_captions[expected_img]}")
-        else:
-            print(f"No figure references found in text")
-        
-        # Show what was assigned
-        if assigned_img:
-            # Extract image ID from the base64 data URL
-            for img_id, b64 in pdf_images.items():
-                if b64 in assigned_img:
-                    caption = image_captions.get(img_id, "No caption")
-                    print(f"✅ ASSIGNED: {img_id}")
-                    print(f"   Caption: {caption}")
-                    break
-        else:
-            print(f"❌ NO IMAGE ASSIGNED")
-    
-    print(f"{'='*70}\n")
-    # ===== END DEBUG =====
-    
     return render_images

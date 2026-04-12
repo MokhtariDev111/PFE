@@ -565,55 +565,30 @@ html, body {{
   transition: left 0.08s ease, top 0.08s ease;
 }}
 
-/* ── Scroll Stack Layout ── */
-html, body {{
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  overflow: hidden;
-}}
+/* ── Deck Container ── */
+#deck {{ position: fixed; inset: 0; }}
 
-#deck-scroller {{
-  position: fixed;
-  inset: 0;
-  overflow-y: scroll;
-  overflow-x: hidden;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-  scroll-behavior: auto;
-}}
-
-#deck {{
-  padding: 4vh 2vw 80vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0;
-  min-height: 100vh;
-}}
-
-/* ── Base Slide (card form) ── */
+/* ── Base Slide ── */
 .slide {{
-  position: relative;
-  width: min(1400px, 96vw);
-  min-height: 92vh;
+  position: absolute;
+  inset: 0;
   background: var(--bg);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  border-radius: 20px;
-  box-shadow: 0 8px 60px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3);
-  margin-bottom: 24px;
-  transform-origin: top center;
-  will-change: transform;
-  backface-visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(80px) scale(0.96);
+  transition: none;
+}}
+.slide.active {{
   opacity: 1;
   pointer-events: all;
   transform: none;
-  border: 1px solid rgba({r},{g},{b},0.12);
+  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease;
 }}
-/* Keep active/xl/xr classes harmless */
-.slide.active, .slide.xl, .slide.xr {{ opacity: 1; transform: none; }}
+.slide.xl {{ transform: translateX(-80px) scale(0.96); opacity: 0; }}
+.slide.xr {{ transform: translateX(80px) scale(0.96); opacity: 0; }}
 
 /* ── Background Effects ── */
 .bg-gradient {{
@@ -677,13 +652,13 @@ html, body {{
 }}
 
 /* ── Slide Inner ── */
-.slide-inner{{position:relative;z-index:5;display:flex;flex-direction:column;width:100%;height:100%;padding:48px 64px 48px;gap:0;flex:1}}
+.slide-inner{{position:relative;z-index:5;display:flex;flex-direction:column;width:100%;height:100%;padding:40px 56px 36px;gap:0}}
 
 
 /* ── Slide Header ── */
 .slide-header {{
   flex-shrink: 0;
-  margin-bottom: 28px;
+  margin-bottom: 32px;
 }}
 
 .slide-badge {{
@@ -707,12 +682,12 @@ html, body {{
 
 .slide-title {{
   font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
-  font-size: clamp(40px, 5vw, 72px);
+  font-size: clamp(32px, 4vw, 56px);
   font-weight: 800;
   letter-spacing: -1.5px;
   line-height: 1.1;
   color: var(--ink);
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   opacity: 0;
   animation: fade-up 0.6s ease 0.15s forwards;
 }}
@@ -736,37 +711,36 @@ html, body {{
   flex: 1;
   display: flex;
   min-height: 0;
-  align-items: stretch;
 }}
 
-.layout-full {{ flex-direction: column; justify-content: flex-start; }}
-.layout-split {{ gap: 48px; align-items: flex-start; }}
+.layout-full {{ flex-direction: column; }}
+.layout-split {{ gap: 40px; }}
 
 .text-column {{
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: center;
   min-width: 0;
 }}
 
 .media-column {{
-  flex: 0 0 42%;
+  flex: 0 0 45%;
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
-  gap: 16px;
+  justify-content: center;
   min-width: 0;
 }}
+.media-column.stacked {{ gap: 16px; }}
 
 /* ── Paragraph + Key Points Layout ── */
-.slide-paragraph{{font-size:20px;font-weight:400;line-height:1.85;color:{ink};opacity:0;animation:fade-up .6s ease .15s forwards;margin-bottom:28px;flex:1}}
+.slide-paragraph{{font-size:16px;font-weight:400;line-height:1.75;color:{ink};opacity:0;animation:fade-up .6s ease .15s forwards;margin-bottom:20px}}
 
-.key-points{{list-style:none;display:flex;flex-direction:column;gap:14px;margin-bottom:20px}}
-.kp-item{{display:flex;align-items:flex-start;gap:14px;opacity:0;animation:fade-up .5s ease both var(--delay,0.3s)}}
-.kp-dot{{width:9px;height:9px;border-radius:50%;flex-shrink:0;margin-top:9px}}
-.kp-text{{font-size:17px;font-weight:500;color:{muted};line-height:1.65;flex:1}}
-.kp-src{{font-size:12px;color:{a};font-weight:500;margin-left:6px;opacity:.8;flex-shrink:0}}
+.key-points{{list-style:none;display:flex;flex-direction:column;gap:8px;margin-bottom:14px}}
+.kp-item{{display:flex;align-items:flex-start;gap:10px;opacity:0;animation:fade-up .5s ease both var(--delay,0.3s)}}
+.kp-dot{{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:7px}}
+.kp-text{{font-size:13.5px;font-weight:500;color:{muted};line-height:1.5;flex:1}}
+.kp-src{{font-size:10px;color:{a};font-weight:500;margin-left:6px;opacity:.8;flex-shrink:0}}
 
 .page-badge{{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:{a};background:rgba({r},{g},{b},.1);padding:4px 12px;border-radius:20px;border:1px solid rgba({r},{g},{b},.2);opacity:0;animation:fade-up .5s ease .5s forwards}}
 
@@ -804,7 +778,7 @@ html, body {{
 .card-image {{
   width: 100%;
   height: auto;
-  max-height: 560px;
+  max-height: 380px;
   object-fit: contain;
   display: block;
 }}
@@ -1339,7 +1313,8 @@ html, body {{
 /* ── Nav Arrows ── */
 .nav-arrow {{
   position: fixed;
-  right: 28px;
+  top: 50%;
+  transform: translateY(-50%);
   z-index: 500;
   width: 48px;
   height: 48px;
@@ -1357,10 +1332,8 @@ html, body {{
 .nav-arrow:hover {{
   background: rgba({r},{g},{b},0.2);
   color: var(--ink);
-  transform: scale(1.05);
+  transform: translateY(-50%) scale(1.05);
 }}
-#nav-prev {{ bottom: 80px; }}
-#nav-next {{ bottom: 24px; }}
 #nav-prev {{ left: 16px; }}
 #nav-next {{ right: 16px; }}
 
@@ -1482,6 +1455,7 @@ _JS = r'''
   // Custom cursor
   const cursor = document.getElementById('cursor');
   const cursorRing = document.getElementById('cursor-ring');
+  
   document.addEventListener('mousemove', e => {
     cursor.style.left = e.clientX + 'px';
     cursor.style.top = e.clientY + 'px';
@@ -1489,59 +1463,48 @@ _JS = r'''
     cursorRing.style.top = e.clientY + 'px';
   });
 
-  // ── Lenis smooth scroll ──────────────────────────────────────────────────
-  const scroller = document.getElementById('deck-scroller');
-  const lenis = new Lenis({
-    wrapper: scroller,
-    content: document.getElementById('deck'),
-    duration: 1.2,
-    easing: t => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-    smoothWheel: true,
-    wheelMultiplier: 1,
-    lerp: 0.1,
-    syncTouch: true,
-  });
+  // Mermaid init
 
-  function raf(time) { lenis.raf(time); requestAnimationFrame(raf); }
-  requestAnimationFrame(raf);
-
-  // ── ScrollStack card transform — disabled, pure smooth scroll ──────────
+  // Slides
   const slides = Array.from(document.querySelectorAll('.slide'));
-
-  function updateStack() {
-    const scrollTop = scroller.scrollTop;
-    const maxScroll = scroller.scrollHeight - scroller.clientHeight;
-    const pct = maxScroll > 0 ? (scrollTop / maxScroll) * 100 : 0;
-    document.getElementById('progress-fill').style.width = pct + '%';
-  }
-
-  lenis.on('scroll', updateStack);
-  updateStack();
-
-  // ── Navigation arrows (scroll to prev/next card) ─────────────────────────
   let current = 0;
+  let notesOn = false;
 
-  function goTo(n) {
+  function goTo(n, forward = true) {
     if (n < 0 || n >= slides.length) return;
+    
+    slides[current].classList.remove('active');
+    slides[current].classList.add(forward ? 'xl' : 'xr');
+    
+    slides[n].classList.remove('xl', 'xr');
+    slides[n].classList.add('active');
+    
     current = n;
-    const targetY = slides[n].offsetTop - scroller.clientHeight * 0.08;
-    lenis.scrollTo(targetY, { duration: 1.0 });
+    update();
   }
 
-  function next() { goTo(current + 1); }
-  function prev() { goTo(current - 1); }
+  function next() { goTo(current + 1, true); }
+  function prev() { goTo(current - 1, false); }
 
-  // Track current slide by scroll position
-  lenis.on('scroll', () => {
-    const scrollTop = scroller.scrollTop;
-    const vh = scroller.clientHeight;
-    for (let i = slides.length - 1; i >= 0; i--) {
-      if (slides[i].offsetTop - vh * 0.5 <= scrollTop) {
-        current = i;
-        break;
-      }
+  function update() {
+    const pct = (current / (slides.length - 1)) * 100;
+    document.getElementById('progress-fill').style.width = pct + '%';
+    slides.forEach((s, i) => s.classList.toggle('notes-on', notesOn && i === current));
+  }
+
+  function toggleNotes() {
+    notesOn = !notesOn;
+    update();
+    document.getElementById('btn-notes').classList.toggle('active', notesOn);
+  }
+
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen();
+    } else {
+      document.exitFullscreen();
     }
-  });
+  }
 
   // Lightbox
   window.openLightbox = function(src, caption, source) {
@@ -1550,44 +1513,36 @@ _JS = r'''
     document.getElementById('lb-source').textContent = source || '';
     document.getElementById('lightbox').classList.add('open');
   };
+
   window.closeLightbox = function() {
     document.getElementById('lightbox').classList.remove('open');
     document.getElementById('lb-image').src = '';
   };
 
-  // TOC click navigation
-  window.goTo = function(idx) { goTo(idx); };
-
-  // Notes toggle
-  let notesOn = false;
-  function toggleNotes() {
-    notesOn = !notesOn;
-    document.getElementById('btn-notes').classList.toggle('active', notesOn);
-    slides.forEach(s => s.classList.toggle('notes-on', notesOn));
-  }
-
-  function toggleFullscreen() {
-    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
-    else document.exitFullscreen();
-  }
-
   // Keyboard
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') { closeLightbox(); return; }
-    if (e.key === 'ArrowDown' || e.key === 'ArrowRight' || e.key === ' ') next();
-    if (e.key === 'ArrowUp'   || e.key === 'ArrowLeft') prev();
+    if (e.key === 'ArrowRight' || e.key === ' ') next();
+    if (e.key === 'ArrowLeft') prev();
     if (e.key === 'n' || e.key === 'N') toggleNotes();
     if (e.key === 'f' || e.key === 'F') toggleFullscreen();
   });
 
+  // Navigation buttons
   document.getElementById('nav-prev').addEventListener('click', prev);
   document.getElementById('nav-next').addEventListener('click', next);
   document.getElementById('btn-notes').addEventListener('click', toggleNotes);
   document.getElementById('btn-fs').addEventListener('click', toggleFullscreen);
 
-  // Remove intro overlay
+  // Init
+  slides[0].classList.add('active');
+  update();
+
+  // Remove intro overlay after animation completes
   const overlay = document.getElementById('intro-overlay');
-  if (overlay) setTimeout(() => { overlay.style.display = 'none'; }, 3500);
+  if (overlay) {
+    setTimeout(() => { overlay.style.display = 'none'; }, 3500);
+  }
 
   // ── Floating Particles ──────────────────────────────────────────────────
   (function initParticles() {
@@ -1598,6 +1553,7 @@ _JS = r'''
       let W = canvas.width = slide.offsetWidth || window.innerWidth;
       let H = canvas.height = slide.offsetHeight || window.innerHeight;
 
+      // Parse accent color to RGB
       let rv = 124, gv = 92, bv = 252;
       const m = accentColor.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
       if (m) { rv = parseInt(m[1],16); gv = parseInt(m[2],16); bv = parseInt(m[3],16); }
@@ -1761,17 +1717,14 @@ def render(
   <div id="progress"><div id="progress-fill"></div></div>
   
   <!-- Navigation -->
-  <div class="nav-arrow" id="nav-prev">&#8593;</div>
-  <div class="nav-arrow" id="nav-next">&#8595;</div>
+  <div class="nav-arrow" id="nav-prev">&#8249;</div>
+  <div class="nav-arrow" id="nav-next">&#8250;</div>
   
   <!-- Slides -->
-  <div id="deck-scroller">
-    <div id="deck">
-      {"".join(sections)}
-    </div>
+  <div id="deck">
+    {"".join(sections)}
   </div>
   
-  <script src="https://unpkg.com/lenis@1.1.14/dist/lenis.min.js"></script>
   <script>{_JS}</script>
 </body>
 </html>'''

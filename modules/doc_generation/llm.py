@@ -15,6 +15,7 @@ import os
 import re
 from pathlib import Path
 import sys
+import httpx
 from modules.core.llm_cache import get_cached, set_cached
 from modules.core.retry_utils import retry_async, RateLimitHandler, RETRYABLE_STATUS_CODES
 
@@ -71,22 +72,35 @@ class LLMEngine:
         # Rate limit handler
         self._rate_limiter = RateLimitHandler(base_delay=1.0)
 
+        # Shared HTTP clients — reused across calls to avoid per-request TCP handshakes
+        self._http_client        = httpx.AsyncClient(timeout=120.0)
+        self._http_client_ollama = httpx.AsyncClient(timeout=600.0)
+
+        # Lazy asyncio.Lock for Groq key rotation (created on first async call)
+        self._groq_key_lock: asyncio.Lock | None = None
+
+    async def aclose(self) -> None:
+        """Release shared HTTP clients. Call on server shutdown."""
+        await self._http_client.aclose()
+        await self._http_client_ollama.aclose()
+
     # ══════════════════════════════════════════════════════════════════════════
     # GROQ BACKEND (Primary - Fast)
     # ══════════════════════════════════════════════════════════════════════════
     
-    async def _call_groq(self, prompt: str, model: str = None, json_mode: bool = True, use_cache: bool = True) -> str:
+    async def _call_groq(self, prompt: str, model: str = None, json_mode: bool = True) -> str:
         """Call Groq API with caching and retry logic."""
-        import httpx
-        
         model = model or self.groq_model
-        
-        # Skip cache for large batch prompts (always unique, never hit)
-        if use_cache:
-            cached = get_cached(prompt, model)
-            if cached:
-                log.debug(f"  ⚡ Cache HIT Groq ({model})")
-                return cached
+
+        # Check cache first
+        cached = get_cached(prompt, model)
+        if cached:
+            log.info(f"  ⚡ Cache HIT for Groq ({model})")
+            return cached
+
+        # Lazy-init lock — must be created inside the running event loop
+        if self._groq_key_lock is None:
+            self._groq_key_lock = asyncio.Lock()
         
         headers = {
             "Authorization": f"Bearer {self.groq_api_key}",
@@ -118,13 +132,13 @@ class LLMEngine:
             # Recompute model in case of fallback
             current_model = payload["model"]
             headers["Authorization"] = f"Bearer {self.groq_api_key}"
-            
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                response = await client.post(self.groq_url, json=payload, headers=headers)
-                
-                # Handle rate limiting (429) & input/output cap violations (400)
-                if response.status_code in (429, 400):
-                    reason = "Rate limited" if response.status_code == 429 else "Context/Format limit"
+
+            response = await self._http_client.post(self.groq_url, json=payload, headers=headers)
+
+            # Handle rate limiting (429) & input/output cap violations (400)
+            if response.status_code in (429, 400):
+                reason = "Rate limited" if response.status_code == 429 else "Context/Format limit"
+                async with self._groq_key_lock:
                     # Try next Groq key first
                     next_index = self._groq_key_index + 1
                     if next_index < len(self.groq_api_keys):
@@ -139,7 +153,7 @@ class LLMEngine:
                             current_model_idx = fallback_models.index(current_model)
                         except ValueError:
                             current_model_idx = -1
-                            
+
                         next_model_idx = current_model_idx + 1
                         if next_model_idx < len(fallback_models):
                             new_model = fallback_models[next_model_idx]
@@ -148,27 +162,27 @@ class LLMEngine:
                             self.groq_api_key = self.groq_api_keys[0]
                             log.warning(f"All Groq keys {reason} for {current_model} — switching model to {new_model} & resetting keys")
                             raise ConnectionError("Switching Groq model, retrying...")
-                        
+
                         log.warning(f"All Groq keys and fallback models {reason} — falling back to Gemini")
                         raise ConnectionError("ALL_KEYS_EXHAUSTED")
-                
-                # Handle other retryable errors
-                if response.status_code in RETRYABLE_STATUS_CODES:
-                    raise ConnectionError(f"Server error {response.status_code}")
-                
-                if not response.is_success:
-                    log.error(f"Groq API Error {response.status_code}: {response.text}")
-                
-                response.raise_for_status()
-                self._rate_limiter.reset()  # Success — reset rate limiter
-                
-                data = response.json()
-                result = data["choices"][0]["message"]["content"].strip()
-                
-                # Cache successful response
-                set_cached(prompt, current_model, result)
-                
-                return result
+
+            # Handle other retryable errors
+            if response.status_code in RETRYABLE_STATUS_CODES:
+                raise ConnectionError(f"Server error {response.status_code}")
+
+            if not response.is_success:
+                log.error(f"Groq API Error {response.status_code}: {response.text}")
+
+            response.raise_for_status()
+            self._rate_limiter.reset()  # Success — reset rate limiter
+
+            data = response.json()
+            result = data["choices"][0]["message"]["content"].strip()
+
+            # Cache successful response
+            set_cached(prompt, current_model, result)
+
+            return result
         
         try:
             return await retry_async(
@@ -195,9 +209,7 @@ class LLMEngine:
     # Gemini BACKEND (Fallback - Cloud)
     # ══════════════════════════════════════════════════════════════════════════   
     async def _call_gemini(self, prompt: str) -> str:
-        """Call Gemini API as fallback."""
-        import httpx
-
+        """Call Gemini API as fallback with exponential-backoff retry on rate limits."""
         cached = get_cached(prompt, "gemini")
         if cached:
             log.info("  ⚡ Cache HIT for Gemini")
@@ -205,14 +217,23 @@ class LLMEngine:
 
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": self.temp, "maxOutputTokens": 2048}
+            "generationConfig": {
+                "temperature": self.temp, 
+                "maxOutputTokens": 2048,
+                "responseMimeType": "application/json"
+            }
         }
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
+        for attempt in range(3):
+            response = await self._http_client.post(
                 f"{self.gemini_url}?key={self.gemini_api_key}",
                 json=payload
             )
+            if response.status_code == 429:
+                delay = 2.0 * (2 ** attempt)   # 2s, 4s, 8s
+                log.warning(f"Gemini rate limited — retrying in {delay:.0f}s (attempt {attempt + 1}/3)")
+                await asyncio.sleep(delay)
+                continue
             if not response.is_success:
                 log.error(f"Gemini error {response.status_code}: {response.text[:300]}")
                 response.raise_for_status()
@@ -229,6 +250,9 @@ class LLMEngine:
             set_cached(prompt, "gemini", result)
             log.info("✔ Gemini response received")
             return result
+
+        log.error("Gemini: all 3 attempts rate-limited — giving up")
+        return "{}"
     
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -237,15 +261,12 @@ class LLMEngine:
     
     async def _call_ollama(self, prompt: str, model: str, json_mode: bool = True) -> str:
         """Call local Ollama API with caching."""
-        import httpx
-        import asyncio
-        
         # Check cache first
         cached = get_cached(prompt, model)
         if cached:
             log.info(f"  ⚡ Cache HIT for Ollama ({model})")
             return cached
-        
+
         payload = {
             "model": model,
             "prompt": prompt,
@@ -258,30 +279,29 @@ class LLMEngine:
         }
         if json_mode:
             payload["format"] = "json"
-        
+
         for attempt in range(2):
             try:
-                async with httpx.AsyncClient(timeout=600.0) as client:
-                    response = await client.post(self.ollama_url, json=payload)
-                    response.raise_for_status()
-                    result = response.json().get("response", "").strip()
-                    
-                    # Cache successful response
-                    if result:
-                        set_cached(prompt, model, result)
-                    
-                    return result
-            
+                response = await self._http_client_ollama.post(self.ollama_url, json=payload)
+                response.raise_for_status()
+                result = response.json().get("response", "").strip()
+
+                # Cache successful response
+                if result:
+                    set_cached(prompt, model, result)
+
+                return result
+
             except httpx.ConnectError as e:
                 raise RuntimeError(f"Cannot reach Ollama at {self.ollama_url}") from e
-            
+
             except httpx.HTTPStatusError as e:
                 if "CUDA error" in e.response.text and attempt == 0:
                     payload["options"]["num_ctx"] = max(512, self.ctx_len // 2)
                     await asyncio.sleep(3)
                     continue
                 raise
-        
+
         return ""
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -294,7 +314,6 @@ class LLMEngine:
         context_chunks: list,
         prompt_override: str = None,
         model_override: str = None,
-        use_cache: bool = True,
     ) -> str:
         """Main generation call - routes to best available backend."""
         if not context_chunks and not prompt_override:
@@ -304,11 +323,11 @@ class LLMEngine:
         
         if self.backend == "groq":
             model = model_override if model_override in ["llama-3.3-70b-versatile", "mixtral-8x7b-32768", "llama-3.1-8b-instant"] else self.groq_model
-            log.debug(f"Groq ({model})  cache={use_cache}")
-            return await self._call_groq(prompt, model, use_cache=use_cache)
+            log.info(f"Generating with Groq ({model})")
+            return await self._call_groq(prompt, model)
         else:
             model = model_override or self.ollama_model
-            log.debug(f"Ollama ({model})")
+            log.info(f"Generating with Ollama ({model})")
             return await self._call_ollama(prompt, model)
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -473,7 +492,7 @@ RULES:
 Generate the {num_slides} slides now as valid JSON:"""
 
         try:
-            raw = await self.generate_async(query, [], prompt_override=prompt, use_cache=False)
+            raw = await self.generate_async(query, [], prompt_override=prompt)
             data = json.loads(raw)
             slides = data.get("slides", [])
             
