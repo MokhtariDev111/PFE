@@ -762,6 +762,10 @@ html, body {{
 
 .page-badge{{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:{a};background:rgba({r},{g},{b},.1);padding:4px 12px;border-radius:20px;border:1px solid rgba({r},{g},{b},.2);opacity:0;animation:fade-up .5s ease .5s forwards}}
 
+/* ── TTS word highlight ── */
+.tts-word {{ display: inline; transition: background 0.1s ease, color 0.1s ease; border-radius: 3px; padding: 0 1px; }}
+.tts-word.tts-active {{ background: rgba({r},{g},{b},0.35); color: {ink}; box-shadow: 0 0 0 2px rgba({r},{g},{b},0.2); }}
+
 /* ── Media Cards ── */
 .media-card {{
   background: {card};
@@ -1567,6 +1571,106 @@ _JS = r'''
   document.getElementById('btn-notes').addEventListener('click', toggleNotes);
   document.getElementById('btn-fs').addEventListener('click', toggleFullscreen);
 
+  // ── Text-to-Speech ───────────────────────────────────────────────────────
+  let ttsActive = false;
+
+  function getSlideText(slide) {
+    const parts = [];
+    const title = slide.querySelector('.slide-title, .intro-title, .outro-title, .cover-title');
+    if (title) parts.push(title.textContent.trim());
+    const para = slide.querySelector('.slide-paragraph, .intro-para, .outro-para');
+    if (para) parts.push(para.textContent.trim());
+    slide.querySelectorAll('.kp-text, .point-text, .outro-point span:last-child').forEach(el => {
+      const t = el.textContent.trim();
+      if (t) parts.push(t);
+    });
+    return parts.join('. ');
+  }
+
+  // Wrap paragraph words in spans for highlight animation
+  function wrapWords(slide) {
+    const para = slide.querySelector('.slide-paragraph, .intro-para, .outro-para');
+    if (!para || para.dataset.wrapped) return;
+    para.innerHTML = para.textContent.split(/(\s+)/).map(w =>
+      w.trim() ? `<span class="tts-word">${w}</span>` : w
+    ).join('');
+    para.dataset.wrapped = '1';
+  }
+
+  function clearHighlight(slide) {
+    slide.querySelectorAll('.tts-word.tts-active').forEach(el => el.classList.remove('tts-active'));
+  }
+
+  function speak(autoAdvance = true) {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    if (ttsActive) {
+      ttsActive = false;
+      clearHighlight(slides[current]);
+      document.getElementById('btn-tts').textContent = '🔊 Read';
+      document.getElementById('btn-tts').classList.remove('active');
+      return;
+    }
+
+    wrapWords(slides[current]);
+    const text = getSlideText(slides[current]);
+    if (!text) return;
+
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.rate = 0.95;
+    utt.pitch = 1;
+    utt.lang = 'en-US';
+
+    // Word highlight via boundary events
+    const wordEls = slides[current].querySelectorAll('.tts-word');
+    let wordIdx = 0;
+    utt.onboundary = (e) => {
+      if (e.name !== 'word') return;
+      wordEls.forEach(el => el.classList.remove('tts-active'));
+      if (wordIdx < wordEls.length) {
+        wordEls[wordIdx].classList.add('tts-active');
+        wordIdx++;
+      }
+    };
+
+    utt.onstart = () => {
+      ttsActive = true;
+      document.getElementById('btn-tts').textContent = '⏹ Stop';
+      document.getElementById('btn-tts').classList.add('active');
+    };
+
+    utt.onend = () => {
+      clearHighlight(slides[current]);
+      ttsActive = false;
+      document.getElementById('btn-tts').textContent = '🔊 Read';
+      document.getElementById('btn-tts').classList.remove('active');
+
+      if (autoAdvance) {
+        if (current < slides.length - 1) {
+          setTimeout(() => { next(); setTimeout(() => speak(true), 700); }, 500);
+        } else {
+          // Last slide — say thank you
+          setTimeout(() => {
+            const thanks = new SpeechSynthesisUtterance('Thank you for listening. We hope this presentation was helpful.');
+            thanks.rate = 0.95; thanks.lang = 'en-US';
+            window.speechSynthesis.speak(thanks);
+          }, 600);
+        }
+      }
+    };
+
+    utt.onerror = () => {
+      clearHighlight(slides[current]);
+      ttsActive = false;
+      document.getElementById('btn-tts').textContent = '🔊 Read';
+      document.getElementById('btn-tts').classList.remove('active');
+    };
+
+    window.speechSynthesis.speak(utt);
+  }
+
+  document.getElementById('btn-tts').addEventListener('click', () => speak(true));
+
   // Remove intro overlay
   const overlay = document.getElementById('intro-overlay');
   if (overlay) {
@@ -1737,6 +1841,7 @@ def render(
   <div id="hud">
     <div id="hud-title">{title_esc}</div>
     <div class="hud-buttons">
+      <button class="hud-btn" id="btn-tts">🔊 Read</button>
       <button class="hud-btn" id="btn-notes">Notes</button>
       <button class="hud-btn" id="btn-fs">Fullscreen</button>
     </div>
