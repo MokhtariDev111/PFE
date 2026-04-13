@@ -89,8 +89,9 @@ Return ONLY a valid JSON object — no markdown, no explanation:
 }}
 
 Rules:
-- 3 to 5 categories
-- 3 to 6 concepts per category
+- 4 to 6 categories
+- 5 to 8 concepts per category
+- Cover the topic thoroughly from basics to advanced
 - All text MUST be written in {language}
 - JSON only, no extra text"""
 
@@ -112,7 +113,7 @@ Return ONLY this exact JSON structure — no markdown, no explanation:
   ]
 }}
 
-Requirements: 3–5 categories, 3–6 concepts each, all text in {language}, JSON only."""
+Requirements: 4–6 categories, 5–8 concepts each, all text in {language}, JSON only."""
 
 _STEP3_PROMPT = """\
 You are an intelligent quiz generation system specialized in high-quality educational content.

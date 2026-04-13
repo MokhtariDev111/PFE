@@ -15,17 +15,12 @@ import { PromptPage, DiagramPage } from "./pages/ComingSoon";
 import QuizPage from "./pages/QuizPage";
 import ContactUs from "./pages/ContactUs";
 import AboutUs from "./pages/AboutUs";
-import { SplashScreen } from "./components/SplashScreen";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { GlobalAssistant } from "./components/GlobalAssistant";
 
 const queryClient = new QueryClient();
 
 const App = () => {
-  const [splashDone, setSplashDone] = useState(
-    sessionStorage.getItem("splashSeen") === "true"
-  );
-
   useEffect(() => {
     const navEntries = performance.getEntriesByType("navigation");
     if (navEntries.length > 0 && (navEntries[0] as PerformanceNavigationTiming).type === "reload") {
@@ -35,18 +30,12 @@ const App = () => {
     }
   }, []);
 
-  const handleSplashComplete = () => {
-    setSplashDone(true);
-    sessionStorage.setItem("splashSeen", "true");
-  };
-
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <Toaster />
           <Sonner />
-          {!splashDone && <SplashScreen onComplete={handleSplashComplete} />}
           <BrowserRouter>
             <Navbar />
             <Routes>

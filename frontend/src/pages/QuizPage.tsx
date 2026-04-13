@@ -253,6 +253,27 @@ export default function QuizPage() {
     }
   };
 
+  const [customConcept, setCustomConcept] = useState("");
+
+  const addCustomConcept = () => {
+    const c = customConcept.trim();
+    if (!c) return;
+    // Add to selected and inject into a "Custom" category in the tree
+    setConceptTree(prev => {
+      if (!prev) return prev;
+      const existing = prev.categories.find(cat => cat.name === "Custom");
+      if (existing) {
+        if (existing.concepts.includes(c)) return prev;
+        return { ...prev, categories: prev.categories.map(cat =>
+          cat.name === "Custom" ? { ...cat, concepts: [...cat.concepts, c] } : cat
+        )};
+      }
+      return { ...prev, categories: [...prev.categories, { name: "Custom", concepts: [c] }] };
+    });
+    setSelected(prev => new Set([...prev, c]));
+    setCustomConcept("");
+  };
+
   const reset = () => {
     setTopic(""); setConceptTree(null);
     setSelected(new Set()); setQuestions([]);
@@ -444,11 +465,11 @@ export default function QuizPage() {
         {step > 1 && (
           <motion.div
             key="content"
-            initial={{ opacity: 0, x: 40 }}
+            initial={{ opacity: 0, x: -40 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 40 }}
+            exit={{ opacity: 0, x: -40 }}
             transition={{ duration: 0.4 }}
-            className="relative z-[10] ml-auto w-full max-w-2xl h-screen overflow-y-auto px-6 py-8 bg-background/70 backdrop-blur-xl border-l border-border/40"
+            className="relative z-[10] w-full max-w-2xl h-screen overflow-y-auto px-6 py-8 bg-background/70 backdrop-blur-xl border-r border-border/40"
           >
 
             {/* Step indicators */}
@@ -523,6 +544,20 @@ export default function QuizPage() {
                       </Card>
                     );
                   })}
+
+                  {/* Custom concept input */}
+                  <div className="flex gap-2 pt-1">
+                    <input
+                      className="flex-1 px-4 py-2 rounded-xl border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 transition"
+                      placeholder="Add your own concept…"
+                      value={customConcept}
+                      onChange={e => setCustomConcept(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && addCustomConcept()}
+                    />
+                    <Button size="sm" variant="outline" onClick={addCustomConcept} disabled={!customConcept.trim()} className="gap-1.5 shrink-0">
+                      <Check className="w-3.5 h-3.5" /> Add
+                    </Button>
+                  </div>
 
                   <div className="flex gap-3 pt-2">
                     <Button variant="outline" onClick={reset} className="gap-2">
