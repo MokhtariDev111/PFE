@@ -29,10 +29,10 @@ const cards = [
     lucide: Brain,
     title: "Create a Quiz",
     desc: "Generate interactive quizzes from any topic or document.",
-    badge: "COMING SOON",
+    badge: null,
     route: "/generate/quiz",
     image: "/quiz.jpg",
-    available: false,
+    available: true,
   },
   {
     lucide: GitBranch,

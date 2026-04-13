@@ -1,0 +1,59 @@
+[
+  {
+    "type": "text",
+    "question": "What is the primary goal of regression analysis in machine learning?",
+    "format": "short_answer",
+    "concept": "Regression",
+    "answer": "To predict a continuous output variable",
+    "difficulty": "easy"
+  },
+  {
+    "type": "text",
+    "question": "Which of the following classification algorithms is known for its ability to handle high-dimensional data?",
+    "format": "mcq",
+    "concept": "Classification",
+    "options": [
+      "Decision Trees",
+      "Random Forest",
+      "Support Vector Machines",
+      "K-Nearest Neighbors"
+    ],
+    "answer": "Support Vector Machines",
+    "difficulty": "medium"
+  },
+  {
+    "type": "image",
+    "question": "Identify the type of regression line that best fits the data points in the given scatter plot",
+    "concept": "Regression",
+    "image_prompt": "clean labeled scatter plot showing data points, x-axis Feature, y-axis Target, red dashed line for linear regression, blue solid line for polynomial regression, green dotted line for exponential regression, white background, minimal textbook style",
+    "options": [
+      "Linear Regression",
+      "Polynomial Regression",
+      "Exponential Regression",
+      "Logistic Regression"
+    ],
+    "answer": "Polynomial Regression",
+    "difficulty": "medium",
+    "image_path": "C:\\stage PFE\\PFE Project\\test3\\outputs\\quiz_images\\machine_learning_1.png"
+  },
+  {
+    "type": "text",
+    "question": "True or False: Classification problems can only have two classes",
+    "format": "true_false",
+    "concept": "Classification",
+    "options": [
+      "True",
+      "False"
+    ],
+    "answer": "False",
+    "difficulty": "easy"
+  },
+  {
+    "type": "text",
+    "question": "What is the term for the phenomenon where a regression model performs well on the training data but poorly on new, unseen data?",
+    "format": "short_answer",
+    "concept": "Regression",
+    "answer": "Overfitting",
+    "difficulty": "hard"
+  }
+]

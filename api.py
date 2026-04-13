@@ -807,6 +807,70 @@ async def quick_health():
     """Lightweight status for frequent polling."""
     return quick_status()
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# QUIZ GENERATION ENDPOINTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/quiz/concepts")
+async def quiz_concepts(
+    topic: str = Form(...),
+    language: str = Form("English"),
+):
+    """Step 1 — Extract concept tree for a topic."""
+    from modules.quiz_generation import QuizGenerator
+    gen = QuizGenerator()
+    result = await gen.extract_concepts(topic, language=language)
+    return result
+
+
+@app.post("/quiz/generate")
+async def quiz_generate(
+    topic: str = Form(...),
+    selected_concepts: str = Form(...),
+    total_questions: int = Form(10),
+    image_questions_count: int = Form(0),
+    language: str = Form("English"),
+    seed: str = Form(""),
+):
+    """Step 3 — Generate quiz questions."""
+    from modules.quiz_generation import QuizGenerator
+    import json as _json
+    gen = QuizGenerator()
+    try:
+        concepts = _json.loads(selected_concepts)
+    except Exception:
+        raise HTTPException(status_code=400, detail="selected_concepts must be a JSON array")
+    questions = await gen.generate_quiz(
+        topic=topic,
+        selected_concepts=concepts,
+        total_questions=total_questions,
+        image_questions_count=image_questions_count,
+        language=language,
+        seed=seed,
+    )
+    return {"questions": questions}
+
+
+@app.post("/quiz/image")
+async def quiz_image(
+    image_prompt: str = Form(...),
+    concept: str = Form(""),
+    filename: str = Form(""),
+):
+    """Generate a diagram image for an image-type question."""
+    from modules.quiz_generation import QuizImageGenerator
+    img_gen = QuizImageGenerator()
+    path = await img_gen.generate_image(
+        image_prompt=image_prompt,
+        concept=concept,
+        output_filename=filename or None,
+    )
+    if not path:
+        raise HTTPException(status_code=500, detail="Image generation failed")
+    return FileResponse(path, media_type="image/png")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8000)

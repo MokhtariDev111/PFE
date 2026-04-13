@@ -19,11 +19,17 @@ export function Navbar() {
   const isActive = (path: string) =>
     location.pathname === path || location.pathname.startsWith(path + "/");
 
+  const isQuizPage = location.pathname === "/generate/quiz";
+
   return (
     <motion.div
       initial={{ y: -20, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
-      className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border/50"
+      className={`sticky top-0 z-50 backdrop-blur-xl border-b transition-colors duration-300 ${
+        isQuizPage
+          ? "bg-transparent border-transparent"
+          : "bg-background/80 border-border/50"
+      }`}
     >
       <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
         {/* Logo */}

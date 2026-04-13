@@ -34,7 +34,7 @@ export function GlobalAssistant() {
 
         switch (location.pathname) {
             case "/":
-                newTitle = "Welcome to TEKUP AI 🤔";
+                newTitle = "Welcome to TEKUP AI";
                 newText = "";
                 break;
             case "/dashboard":
