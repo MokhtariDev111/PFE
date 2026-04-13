@@ -178,11 +178,11 @@ class QuizValidator:
             if not isinstance(opts, list):
                 opts = []
             opts = [str(o).strip() for o in opts if str(o).strip()]
+            if len(opts) < 2:
+                # unfixable — no usable options
+                return None, issues + [f"Q{q_num}: MCQ has fewer than 2 options → dropped"]
             if len(opts) != 4:
-                issues.append(
-                    f"Q{q_num}: MCQ has {len(opts)} option(s), expected 4"
-                )
-                # Don't drop — frontend/teacher can still use it
+                issues.append(f"Q{q_num}: MCQ has {len(opts)} option(s), expected 4 — keeping")
             q["options"] = opts
 
         else:

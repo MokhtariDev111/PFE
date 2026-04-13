@@ -1,123 +1,99 @@
 """
-image_generator.py — LLM-powered educational diagram generator (v2)
-====================================================================
+image_generator.py — SVG-based educational diagram generator
+=============================================================
 Workflow:
   1. Receive image_prompt (description of the diagram needed)
-  2. Ask LLM to generate Python code (matplotlib / networkx)
-  3. Execute the code in an isolated subprocess
-  4. If it fails → send the error back to the LLM to self-correct (up to 3 attempts)
-  5. Return the absolute path to the saved image, or "" on total failure
+  2. Ask LLM to generate a complete, self-contained SVG string
+  3. Validate the SVG (must start with <svg, must have content)
+  4. On failure: retry once with error feedback
+  5. Return the SVG string directly (no subprocess, no file I/O needed)
 
-Supports any topic: ML loss curves, neural network diagrams, SQL schemas,
-NoSQL document trees, algorithm flowcharts, data-structure visualisations, etc.
-
-Improvements over v1:
-  - Retry loop with stderr fed back to LLM ("self-healing" code generation)
-  - Basic code safety scan (blocks dangerous calls before execution)
-  - Strict subprocess sandbox (no network, 30 s timeout)
-  - Detailed logging at every step
+Why SVG instead of matplotlib:
+  - No subprocess execution — no runtime errors, no missing imports
+  - Renders perfectly in the browser at any resolution
+  - LLMs are good at generating SVG for educational diagrams
+  - Instant — no disk I/O, no Python execution overhead
+  - Crisp, clean output that looks like a real textbook diagram
 """
 
 import asyncio
 import json
 import logging
-import os
 import re
-import subprocess
-import sys
-import tempfile
-import uuid
 from pathlib import Path
 
 from modules.doc_generation.llm import LLMEngine
 
 log = logging.getLogger("quiz.image_generator")
 
-# ── Output directory ──────────────────────────────────────────────────────────
-IMAGES_DIR = Path(__file__).resolve().parent.parent.parent / "outputs" / "quiz_images"
-IMAGES_DIR.mkdir(parents=True, exist_ok=True)
-
-# ── Retry config ──────────────────────────────────────────────────────────────
-MAX_RETRIES    = 3
-CODE_TIMEOUT_S = 30   # seconds per subprocess execution
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # PROMPTS
 # ─────────────────────────────────────────────────────────────────────────────
 
-_CODEGEN_PROMPT = """\
-You are a Python data-visualization expert.
-Your ONLY job: write correct, complete, runnable Python code that produces
-an educational diagram and saves it to disk.
+_SVG_PROMPT = """\
+You are an expert SVG diagram creator for educational content.
 
-════════════════════════════════════════════════════════
+Create a clean, accurate, self-contained SVG diagram for this educational concept.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DIAGRAM REQUEST
-  Concept      : {concept}
-  Description  : {image_prompt}
-  Output file  : {output_path}
-════════════════════════════════════════════════════════
+  Concept     : {concept}
+  Description : {image_prompt}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-LIBRARY SELECTION — pick exactly ONE set:
-  • matplotlib only        → line charts, bar charts, scatter plots, heatmaps,
-                             confusion matrices, loss curves, histograms, pie charts
-  • networkx + matplotlib  → neural-network diagrams, trees, directed graphs,
-                             flowcharts with nodes and edges
-  • matplotlib (patches)   → SQL/NoSQL schemas, ER diagrams, table-and-arrow
-                             box diagrams
+SVG CANVAS — fixed dimensions, everything MUST fit inside:
+  width="800" height="480" viewBox="0 0 800 480"
+  Safe drawing area: x=60 to x=720, y=50 to y=400
+  Title zone: y=30 (centered at x=400)
+  Legend zone: x=60 to x=720, y=415 to y=470 (BOTTOM, horizontal)
 
-MANDATORY CODE RULES — every rule is required, no exceptions:
-  1.  Begin with ALL necessary imports
-  2.  Figure size  : figsize=(9, 6)  — never smaller
-  3.  Background   : fig.patch.set_facecolor("white")
-                     ax.set_facecolor("white")  (where applicable)
-  4.  Font sizes   : title ≥ 14 · axis-labels ≥ 12 · tick-labels ≥ 10 · legend ≥ 11
-  5.  Every axis MUST have xlabel, ylabel, title
-  6.  Every data series MUST have a label and appear in a legend
-  7.  Color palette (one distinct color per series, in this order):
-        "#2196F3" blue · "#F44336" red · "#4CAF50" green
-        "#FF9800" orange · "#9C27B0" purple
-  8.  Grid:  ax.grid(True, linestyle="--", alpha=0.3)
-  9.  Save:  plt.savefig("{output_path}", dpi=150, bbox_inches="tight", facecolor="white")
-  10. Last line MUST be:  plt.close()
-  11. NEVER call plt.show()
-  12. NEVER use random data — all data must be mathematically defined
-      (numpy formulas, fixed arrays, or explicit hardcoded values)
-  13. NEVER leave a variable undefined or import an unused module
-  14. For networkx diagrams: use nx.draw_networkx() with explicit pos=
-      and fig/ax objects; NEVER call plt.show()
+STRICT LAYOUT RULES — no exceptions:
+  1.  <svg width="800" height="480" viewBox="0 0 800 480" xmlns="http://www.w3.org/2000/svg">
+  2.  First child: <rect width="800" height="480" fill="white"/>
+  3.  Title: <text x="400" y="30" text-anchor="middle" font-size="18" font-weight="bold" font-family="Arial,sans-serif" fill="#222">
+  4.  ALL content (lines, shapes, text) must stay within x=60–720, y=45–405
+  5.  LEGEND must be at the BOTTOM inside y=415–465, laid out HORIZONTALLY
+      Example: colored rect at (60,420) + label, next item at (180,420), etc.
+  6.  Axis labels: x-axis label centered at (390, 430), y-axis label rotated at (15, 225)
+  7.  NO text may exceed x=720 or y=470 — shorten labels if needed
+  8.  Font sizes: title=18, axis-labels=12, tick-labels=11, legend=12 — never larger
+  9.  Colors: #2196F3 blue, #F44336 red, #4CAF50 green, #FF9800 orange, #9C27B0 purple
+  10. Grid lines: stroke="#e0e0e0" stroke-dasharray="4,4" — only inside drawing area
+  11. Axes: stroke="#555" stroke-width="1.5"
+  12. For charts with data: use explicit pixel coordinates calculated from your data range
+      Map data values to pixel positions — do NOT place elements at approximate positions
+  13. Inline styles only — no <style> blocks, no CSS classes
+  14. NO external resources, NO JavaScript
 
-OUTPUT FORMAT — return ONLY this JSON, nothing else:
+COORDINATE MAPPING GUIDE (for charts):
+  Drawing area: x: 60→720 (width=660), y: 50→400 (height=350)
+  For x-axis with N points: x_pixel = 60 + (i / (N-1)) * 660
+  For y-axis with range [ymin, ymax]: y_pixel = 400 - ((value - ymin) / (ymax - ymin)) * 350
+
+Return ONLY a JSON object — no markdown, no explanation:
 {{
-  "code": "<complete Python code as a single string, use \\n for newlines>"
-}}
+  "svg": "<complete SVG string here>"
+}}"""
 
-No explanation. No markdown. No comments outside the code string. Just the JSON."""
+_SVG_RETRY_PROMPT = """\
+You are an expert SVG diagram creator. Your previous SVG had this issue: {error}
 
-_CODEGEN_RETRY_PROMPT = """\
-You are a Python data-visualization expert.
+Fix it and regenerate the diagram.
 
-Your previous code attempt failed with this error:
-──────────────────────────────────────────────────
-{error}
-──────────────────────────────────────────────────
+  Concept     : {concept}
+  Description : {image_prompt}
 
-Fix the code and return a corrected, complete version.
+CRITICAL FIXES REQUIRED:
+  - Canvas: width="800" height="480" viewBox="0 0 800 480"
+  - White background rect covering full canvas
+  - ALL elements must stay within x=60–720, y=45–405
+  - Legend MUST be at the bottom (y=415–465), horizontal layout
+  - NO text or shapes outside the viewBox
+  - Axis labels inside bounds: x-label at y=430, y-label rotated at x=15
 
-DIAGRAM REQUEST (same as before):
-  Concept      : {concept}
-  Description  : {image_prompt}
-  Output file  : {output_path}
-
-Re-apply ALL the mandatory rules:
-  • figsize=(9,6), white background, no plt.show(), plt.close() as the LAST line
-  • Save the file with: plt.savefig("{output_path}", dpi=150, bbox_inches="tight", facecolor="white")
-  • No random data
-  • All imports at the top
-
-Return ONLY this JSON:
+Return ONLY a JSON object:
 {{
-  "code": "<complete corrected Python code>"
+  "svg": "<complete corrected SVG string>"
 }}"""
 
 
@@ -127,97 +103,57 @@ Return ONLY this JSON:
 
 class QuizImageGenerator:
     """
-    Generates educational diagram images using LLM-produced Python code.
+    Generates educational diagram SVGs using the LLM.
+    Returns SVG strings directly — no subprocess, no file I/O.
 
     Usage:
         gen = QuizImageGenerator()
-        path = await gen.generate_image(
-            image_prompt="clean graph showing training vs validation loss illustrating overfitting",
+        svg = await gen.generate_image(
+            image_prompt="line chart showing training vs validation loss illustrating overfitting",
             concept="Overfitting"
         )
-        # path → absolute path to PNG, or "" on failure
+        # svg → "<svg width='800' height='500'>...</svg>"
     """
 
     def __init__(self, llm_engine: LLMEngine = None):
         self.llm = llm_engine or LLMEngine()
 
-    # ── Public API ────────────────────────────────────────────────────────────
-
     async def generate_image(
         self,
         image_prompt: str,
         concept: str = "",
-        output_filename: str = None,
+        output_filename: str = None,  # kept for API compatibility, unused
     ) -> str:
         """
-        Generate a diagram image for a quiz question.
-
-        Returns:
-            Absolute path to the saved PNG, or "" on total failure.
+        Generate an educational SVG diagram.
+        Returns the SVG string, or "" on failure.
         """
-        if not output_filename:
-            output_filename = f"quiz_{uuid.uuid4().hex[:8]}.png"
+        # ── Attempt 1 ─────────────────────────────────────────────────────────
+        prompt = _SVG_PROMPT.format(image_prompt=image_prompt, concept=concept)
+        raw    = await self.llm.generate_async("", [], prompt_override=prompt)
+        svg    = _extract_svg(raw)
 
-        output_path     = IMAGES_DIR / output_filename
-        output_path_str = str(output_path).replace("\\", "/")
+        if svg and _validate_svg(svg):
+            log.info(f"SVG generated for concept: '{concept}'")
+            return svg
 
-        last_error = ""
+        error = "SVG is missing, empty, or malformed" if not svg else _validate_svg_error(svg)
 
-        for attempt in range(1, MAX_RETRIES + 1):
-            # ── Build prompt ──────────────────────────────────────────────
-            if attempt == 1:
-                prompt = _CODEGEN_PROMPT.format(
-                    concept=concept,
-                    image_prompt=image_prompt,
-                    output_path=output_path_str,
-                )
-            else:
-                log.warning(
-                    f"[ImageGen] Retry {attempt}/{MAX_RETRIES} for '{concept}' — {last_error[:120]}"
-                )
-                prompt = _CODEGEN_RETRY_PROMPT.format(
-                    error=last_error[:600],
-                    concept=concept,
-                    image_prompt=image_prompt,
-                    output_path=output_path_str,
-                )
-
-            # ── Ask LLM for code ──────────────────────────────────────────
-            raw  = await self.llm.generate_async("", [], prompt_override=prompt)
-            code = _extract_code(raw)
-
-            if not code:
-                last_error = f"LLM returned no usable code (raw={raw[:120]!r})"
-                log.error(f"[ImageGen] {last_error}")
-                continue
-
-            # ── Safety scan ───────────────────────────────────────────────
-            blocked = _safety_scan(code)
-            if blocked:
-                last_error = f"Blocked dangerous call: {blocked}"
-                log.error(f"[ImageGen] {last_error}")
-                continue
-
-            # ── Execute in subprocess ─────────────────────────────────────
-            success, stderr = _run_code(code)
-
-            if success and output_path.exists():
-                log.info(f"[ImageGen] Image saved: {output_path} (attempt {attempt})")
-                return str(output_path)
-
-            last_error = stderr or "code ran but image file not created"
-            log.warning(f"[ImageGen] Attempt {attempt} failed: {last_error[:200]}")
-
-            # Delete any corrupt partial file before retrying
-            if output_path.exists():
-                try:
-                    output_path.unlink()
-                except Exception:
-                    pass
-
-        log.error(
-            f"[ImageGen] All {MAX_RETRIES} attempts failed for concept='{concept}'"
+        # ── Attempt 2: retry with error feedback ──────────────────────────────
+        log.warning(f"SVG attempt 1 failed ({error}) — retrying")
+        retry_prompt = _SVG_RETRY_PROMPT.format(
+            image_prompt=image_prompt,
+            concept=concept,
+            error=error,
         )
+        raw2 = await self.llm.generate_async("", [], prompt_override=retry_prompt)
+        svg2 = _extract_svg(raw2)
+
+        if svg2 and _validate_svg(svg2):
+            log.info(f"SVG generated (attempt 2) for concept: '{concept}'")
+            return svg2
+
+        log.error(f"SVG generation failed after 2 attempts for: '{concept}'")
         return ""
 
     def generate_image_sync(
@@ -233,123 +169,56 @@ class QuizImageGenerator:
 # HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _extract_code(raw: str) -> str:
-    """
-    Extract Python code from LLM response.
-    Handles: {"code": "..."} JSON · ```python ... ``` · bare code.
-    """
+def _extract_svg(raw: str) -> str:
+    """Extract SVG string from LLM response."""
     raw = raw.strip()
 
-    # ① JSON {"code": "..."}
+    # Try JSON {"svg": "..."} format
     try:
         data = json.loads(raw)
-        code = data.get("code", "")
-        if code and isinstance(code, str):
-            return code.strip()
+        svg = data.get("svg", "")
+        if svg and "<svg" in svg:
+            return svg.strip()
     except (json.JSONDecodeError, AttributeError):
         pass
 
-    # ② Try JSON inside first {...}
-    start = raw.find("{")
-    end   = raw.rfind("}")
-    if 0 <= start < end:
-        try:
-            data = json.loads(raw[start:end + 1])
-            code = data.get("code", "")
-            if code and isinstance(code, str):
-                return code.strip()
-        except Exception:
-            pass
-
-    # ③ Markdown fences (```python … ``` or ``` … ```)
-    md = re.search(r"```(?:python)?\s*\n([\s\S]*?)\n?```", raw)
+    # Try extracting from markdown fences
+    md = re.search(r"```(?:svg|xml)?\s*([\s\S]*?)```", raw)
     if md:
-        return md.group(1).strip()
+        candidate = md.group(1).strip()
+        if "<svg" in candidate:
+            return candidate
 
-    # ④ Bare code (contains 'import' and 'plt.')
-    if "import" in raw and ("plt." in raw or "matplotlib" in raw):
-        return raw
+    # Try finding raw <svg>...</svg> block
+    start = raw.find("<svg")
+    end   = raw.rfind("</svg>")
+    if start != -1 and end != -1:
+        return raw[start:end + 6]
 
     return ""
 
 
-# ── Dangerous patterns to block ───────────────────────────────────────────────
-_BANNED_PATTERNS = [
-    r"\bos\.system\b",
-    r"\bsubprocess\b",
-    r"\beval\b",
-    r"\bexec\b",
-    r"\b__import__\b",
-    r"\bopen\s*\(",           # file writes (image save is done via plt.savefig only)
-    r"\brequests\b",
-    r"\burllib\b",
-    r"\bsocket\b",
-    r"\bshutil\b",
-    r"\bpickle\b",
-]
-# Whitelist: plt.savefig is the only allowed "write" operation
-_SAVEFIG_RE = re.compile(r"plt\.savefig\(")
-
-def _safety_scan(code: str) -> str:
-    """
-    Quick safety scan of LLM-generated code.
-    Returns the first blocked pattern found, or "" if safe.
-    """
-    for pat in _BANNED_PATTERNS:
-        # Allow open() only inside plt.savefig context (it doesn't use open())
-        if pat == r"\bopen\s*\(":
-            # Check if 'open(' appears outside of comments
-            for line in code.splitlines():
-                stripped = line.strip()
-                if stripped.startswith("#"):
-                    continue
-                if re.search(r"\bopen\s*\(", stripped):
-                    return "open()"
-            continue
-        if re.search(pat, code):
-            return pat.replace(r"\b", "").replace("\\b", "")
-    return ""
+def _validate_svg(svg: str) -> bool:
+    """Basic SVG validation."""
+    if not svg:
+        return False
+    if not svg.strip().startswith("<svg"):
+        return False
+    if "</svg>" not in svg:
+        return False
+    if len(svg) < 200:  # too short to be a real diagram
+        return False
+    return True
 
 
-def _run_code(code: str) -> tuple[bool, str]:
-    """
-    Execute generated Python code in an isolated subprocess.
-
-    Returns:
-        (success: bool, stderr: str)
-    """
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".py", delete=False, encoding="utf-8"
-    ) as f:
-        f.write(code)
-        tmp_path = f.name
-
-    stderr_out = ""
-    try:
-        result = subprocess.run(
-            [sys.executable, tmp_path],
-            capture_output=True,
-            text=True,
-            timeout=CODE_TIMEOUT_S,
-        )
-        stderr_out = result.stderr.strip()
-        if result.returncode != 0:
-            log.debug(f"[ImageGen] Code error:\n{stderr_out[:400]}")
-            return False, stderr_out
-        return True, ""
-
-    except subprocess.TimeoutExpired:
-        msg = f"Code execution timed out after {CODE_TIMEOUT_S}s"
-        log.error(f"[ImageGen] {msg}")
-        return False, msg
-
-    except Exception as exc:
-        msg = f"Subprocess error: {exc}"
-        log.error(f"[ImageGen] {msg}")
-        return False, msg
-
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except Exception:
-            pass
+def _validate_svg_error(svg: str) -> str:
+    """Return a human-readable error for why SVG validation failed."""
+    if not svg:
+        return "empty SVG"
+    if not svg.strip().startswith("<svg"):
+        return "SVG does not start with <svg tag"
+    if "</svg>" not in svg:
+        return "SVG is missing closing </svg> tag"
+    if len(svg) < 200:
+        return f"SVG is too short ({len(svg)} chars) — likely incomplete"
+    return "unknown SVG error"

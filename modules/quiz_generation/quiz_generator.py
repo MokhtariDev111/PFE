@@ -20,7 +20,7 @@ from modules.doc_generation.llm import LLMEngine
 log = logging.getLogger("quiz.generator")
 
 MAX_RETRIES = 3          # max LLM call attempts per step
-PARTIAL_THRESHOLD = 0.8  # accept if we got ≥80% of requested questions
+PARTIAL_THRESHOLD = 0.95  # accept if we got ≥95% of requested questions
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -126,10 +126,35 @@ Generate a quiz with EXACTLY these parameters:
   Text questions    : {text_count}    (type = "text")
   Language          : ALL questions, options, answers MUST be written in {language}
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RULE FOR ASSIGNING type = "image"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Only assign type = "image" to a question if the concept is INHERENTLY VISUAL,
+meaning a diagram genuinely helps understand or answer the question.
+
+✅ USE type = "image" for concepts like:
+  - Graphs and curves: loss curves, decision boundaries, ROC curves, learning rates
+  - Tree / graph structures: decision trees, neural network layers, dependency graphs
+  - Architecture diagrams: CNN layers, encoder-decoder, transformer blocks
+  - Statistical plots: histograms, confusion matrices, scatter plots, distributions
+  - Process flows: training pipeline, backpropagation steps, data preprocessing flow
+  - Relational diagrams: ER diagrams, database schemas, UML class diagrams
+  - Network topologies: OSI layers, TCP/IP stack, client-server diagrams
+
+❌ KEEP type = "text" for concepts that are definitional or procedural:
+  - "What does X mean?" → text
+  - "Which of these is a property of Y?" → text
+  - "True or False: Z is..." → text
+  - Concepts about syntax, rules, definitions, history, comparisons → text
+
+If you cannot find {image_count} genuinely visual concepts among the selected list,
+use fewer image questions and add more text questions to reach {total_questions} total.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 STRICT RULES:
   1.  Total = EXACTLY {total_questions} questions — no more, no less
-  2.  Exactly {image_count} questions must have "type": "image"
-  3.  Exactly {text_count} questions must have "type": "text"
+  2.  AT MOST {image_count} questions may have "type": "image" (only if concept is visual)
+  3.  Remaining questions must have "type": "text"
   4.  Distribute questions as evenly as possible across the selected concepts
   5.  Each question targets ONLY ONE concept from the selected list
   6.  NEVER use a concept outside the selected list
@@ -140,11 +165,16 @@ STRICT RULES:
   11. All answers must be 100% factually correct
   12. Never reveal the answer inside the question text
   13. Every question MUST have an "explanation" field (1-2 sentences why the answer is correct)
-  14. Image questions: write a detailed "image_prompt" describing a clean,
-      labeled educational diagram (e.g. "clean labeled line chart showing
-      training vs validation loss illustrating overfitting, x-axis Epochs,
-      y-axis Loss, blue solid line training, red dashed line validation,
-      white background, minimal textbook style")
+  14. For image questions: write a detailed "image_prompt" describing exactly what the
+      SVG diagram should show. Be specific about:
+      - Chart type (line chart, bar chart, flowchart, tree diagram, etc.)
+      - Axes labels and what they represent
+      - Key data series or nodes and what they illustrate
+      - Visual style: clean, minimal, educational, white background
+      Example: "Line chart showing training loss (blue, decreasing) vs validation loss
+      (red, decreasing then rising) over 20 epochs, illustrating overfitting.
+      X-axis: Epochs 0-20, Y-axis: Loss 0.0-1.0. Mark the overfitting point with
+      a vertical dashed line. White background, clean textbook style."
 
 Return ONLY a valid JSON object — no markdown, no explanation:
 {{
@@ -161,10 +191,10 @@ Return ONLY a valid JSON object — no markdown, no explanation:
     }},
     {{
       "type": "image",
-      "question": "Question that requires looking at the diagram",
+      "question": "Question that requires interpreting the diagram",
       "format": "mcq",
       "concept": "exact concept from selected_concepts",
-      "image_prompt": "Detailed description of the educational diagram to generate",
+      "image_prompt": "Detailed SVG diagram description...",
       "options": ["Option A", "Option B", "Option C", "Option D"],
       "answer": "Option B",
       "difficulty": "medium",

@@ -30,7 +30,8 @@ interface Question {
   difficulty: "easy" | "medium" | "hard";
   explanation: string;
   image_prompt?: string;
-  image_url?: string;
+  image_url?: string;   // blob URL (unused now)
+  image_svg?: string;   // raw SVG string — rendered inline
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -94,15 +95,19 @@ function QuestionCard({ q, index }: { q: Question; index: number }) {
           <p className="font-medium leading-relaxed">{q.question}</p>
 
           {/* Image */}
-          {q.type === "image" && q.image_url && (
-            <div className="rounded-xl overflow-hidden border border-border">
-              <img src={q.image_url} alt="diagram" className="w-full object-contain max-h-64" />
-            </div>
+          {q.type === "image" && q.image_svg && (
+            <div
+              className="rounded-xl overflow-hidden border border-border bg-white w-full"
+              dangerouslySetInnerHTML={{ __html: q.image_svg.replace(
+                /<svg /,
+                '<svg style="width:100%;height:auto;display:block;max-height:360px;" preserveAspectRatio="xMidYMid meet" '
+              )}}
+            />
           )}
-          {q.type === "image" && !q.image_url && (
+          {q.type === "image" && !q.image_svg && (
             <div className="flex items-center gap-2 p-3 rounded-xl bg-secondary/40 text-muted-foreground text-sm">
-              <ImageIcon className="w-4 h-4 shrink-0" />
-              <span className="italic truncate">{q.image_prompt?.slice(0, 80)}…</span>
+              <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
+              <span className="italic truncate">Generating diagram for: {q.concept}…</span>
             </div>
           )}
 
@@ -244,8 +249,40 @@ export default function QuizPage() {
       const res = await fetch(`${API}/quiz/generate`, { method: "POST", body: fd });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
-      setQuestions(data.questions ?? []);
-      toast({ title: `Quiz ready — ${data.questions?.length ?? 0} questions` });
+      const qs: Question[] = data.questions ?? [];
+      setQuestions(qs);
+      toast({ title: `Quiz ready — ${qs.length} questions` });
+
+      // Generate images for image-type questions
+      const imageQs = qs.filter(q => q.type === "image" && q.image_prompt);
+      if (imageQs.length > 0) {
+        toast({ title: `Generating ${imageQs.length} diagram(s)…` });
+        await Promise.all(imageQs.map(async (q, i) => {
+          try {
+            const ifd = new FormData();
+            ifd.append("image_prompt", q.image_prompt!);
+            ifd.append("concept", q.concept);
+            const ires = await fetch(`${API}/quiz/image`, { method: "POST", body: ifd });
+            if (ires.ok) {
+              const svg = await ires.text();
+              if (svg && svg.includes("<svg")) {
+                setQuestions(prev => prev.map(pq =>
+                  pq.question === q.question && pq.concept === q.concept
+                    ? { ...pq, image_svg: svg }
+                    : pq
+                ));
+              } else {
+                console.error(`Image Q${i+1}: empty or invalid SVG response`);
+              }
+            } else {
+              const err = await ires.text();
+              console.error(`Image Q${i+1} API error ${ires.status}:`, err);
+            }
+          } catch (e) {
+            console.error(`Image Q${i+1} fetch failed:`, e);
+          }
+        }));
+      }
     } catch (e: any) {
       toast({ title: "Quiz generation failed", description: e.message, variant: "destructive" });
     } finally {
@@ -323,8 +360,8 @@ export default function QuizPage() {
         />
       </div>
 
-      {/* ── Layer 2: Spline robot — shifted right and scaled up ── */}
-      <div className="fixed z-[1]" style={{
+      {/* ── Layer 2: Spline robot — hidden on step 3 ── */}
+      <div className={`fixed z-[1] transition-opacity duration-500 ${step === 3 ? "opacity-0 pointer-events-none" : "opacity-100"}`} style={{
         top: "-2%", left: "20%", width: "105%", height: "110%",
       }}>
         <Suspense fallback={null}>
@@ -469,7 +506,9 @@ export default function QuizPage() {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -40 }}
             transition={{ duration: 0.4 }}
-            className="relative z-[10] w-full max-w-2xl h-screen overflow-y-auto px-6 py-8 bg-background/70 backdrop-blur-xl border-r border-border/40"
+            className={`relative z-[10] h-screen overflow-y-auto px-6 py-8 bg-background/70 backdrop-blur-xl border-r border-border/40 transition-all duration-500 ${
+              step === 3 ? "w-full max-w-none bg-background/95" : "w-full max-w-2xl"
+            }`}
           >
 
             {/* Step indicators */}
@@ -574,7 +613,7 @@ export default function QuizPage() {
 
               {/* ── STEP 3 ── */}
               {step === 3 && (
-                <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
+                <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4 max-w-3xl mx-auto">
                   <div className="flex items-center justify-between flex-wrap gap-3">
                     <div>
                       <h2 className="text-xl font-bold">{topic}</h2>

@@ -858,17 +858,17 @@ async def quiz_image(
     concept: str = Form(""),
     filename: str = Form(""),
 ):
-    """Generate a diagram image for an image-type question."""
+    """Generate an SVG diagram for an image-type question."""
     from modules.quiz_generation import QuizImageGenerator
     img_gen = QuizImageGenerator()
-    path = await img_gen.generate_image(
+    svg = await img_gen.generate_image(
         image_prompt=image_prompt,
         concept=concept,
-        output_filename=filename or None,
     )
-    if not path:
-        raise HTTPException(status_code=500, detail="Image generation failed")
-    return FileResponse(path, media_type="image/png")
+    if not svg:
+        raise HTTPException(status_code=500, detail="SVG generation failed")
+    from fastapi.responses import Response
+    return Response(content=svg, media_type="image/svg+xml")
 
 
 if __name__ == "__main__":
