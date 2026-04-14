@@ -2,7 +2,9 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
-import { Send, Loader2, Brain, Plus, Trash2, MessageSquare, Paperclip, FileText, X, ChevronDown } from "lucide-react";
+import { Send, Loader2, Brain, Plus, Trash2, MessageSquare, Paperclip, FileText, X, ChevronDown, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import Orb from "@/components/reactbits/Orb";
+import TextType from "@/components/reactbits/TextType";
 const API = "http://127.0.0.1:8000";
 
 type Mode = "auto" | "debate" | "explain" | "coach";
@@ -35,6 +37,7 @@ export default function DebatePage() {
   const [uploadedDoc, setUploadedDoc] = useState<string>("");
   const [uploading, setUploading] = useState(false);
   const [modeOpen, setModeOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -155,57 +158,71 @@ export default function DebatePage() {
     <div className="flex h-[calc(100vh-56px)] bg-background overflow-hidden">
 
       {/* ── Sidebar ── */}
-      <div className="w-64 shrink-0 flex flex-col border-r border-border/50 bg-card/40">
-        <div className="p-3 border-b border-border/50">
-          <Button onClick={newChat} size="sm" className="w-full gap-2 launch-button">
-            <Plus className="w-4 h-4" /> New chat
-          </Button>
-        </div>
+      <motion.div
+        animate={{ width: sidebarOpen ? 256 : 0, opacity: sidebarOpen ? 1 : 0 }}
+        transition={{ duration: 0.3, ease: "easeInOut" }}
+        className="shrink-0 flex flex-col border-r border-border/50 bg-card/40 overflow-hidden"
+      >
+        <div className="w-64">
+          <div className="p-3 border-b border-border/50">
+            <Button onClick={newChat} size="sm" className="w-full gap-2 launch-button">
+              <Plus className="w-4 h-4" /> New chat
+            </Button>
+          </div>
 
-        <div className="flex-1 overflow-y-auto py-2 space-y-0.5 px-2">
-          {conversations.length === 0 && (
-            <p className="text-xs text-muted-foreground text-center py-6">No conversations yet</p>
-          )}
-          {conversations.map(c => (
+          <div className="flex-1 overflow-y-auto py-2 space-y-0.5 px-2" style={{ maxHeight: "calc(100vh - 260px)" }}>
+            {conversations.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-6">No conversations yet</p>
+            )}
+            {conversations.map(c => (
+              <button
+                key={c.conversation_id}
+                onClick={() => openConversation(c.conversation_id)}
+                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all group flex items-start gap-2 ${
+                  activeId === c.conversation_id
+                    ? "bg-primary/10 text-primary"
+                    : "hover:bg-secondary/60 text-foreground"
+                }`}
+              >
+                <MessageSquare className="w-3.5 h-3.5 mt-0.5 shrink-0 opacity-50" />
+                <span className="flex-1 truncate leading-snug">{c.title}</span>
+                <Trash2
+                  className="w-3 h-3 shrink-0 opacity-0 group-hover:opacity-50 hover:!opacity-100 mt-0.5 transition-opacity"
+                  onClick={(e) => deleteConversation(c.conversation_id, e)}
+                />
+              </button>
+            ))}
+          </div>
+
+          <div className="p-3 border-t border-border/50 space-y-2">
             <button
-              key={c.conversation_id}
-              onClick={() => openConversation(c.conversation_id)}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all group flex items-start gap-2 ${
-                activeId === c.conversation_id
-                  ? "bg-primary/10 text-primary"
-                  : "hover:bg-secondary/60 text-foreground"
-              }`}
+              onClick={clearAllHistory}
+              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-all"
             >
-              <MessageSquare className="w-3.5 h-3.5 mt-0.5 shrink-0 opacity-50" />
-              <span className="flex-1 truncate leading-snug">{c.title}</span>
-              <Trash2
-                className="w-3 h-3 shrink-0 opacity-0 group-hover:opacity-50 hover:!opacity-100 mt-0.5 transition-opacity"
-                onClick={(e) => deleteConversation(c.conversation_id, e)}
-              />
+              <Trash2 className="w-3.5 h-3.5" /> Clear all history
             </button>
-          ))}
-        </div>
-
-        <div className="p-3 border-t border-border/50 space-y-2">
-          <button
-            onClick={clearAllHistory}
-            className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-all"
-          >
-            <Trash2 className="w-3.5 h-3.5" /> Clear all history
-          </button>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
-            <Brain className="w-3.5 h-3.5 text-primary" />
-            <span className="font-medium">Aria — TEK-UP AI</span>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
+              <Brain className="w-3.5 h-3.5 text-primary" />
+              <span className="font-medium">Aria — TEK-UP AI</span>
+            </div>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* ── Main chat area ── */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 relative">
 
         {/* Top bar — title + source toggle */}
         <div className="flex items-center justify-between px-5 py-2.5 border-b border-border/50 bg-card/30 shrink-0 gap-4">
-          <span className="text-sm text-muted-foreground truncate max-w-xs">
+          {/* Sidebar toggle */}
+          <button
+            onClick={() => setSidebarOpen(o => !o)}
+            className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+            title={sidebarOpen ? "Close sidebar" : "Open sidebar"}
+          >
+            {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
+          </button>
+          <span className="text-sm text-muted-foreground truncate flex-1">
             {conversations.find(c => c.conversation_id === activeId)?.title ?? "New conversation"}
           </span>
           <div className="flex items-center gap-3 shrink-0">
@@ -244,25 +261,26 @@ export default function DebatePage() {
           </div>
         </div>
 
+        {/* Orb — always visible, centered background */}
+        <div className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center overflow-hidden">
+          <div className="w-96 h-96 opacity-70 rounded-full overflow-hidden" style={{ mixBlendMode: "screen" }}>
+            <Orb hue={260} hoverIntensity={0} forceHoverState={false} beating={loading} backgroundColor="#000000" />
+          </div>
+        </div>
+
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
-          {messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-full text-center gap-4 text-muted-foreground">
-              <Brain className="w-10 h-10 opacity-20" />
-              <div>
-                <p className="font-medium text-foreground text-sm">Start a conversation</p>
-                <p className="text-xs mt-1">Ask a question, share a topic, or describe your study goals.</p>
-              </div>
-              <div className="flex flex-wrap gap-2 justify-center mt-1">
-                {["What is overfitting?", "Help me study for my exam", "Explain neural networks", "Quiz me on SQL"].map(s => (
-                  <button
-                    key={s}
-                    onClick={() => { setInput(s); inputRef.current?.focus(); }}
-                    className="px-3 py-1.5 rounded-xl border border-border text-xs hover:border-primary/40 hover:text-primary transition-all"
-                  >
-                    {s}
-                  </button>
-                ))}
+        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5 relative">          {messages.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-full text-center gap-4 text-muted-foreground relative z-10">
+              <div className="max-w-md">
+                <TextType
+                  text="Hey there! I'm Aria, your AI learning partner at TEK-UP. What's on your mind?"
+                  typingSpeed={28}
+                  loop={false}
+                  showCursor={true}
+                  cursorCharacter="▋"
+                  cursorBlinkDuration={0.6}
+                  className="text-base leading-relaxed text-foreground/90 font-medium"
+                />
               </div>
             </div>
           )}
@@ -274,21 +292,37 @@ export default function DebatePage() {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.18 }}
-                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                className={`flex relative z-10 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                <div className={`max-w-2xl px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                <div className={`max-w-2xl px-4 py-3 rounded-2xl text-sm leading-relaxed ${
                   msg.role === "user"
-                    ? "bg-primary text-primary-foreground rounded-br-sm"
-                    : "bg-card border border-border rounded-bl-sm"
-                }`}>
-                  {msg.content}
+                    ? "bg-primary text-primary-foreground rounded-br-sm whitespace-pre-wrap"
+                    : "bg-card/80 backdrop-blur-sm rounded-bl-sm border border-primary/20"
+                }`}
+                style={msg.role === "assistant" ? {
+                  boxShadow: "0 0 0 1px hsl(var(--primary)/0.15), 0 0 16px 2px hsl(var(--primary)/0.12)"
+                } : undefined}
+                >
+                  {msg.role === "assistant" && i === messages.length - 1 ? (
+                    <TextType
+                      text={msg.content}
+                      typingSpeed={18}
+                      loop={false}
+                      showCursor={true}
+                      cursorCharacter="▋"
+                      cursorBlinkDuration={0.5}
+                      className="text-sm leading-relaxed whitespace-pre-wrap"
+                    />
+                  ) : (
+                    <span className="whitespace-pre-wrap">{msg.content}</span>
+                  )}
                 </div>
               </motion.div>
             ))}
           </AnimatePresence>
 
           {loading && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-start">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-start relative z-10">
               <div className="bg-card border border-border rounded-2xl rounded-bl-sm px-4 py-3">
                 <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
               </div>

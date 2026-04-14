@@ -31,7 +31,7 @@ export function Navbar() {
           : "bg-background/80 border-border/50"
       }`}
     >
-      <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+      <div className="max-w-7xl mx-auto px-6 py-3 flex items-center gap-4">
         {/* Logo */}
         <motion.div
           onClick={() => navigate("/")}
@@ -47,35 +47,39 @@ export function Navbar() {
           </div>
         </motion.div>
 
-        {/* Desktop links */}
-        <div className="hidden md:flex items-center gap-1">
-          {navLinks.map(({ path, label, icon: Icon }) => (
-            <Button
-              key={path}
-              variant={isActive(path) ? "default" : "ghost"}
-              size="sm"
-              onClick={() => navigate(path)}
-              className={`gap-1.5 ${isActive(path) ? "launch-button" : ""}`}
-            >
-              <Icon className="w-3.5 h-3.5" />
-              {label}
-            </Button>
-          ))}
-        </div>
+        {/* Desktop links — hidden on immersive pages */}
+        {!isImmersive && (
+          <div className="hidden md:flex items-center gap-1">
+            {navLinks.map(({ path, label, icon: Icon }) => (
+              <Button
+                key={path}
+                variant={isActive(path) ? "default" : "ghost"}
+                size="sm"
+                onClick={() => navigate(path)}
+                className={`gap-1.5 ${isActive(path) ? "launch-button" : ""}`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {label}
+              </Button>
+            ))}
+          </div>
+        )}
 
-        {/* Mobile */}
-        <div className="md:hidden flex items-center gap-1">
-          {navLinks.map(({ path, icon: Icon }) => (
-            <Button
-              key={path}
-              size="sm"
-              variant={isActive(path) ? "default" : "ghost"}
-              onClick={() => navigate(path)}
-            >
-              <Icon className="w-4 h-4" />
-            </Button>
-          ))}
-        </div>
+        {/* Mobile — hidden on immersive pages */}
+        {!isImmersive && (
+          <div className="md:hidden flex items-center gap-1">
+            {navLinks.map(({ path, icon: Icon }) => (
+              <Button
+                key={path}
+                size="sm"
+                variant={isActive(path) ? "default" : "ghost"}
+                onClick={() => navigate(path)}
+              >
+                <Icon className="w-4 h-4" />
+              </Button>
+            ))}
+          </div>
+        )}
       </div>
     </motion.div>
   );
