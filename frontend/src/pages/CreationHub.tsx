@@ -36,12 +36,12 @@ const cards = [
   },
   {
     lucide: GitBranch,
-    title: "Generate Diagrams",
-    desc: "Visualize concepts, flows, and relationships automatically.",
-    badge: "COMING SOON",
-    route: "/generate/diagram",
-    image: "/diagram.png",
-    available: false,
+    title: "AI Debate Partner",
+    desc: "Practice argumentation and critical thinking with an AI opponent.",
+    badge: null,
+    route: "/aria",
+    image: "/chatbot.png",
+    available: true,
   },
 ];
 

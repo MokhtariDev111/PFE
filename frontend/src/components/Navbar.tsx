@@ -20,13 +20,15 @@ export function Navbar() {
     location.pathname === path || location.pathname.startsWith(path + "/");
 
   const isQuizPage = location.pathname === "/generate/quiz";
+  const isAriaPage = location.pathname === "/aria";
+  const isImmersive = isQuizPage || isAriaPage;
 
   return (
     <motion.div
       initial={{ y: -20, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       className={`sticky top-0 z-50 backdrop-blur-xl border-b transition-colors duration-300 ${
-        isQuizPage
+        isImmersive
           ? "bg-transparent border-transparent"
           : "bg-background/80 border-border/50"
       }`}

@@ -871,6 +871,165 @@ async def quiz_image(
     return Response(content=svg, media_type="image/svg+xml")
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# AI DEBATE PARTNER ENDPOINTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/debate/upload")
+async def debate_upload(
+    file: UploadFile = File(...),
+    conversation_id: str = Form(...),
+):
+    """Upload a PDF and build an isolated RAG index for this conversation."""
+    from modules.ai_debate_partner.rag_retriever import build_index_from_bytes
+    from modules.ai_debate_partner.memory_store import MemoryStore
+
+    if not conversation_id:
+        raise HTTPException(400, "conversation_id is required")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(400, "Empty file")
+
+    chunk_count = await build_index_from_bytes(
+        conversation_id=conversation_id,
+        filename=file.filename or "document.pdf",
+        file_bytes=content,
+    )
+
+    if chunk_count == 0:
+        raise HTTPException(422, "Could not extract text from the document")
+
+    # Record document in MongoDB
+    MemoryStore().set_document(conversation_id, file.filename or "document.pdf", chunk_count)
+
+    return {
+        "status": "indexed",
+        "filename": file.filename,
+        "chunks": chunk_count,
+        "conversation_id": conversation_id,
+    }
+
+
+@app.post("/debate/chat")
+async def debate_chat(
+    message: str = Form(...),
+    mode: str = Form("auto"),
+    source: str = Form("auto"),
+    history: str = Form("[]"),
+    conversation_id: str = Form(""),
+):
+    from modules.ai_debate_partner import DebateEngine
+    import json as _json
+    try:
+        history_list = _json.loads(history)
+    except Exception:
+        history_list = []
+    engine = DebateEngine()
+    reply = await engine.chat(
+        message=message, mode=mode, source=source,
+        history=history_list if not conversation_id else None,
+        conversation_id=conversation_id,
+    )
+    return {"reply": reply, "mode": mode}
+
+
+@app.post("/debate/chat-stream")
+async def debate_chat_stream(
+    message: str = Form(...),
+    mode: str = Form("auto"),
+    source: str = Form("auto"),
+    history: str = Form("[]"),
+    conversation_id: str = Form(""),
+):
+    from modules.ai_debate_partner import DebateEngine
+    from fastapi.responses import StreamingResponse
+    import json as _json
+    try:
+        history_list = _json.loads(history)
+    except Exception:
+        history_list = []
+    engine = DebateEngine()
+    async def _stream():
+        async for chunk in engine.chat_stream(
+            message=message, mode=mode, source=source,
+            history=history_list if not conversation_id else None,
+            conversation_id=conversation_id,
+        ):
+            yield f"data: {_json.dumps({'chunk': chunk})}\n\n"
+        yield "data: [DONE]\n\n"
+    return StreamingResponse(_stream(), media_type="text/event-stream")
+
+
+@app.get("/debate/conversations")
+async def debate_list_conversations():
+    """List all saved conversations."""
+    from modules.ai_debate_partner.memory_store import MemoryStore
+    store = MemoryStore()
+    convos = store.list_conversations()
+    # Convert datetime to string for JSON serialization
+    for c in convos:
+        for k in ("updated_at", "created_at"):
+            if k in c and hasattr(c[k], "isoformat"):
+                c[k] = c[k].isoformat()
+    return {"conversations": convos}
+
+
+@app.get("/debate/conversations/{conversation_id}")
+async def debate_get_conversation(conversation_id: str):
+    """Get full history of a conversation."""
+    from modules.ai_debate_partner.memory_store import MemoryStore
+    store = MemoryStore()
+    history = store.get_history(conversation_id)
+    return {"conversation_id": conversation_id, "history": history}
+
+
+@app.delete("/debate/conversations/{conversation_id}")
+async def debate_delete_conversation(conversation_id: str):
+    from modules.ai_debate_partner.memory_store import MemoryStore
+    MemoryStore().delete_conversation(conversation_id)
+    return {"status": "deleted"}
+
+
+@app.delete("/debate/conversations")
+async def debate_clear_all_conversations():
+    """Delete all conversations from MongoDB."""
+    from modules.ai_debate_partner.memory_store import MemoryStore
+    from modules.ai_debate_partner.rag_retriever import DEBATE_INDEX_DIR
+    import shutil
+    store = MemoryStore()
+    convos = store.list_conversations()
+    for c in convos:
+        store.delete_conversation(c["conversation_id"])
+    # Also wipe all debate indexes
+    if DEBATE_INDEX_DIR.exists():
+        shutil.rmtree(DEBATE_INDEX_DIR)
+        DEBATE_INDEX_DIR.mkdir(parents=True, exist_ok=True)
+    return {"status": "cleared", "deleted": len(convos)}
+
+
+@app.get("/debate/profile")
+async def debate_get_profile():
+    from modules.ai_debate_partner.memory_store import MemoryStore
+    profile = MemoryStore().get_profile()
+    for k in ("updated_at",):
+        if k in profile and hasattr(profile[k], "isoformat"):
+            profile[k] = profile[k].isoformat()
+    return profile
+
+
+@app.post("/debate/profile")
+async def debate_update_profile(updates: str = Form(...)):
+    from modules.ai_debate_partner.memory_store import MemoryStore
+    import json as _json
+    try:
+        data = _json.loads(updates)
+    except Exception:
+        raise HTTPException(400, "updates must be valid JSON")
+    MemoryStore().update_profile(data)
+    return {"status": "updated"}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8000)

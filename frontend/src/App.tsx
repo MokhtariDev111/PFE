@@ -13,10 +13,10 @@ import HistoryPage from "./pages/HistoryPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import { PromptPage, DiagramPage } from "./pages/ComingSoon";
 import QuizPage from "./pages/QuizPage";
+import DebatePage from "./pages/DebatePage";
 import ContactUs from "./pages/ContactUs";
 import AboutUs from "./pages/AboutUs";
 import { ThemeProvider } from "./components/ThemeProvider";
-import { GlobalAssistant } from "./components/GlobalAssistant";
 
 const queryClient = new QueryClient();
 
@@ -38,20 +38,18 @@ const App = () => {
           <Sonner />
           <BrowserRouter>
             <Navbar />
-            <Routes>
-              <Route path="/" element={<LandingPage />} />
+            <Routes>              <Route path="/" element={<LandingPage />} />
               <Route path="/dashboard" element={<CreationHub />} />
               <Route path="/stats" element={<Dashboard />} />
               <Route path="/generate_from_doc" element={<GeneratePage />} />
               <Route path="/generate/prompt" element={<PromptPage />} />
               <Route path="/generate/quiz" element={<QuizPage />} />
-              <Route path="/generate/diagram" element={<DiagramPage />} />
+              <Route path="/aria" element={<DebatePage />} />
               <Route path="/history" element={<HistoryPage />} />
               <Route path="/contact" element={<ContactUs />} />
               <Route path="/about" element={<AboutUs />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
-            <GlobalAssistant />
           </BrowserRouter>
         </TooltipProvider>
       </QueryClientProvider>
