@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { FileText, Brain, Zap, BarChart3, ArrowRight, Sparkles, GraduationCap, Sun, Moon } from "lucide-react";
+import { FileText, Brain, MessageSquare, Zap, ArrowRight, Sparkles, GraduationCap, Sun, Moon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import TextType from "@/components/reactbits/TextType";
 import ShinyText from "@/components/reactbits/ShinyText";
@@ -178,31 +178,35 @@ function FloatingPhotos() {
 const features = [
   {
     icon: FileText,
-    title: "PDF to Presentation",
-    desc: "Upload any textbook or document and get a structured, visual presentation in seconds.",
+    title: "PDF → Presentation",
+    desc: "Upload any document and get a structured, AI-powered presentation with slides, diagrams and speaker notes in seconds.",
     color: "from-violet-500 to-indigo-500",
     bg: "bg-violet-500/10",
+    route: "/generate_from_doc",
   },
   {
     icon: Brain,
-    title: "Smart Quiz Generation",
-    desc: "Automatically generate quizzes from your content to test understanding and retention.",
+    title: "Quiz Generator",
+    desc: "Automatically generate MCQ, True/False and short-answer quizzes from any topic — with explanations and visual diagrams.",
     color: "from-blue-500 to-cyan-500",
     bg: "bg-blue-500/10",
+    route: "/generate/quiz",
+  },
+  {
+    icon: MessageSquare,
+    title: "Aria — AI Debate Partner",
+    desc: "Learn through Socratic debate, guided explanations, and personalized study coaching powered by TEK-UP's AI tutor.",
+    color: "from-emerald-500 to-teal-500",
+    bg: "bg-emerald-500/10",
+    route: "/aria",
   },
   {
     icon: Zap,
-    title: "Flashcard Creator",
-    desc: "Turn key concepts into flashcards for efficient spaced-repetition studying.",
+    title: "RAG-Powered Intelligence",
+    desc: "Every tool is backed by hybrid retrieval (FAISS + BM25), Groq LLM, and persistent memory — not just generic AI.",
     color: "from-amber-500 to-orange-500",
     bg: "bg-amber-500/10",
-  },
-  {
-    icon: BarChart3,
-    title: "Diagram Generator",
-    desc: "Visualize complex relationships and processes with auto-generated diagrams.",
-    color: "from-emerald-500 to-teal-500",
-    bg: "bg-emerald-500/10",
+    route: "/dashboard",
   },
 ];
 
@@ -369,7 +373,7 @@ export default function LandingPage() {
                   viewport={{ once: true }}
                   transition={{ duration: 0.5, delay: i * 0.1 }}
                   whileHover={{ y: -6, scale: 1.02 }}
-                  onClick={() => navigate("/dashboard")}
+                  onClick={() => navigate(f.route)}
                   className="h-full flex"
                 >
                   <GlareHover

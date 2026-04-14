@@ -364,7 +364,10 @@ export default function DebatePage() {
                           mode === m ? "bg-secondary" : "hover:bg-secondary/60"
                         }`}
                       >
-                        <span className="font-medium text-foreground">{meta.label}</span>
+                        <span className="font-medium text-foreground flex items-center gap-1.5">
+                          {mode === m && <span className="text-primary">✓</span>}
+                          {meta.label}
+                        </span>
                         <span className="text-muted-foreground">{meta.desc}</span>
                       </button>
                     ))}

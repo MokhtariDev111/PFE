@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -11,11 +11,9 @@ import Dashboard from "./pages/Dashboard.tsx";
 import GeneratePage from "./pages/GeneratePage.tsx";
 import HistoryPage from "./pages/HistoryPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
-import { PromptPage, DiagramPage } from "./pages/ComingSoon";
+import { PromptPage } from "./pages/ComingSoon";
 import QuizPage from "./pages/QuizPage";
 import DebatePage from "./pages/DebatePage";
-import ContactUs from "./pages/ContactUs";
-import AboutUs from "./pages/AboutUs";
 import { ThemeProvider } from "./components/ThemeProvider";
 
 const queryClient = new QueryClient();
@@ -46,8 +44,6 @@ const App = () => {
               <Route path="/generate/quiz" element={<QuizPage />} />
               <Route path="/aria" element={<DebatePage />} />
               <Route path="/history" element={<HistoryPage />} />
-              <Route path="/contact" element={<ContactUs />} />
-              <Route path="/about" element={<AboutUs />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

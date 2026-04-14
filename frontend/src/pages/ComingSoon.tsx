@@ -65,23 +65,3 @@ export function PromptPage() {
     />
   );
 }
-
-export function QuizPage() {
-  return (
-    <ComingSoon
-      icon="🧠"
-      title="Quiz Generator"
-      description="Automatically create quizzes and test questions from any document or topic. Coming soon."
-    />
-  );
-}
-
-export function DiagramPage() {
-  return (
-    <ComingSoon
-      icon="📊"
-      title="Diagram Generator"
-      description="Visualize concepts, processes, and relationships with AI-generated diagrams. Coming soon."
-    />
-  );
-}

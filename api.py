@@ -824,6 +824,28 @@ async def quiz_concepts(
     return result
 
 
+@app.get("/quiz/history")
+async def quiz_history():
+    """Return list of saved quiz JSON files from outputs/quiz_exports/."""
+    exports_dir = ROOT_DIR / "outputs" / "quiz_exports"
+    if not exports_dir.exists():
+        return {"quizzes": []}
+    quizzes = []
+    for f in sorted(exports_dir.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
+        try:
+            with open(f, encoding="utf-8") as fp:
+                data = json.load(fp)
+            quizzes.append({
+                "filename": f.name,
+                "topic": data.get("topic", f.stem),
+                "total": data.get("total", len(data.get("questions", []))),
+                "generated": data.get("generated", ""),
+            })
+        except Exception:
+            pass
+    return {"quizzes": quizzes}
+
+
 @app.post("/quiz/generate")
 async def quiz_generate(
     topic: str = Form(...),
@@ -849,6 +871,13 @@ async def quiz_generate(
         language=language,
         seed=seed,
     )
+    # Auto-save to quiz_exports for history
+    if questions:
+        try:
+            from modules.quiz_generation import QuizExporter
+            QuizExporter().to_json(questions, topic=topic)
+        except Exception:
+            pass
     return {"questions": questions}
 
 

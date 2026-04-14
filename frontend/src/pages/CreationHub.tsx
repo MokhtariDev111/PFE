@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { FileText, MessageSquare, Brain, GitBranch, Sparkles } from "lucide-react";
+import { FileText, MessageSquare, Brain, GitBranch, Sparkles, History, BarChart3 } from "lucide-react";
 import LiquidEther from "@/components/reactbits/LiquidEther";
 import SplitText from "@/components/reactbits/SplitText";
 import { useTheme } from "@/components/ThemeProvider";
@@ -154,11 +154,10 @@ export default function CreationHub() {
           </h1>
           <p className="text-muted-foreground text-lg">
             Choose a tool to get started. More features coming soon.
-          </p>
-        </motion.div>
+          </p>        </motion.div>
 
         {/* Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-14 relative z-10">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-8 relative z-10">
           {cards.map((card, i) => (
             <motion.div
               key={i}
@@ -197,6 +196,28 @@ export default function CreationHub() {
               <p className="text-muted-foreground text-sm leading-relaxed">{card.desc}</p>
             </motion.div>
           ))}
+        </div>
+
+        {/* History & Stats */}
+        <div className="flex gap-3 relative z-10">
+          <motion.button
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            onClick={() => navigate("/history")}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-border bg-card/60 backdrop-blur-sm text-sm font-medium hover:border-primary/40 hover:text-primary transition-all"
+          >
+            <History className="w-4 h-4" /> History
+          </motion.button>
+          <motion.button
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.45 }}
+            onClick={() => navigate("/stats")}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-border bg-card/60 backdrop-blur-sm text-sm font-medium hover:border-primary/40 hover:text-primary transition-all"
+          >
+            <BarChart3 className="w-4 h-4" /> Stats
+          </motion.button>
         </div>
       </div>
     </div>

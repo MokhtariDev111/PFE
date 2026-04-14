@@ -1,12 +1,10 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Sparkles, LayoutDashboard, History, BarChart3, FileText } from "lucide-react";
+import { Sparkles, LayoutDashboard } from "lucide-react";
 
 const navLinks = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/history", label: "History", icon: History },
-  { path: "/stats", label: "Stats", icon: BarChart3 },
 ];
 
 export function Navbar() {
