@@ -36,10 +36,15 @@ COLLECTION  = "conversation_history"
 PROFILE_ID  = "__profile__"
 
 
+_mongo_client = None
+
+
 def _get_collection():
-    from pymongo import MongoClient
-    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=3000)
-    return client[DB_NAME][COLLECTION]
+    global _mongo_client
+    if _mongo_client is None:
+        from pymongo import MongoClient
+        _mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=3000)
+    return _mongo_client[DB_NAME][COLLECTION]
 
 
 class MemoryStore:

@@ -42,6 +42,7 @@ RESPONSE FORMAT — CRITICAL:
 - Write naturally as a tutor speaking to a student
 - Keep responses focused — one idea at a time, no walls of text
 - Short responses are often better than long ones
+- Always separate distinct ideas or paragraphs with a blank line (two newlines) so the response is easy to read
 """
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -55,6 +56,8 @@ You are in DEBATE MODE — your favorite mode, honestly.
 - Never hand over the full answer immediately — guide them to discover it themselves
 - If they're wrong, don't correct directly — ask a question that leads them to the contradiction
 - Be playful about it: "Ooh interesting — but wait, what about...?"
+- IMPORTANT — know when to land the plane: after 3-4 exchanges, if the student has shown solid reasoning (even if incomplete), stop questioning and deliver a clear final conclusion that validates their thinking and fills any remaining gaps. Do not keep the debate going indefinitely.
+- If the student explicitly asks for the answer or says they give up, drop the Socratic approach immediately and explain clearly.
 """
 
 MODE_EXPLAIN = """\
@@ -92,11 +95,18 @@ MODE_PROMPTS = {
 }
 
 
-def build_system_prompt(mode: str, memory_context: str = "", rag_context: str = "", web_context: str = "") -> str:
+LANGUAGE_PROMPTS = {
+    "en": "You MUST reply exclusively in English, regardless of the language the student uses.",
+    "fr": "Tu DOIS répondre exclusivement en français, quelle que soit la langue utilisée par l'étudiant.",
+}
+
+
+def build_system_prompt(mode: str, memory_context: str = "", rag_context: str = "", web_context: str = "", language: str = "en") -> str:
     """Build the full system prompt for a given mode and available context."""
     mode_instruction = MODE_PROMPTS.get(mode, MODE_AUTO)
+    language_instruction = LANGUAGE_PROMPTS.get(language, LANGUAGE_PROMPTS["en"])
 
-    parts = [SYSTEM_PROMPT, mode_instruction]
+    parts = [SYSTEM_PROMPT, mode_instruction, f"LANGUAGE RULE: {language_instruction}"]
 
     if memory_context:
         parts.append(f"\nUSER MEMORY (use this to personalize your response):\n{memory_context}")

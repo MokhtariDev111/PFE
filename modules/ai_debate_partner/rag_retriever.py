@@ -26,10 +26,15 @@ DEBATE_INDEX_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _index_path(conversation_id: str) -> Path:
-    """Return the FAISS index path for a given conversation."""
-    p = DEBATE_INDEX_DIR / conversation_id
-    p.mkdir(parents=True, exist_ok=True)
-    return p / "index"
+    """Return the FAISS index path for a given conversation (does NOT create directories)."""
+    return DEBATE_INDEX_DIR / conversation_id / "index"
+
+
+def _ensure_index_dir(conversation_id: str) -> Path:
+    """Return the FAISS index path, creating parent directories if needed."""
+    p = _index_path(conversation_id)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return p
 
 
 def index_exists(conversation_id: str) -> bool:
@@ -70,7 +75,7 @@ async def build_index_from_bytes(conversation_id: str, filename: str, file_bytes
                 log.warning(f"No chunks produced from '{filename}'")
                 return 0
 
-            index_path = _index_path(conversation_id)
+            index_path = _ensure_index_dir(conversation_id)
             build_vector_db(chunks, index_path=index_path)
             log.info(f"Built debate index for '{conversation_id}': {len(chunks)} chunks from '{filename}'")
             return len(chunks)

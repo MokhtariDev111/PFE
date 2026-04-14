@@ -915,9 +915,10 @@ async def debate_upload(
 async def debate_chat(
     message: str = Form(...),
     mode: str = Form("auto"),
-    source: str = Form("auto"),
+    source: str = Form("mix"),
     history: str = Form("[]"),
     conversation_id: str = Form(""),
+    language: str = Form("en"),
 ):
     from modules.ai_debate_partner import DebateEngine
     import json as _json
@@ -930,6 +931,7 @@ async def debate_chat(
         message=message, mode=mode, source=source,
         history=history_list if not conversation_id else None,
         conversation_id=conversation_id,
+        language=language,
     )
     return {"reply": reply, "mode": mode}
 
@@ -938,9 +940,10 @@ async def debate_chat(
 async def debate_chat_stream(
     message: str = Form(...),
     mode: str = Form("auto"),
-    source: str = Form("auto"),
+    source: str = Form("mix"),
     history: str = Form("[]"),
     conversation_id: str = Form(""),
+    language: str = Form("en"),
 ):
     from modules.ai_debate_partner import DebateEngine
     from fastapi.responses import StreamingResponse
@@ -955,6 +958,7 @@ async def debate_chat_stream(
             message=message, mode=mode, source=source,
             history=history_list if not conversation_id else None,
             conversation_id=conversation_id,
+            language=language,
         ):
             yield f"data: {_json.dumps({'chunk': chunk})}\n\n"
         yield "data: [DONE]\n\n"
