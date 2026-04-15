@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { Send, Loader2, Brain, Plus, Trash2, MessageSquare, Paperclip, FileText, X, ChevronDown, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import Orb from "@/components/reactbits/Orb";
+import Galaxy from "@/components/reactbits/Galaxy";
 import TextType from "@/components/reactbits/TextType";
 const API = "http://127.0.0.1:8000";
 
@@ -261,8 +263,13 @@ export default function DebatePage() {
           </div>
         </div>
 
+        {/* Galaxy stars — behind everything */}
+        <div className="pointer-events-none absolute inset-0 z-0">
+          <Galaxy hueShift={260} density={1.2} glowIntensity={0.4} twinkleIntensity={0.4} rotationSpeed={0.03} speed={0.6} transparent mouseInteraction={false} mouseRepulsion={false} />
+        </div>
+
         {/* Orb — always visible, centered background */}
-        <div className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center overflow-hidden">
+        <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center overflow-hidden">
           <div className="w-96 h-96 opacity-70 rounded-full overflow-hidden" style={{ mixBlendMode: "screen" }}>
             <Orb hue={260} hoverIntensity={0} forceHoverState={false} beating={loading} backgroundColor="#000000" />
           </div>
@@ -346,7 +353,7 @@ export default function DebatePage() {
               <span className="text-[10px] text-muted-foreground">RAG active</span>
             </div>
           )}
-          <div className="flex items-end gap-2 bg-card border border-border rounded-2xl px-4 py-3 focus-within:border-primary/40 transition-colors">
+          <div className="flex items-end gap-2 bg-card/95 border border-border/80 rounded-2xl px-4 py-3 focus-within:border-primary/40 transition-colors backdrop-blur-xl shadow-lg">
             {/* Upload button — hidden when Web-only source is selected */}
             {source !== "web" && (
               <button
@@ -386,10 +393,13 @@ export default function DebatePage() {
                 {MODE_META[mode].label}
                 <ChevronDown className="w-3 h-3" />
               </button>
-              {modeOpen && (
+              {modeOpen && createPortal(
                 <>
-                  <div className="fixed inset-0 z-40" onClick={() => setModeOpen(false)} />
-                  <div className="absolute bottom-full right-0 mb-1.5 w-48 rounded-xl border border-border bg-popover shadow-lg z-50 py-1 overflow-hidden">
+                  <div className="fixed inset-0 z-[200]" onClick={() => setModeOpen(false)} />
+                  <div
+                    className="fixed bottom-20 right-8 w-48 rounded-xl border border-border bg-popover shadow-xl z-[210] py-1 overflow-hidden"
+                    onClick={e => e.stopPropagation()}
+                  >
                     {(Object.entries(MODE_META) as [Mode, typeof MODE_META[Mode]][]).map(([m, meta]) => (
                       <button
                         key={m}
@@ -406,7 +416,8 @@ export default function DebatePage() {
                       </button>
                     ))}
                   </div>
-                </>
+                </>,
+                document.body
               )}
             </div>
 
