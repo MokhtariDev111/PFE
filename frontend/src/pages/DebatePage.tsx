@@ -14,7 +14,11 @@ type Source = "web" | "doc" | "mix";
 type Lang = "en" | "fr";
 type Role = "user" | "assistant";
 
-interface Message { role: Role; content: string }
+interface Message {
+  role: Role;
+  content: string;
+  suggestions?: { label: string; prompt: string }[];
+}
 interface Conversation { conversation_id: string; title: string; mode: string; updated_at: string }
 
 const MODE_META: Record<Mode, { label: string; active: string; desc: string }> = {
@@ -25,6 +29,214 @@ const MODE_META: Record<Mode, { label: string; active: string; desc: string }> =
 };
 
 function genId() { return `conv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`; }
+
+const SLASH_COMMANDS = [
+  { cmd: "/youtube",   icon: "▶",  label: "/youtube",   desc: "Search YouTube videos by views" },
+  { cmd: "/wikipedia", icon: "📖", label: "/wikipedia",  desc: "Fetch Wikipedia article summary" },
+];
+
+// ─── Smart message renderer — makes bullet points clickable ──────────────────
+function PagePreview({ conversationId, page }: { conversationId: string; page: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [show, setShow] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const badgeRef = useRef<HTMLSpanElement>(null);
+
+  const load = () => {
+    timerRef.current = setTimeout(() => {
+      if (badgeRef.current) {
+        const r = badgeRef.current.getBoundingClientRect();
+        setPos({ top: r.top - 60, left: r.right - 230 });
+      }
+      setShow(true);
+    }, 120);
+    if (!src) {
+      fetch(`http://127.0.0.1:8000/debate/preview/${conversationId}/${page}`)
+        .then(r => r.ok ? r.blob() : null)
+        .then(b => { if (b) setSrc(URL.createObjectURL(b)); })
+        .catch(() => {});
+    }
+  };
+  const hide = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setShow(false);
+  };
+
+  return (
+    <span className="relative inline-block shrink-0" onMouseEnter={load} onMouseLeave={hide}>
+      <span ref={badgeRef} className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary cursor-default hover:bg-primary/20 transition-colors font-mono">
+        p.{page}
+      </span>
+      {show && (
+        <span
+          className="fixed z-[9999] block w-56 rounded-xl overflow-hidden border border-border shadow-2xl shadow-black/60 bg-card pointer-events-none"
+          style={{ top: pos.top, left: pos.left }}
+        >
+          {src
+            ? <img src={src} alt={`Page ${page}`} className="w-full h-auto block" />
+            : <span className="flex items-center justify-center h-32 text-[11px] text-muted-foreground">Loading page {page}…</span>
+          }
+          <span className="block text-center text-[10px] text-muted-foreground py-1.5 border-t border-border">Page {page}</span>
+        </span>
+      )}
+    </span>
+  );
+}
+
+// ─── Structured outline renderer ─────────────────────────────────────────────
+function OutlineRenderer({ content, onTopicClick, conversationId }: {
+  content: string; onTopicClick: (t: string) => void; conversationId: string;
+}) {
+  // Parse into chapters + sections
+  type Section = { topic: string; page: string | null };
+  type Chapter = { title: string; page: string | null; sections: Section[] };
+
+  const chapters: Chapter[] = [];
+  let currentChapter: Chapter | null = null;
+  const otherLines: string[] = [];
+  let isOutline = false;
+
+  const lines = content.split("\n");
+
+  for (const line of lines) {
+    const romanMatch = line.match(/^\s*([IVX]+)\.\s+(.+)$/);
+    const bulletMatch = line.match(/^\s*[\*\-]\s+(.+)$/);
+
+    if (romanMatch) {
+      isOutline = true;
+      const full = romanMatch[2].trim();
+      const pm = full.match(/^(.*?)\s*\(p\.?\s*(\d+)\)\s*$/i);
+      currentChapter = { title: pm ? pm[1].trim() : full, page: pm ? pm[2] : null, sections: [] };
+      chapters.push(currentChapter);
+    } else if (bulletMatch && currentChapter) {
+      const full = bulletMatch[1].trim();
+      const pm = full.match(/^(.*?)\s*\(p\.?\s*(\d+)\)\s*$/i);
+      currentChapter.sections.push({ topic: pm ? pm[1].trim() : full, page: pm ? pm[2] : null });
+    } else {
+      if (!isOutline || !currentChapter) otherLines.push(line);
+    }
+  }
+
+  // If no outline detected, fall back to plain MessageContent
+  if (chapters.length === 0) return null;
+
+  return (
+    <div className="space-y-1.5">
+      {/* Intro text before the outline */}
+      {otherLines.filter(l => l.trim()).length > 0 && (
+        <p className="text-sm text-foreground/80 mb-3">{otherLines.filter(l => l.trim()).join(" ")}</p>
+      )}
+
+      {chapters.map((ch, ci) => (
+        <div key={ci} className="rounded-xl border border-border/60 overflow-hidden bg-card/40">
+          {/* Chapter header */}
+          <div className="flex items-center justify-between px-3 py-2 bg-primary/8 border-b border-border/40">
+            <button
+              onClick={() => onTopicClick(ch.title)}
+              className="text-sm font-semibold text-foreground hover:text-primary transition-colors text-left flex-1"
+            >
+              {ch.title}
+            </button>
+            {ch.page && conversationId && (
+              <PagePreview conversationId={conversationId} page={ch.page} />
+            )}
+          </div>
+
+          {/* Sections */}
+          {ch.sections.length > 0 && (
+            <div className="divide-y divide-border/30">
+              {ch.sections.map((sec, si) => (
+                <div key={si} className="flex items-center justify-between px-4 py-1.5 hover:bg-secondary/30 transition-colors group">
+                  <button
+                    onClick={() => onTopicClick(sec.topic)}
+                    className="text-xs text-muted-foreground group-hover:text-primary transition-colors text-left flex-1"
+                  >
+                    → {sec.topic}
+                  </button>
+                  {sec.page && conversationId && (
+                    <PagePreview conversationId={conversationId} page={sec.page} />
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function renderLineWithLinks(line: string) {
+  const urlRegex = /https?:\/\/[^\s]+/g;
+  const parts: (string | JSX.Element)[] = [];
+  let last = 0;
+  let match;
+  while ((match = urlRegex.exec(line)) !== null) {
+    if (match.index > last) parts.push(line.slice(last, match.index));
+    parts.push(
+      <a key={match.index} href={match[0]} target="_blank" rel="noopener noreferrer"
+        className="text-primary underline hover:text-primary/80 break-all">
+        {match[0]}
+      </a>
+    );
+    last = match.index + match[0].length;
+  }
+  if (last < line.length) parts.push(line.slice(last));
+  return parts.length > 0 ? parts : line;
+}
+
+function RenderWithLinks({ content }: { content: string }) {
+  return (
+    <span className="whitespace-pre-wrap">
+      {content.split("\n").map((line, i) => (
+        <span key={i} className="block">{renderLineWithLinks(line)}</span>
+      ))}
+    </span>
+  );
+}
+
+function MessageContent({ content, onTopicClick, conversationId }: {
+  content: string;
+  onTopicClick: (t: string) => void;
+  conversationId: string;
+}) {
+  // Try structured outline first
+  const outline = <OutlineRenderer content={content} onTopicClick={onTopicClick} conversationId={conversationId} />;
+  if (outline) {
+    // Check if it actually rendered chapters
+    const hasRoman = /^\s*[IVX]+\.\s+/m.test(content);
+    if (hasRoman) return outline;
+  }
+
+  // Fallback: plain renderer with clickable bullets
+  const lines = content.split("\n");
+  return (
+    <span className="block">
+      {lines.map((line, i) => {
+        const bulletMatch = line.match(/^(\s*[\*\-]\s+)(.+)$/);
+        const romanMatch  = !bulletMatch && line.match(/^(\s*[IVX]+\.\s+)(.+)$/);
+        const m = bulletMatch || romanMatch;
+        if (m) {
+          const full = m[2].trim();
+          const pm = full.match(/^(.*?)\s*\(p\.?\s*(\d+)\)\s*$/i);
+          const topic = pm ? pm[1].trim() : full;
+          const pageNum = pm ? pm[2] : null;
+          return (
+            <span key={i} className="flex items-center justify-between gap-3 py-0.5">
+              <span className="flex-1 min-w-0">
+                <span className="text-muted-foreground">{m[1]}</span>
+                <button onClick={() => onTopicClick(topic)} className="text-primary hover:underline text-left">{topic}</button>
+              </span>
+              {pageNum && conversationId && <PagePreview conversationId={conversationId} page={pageNum} />}
+            </span>
+          );
+        }
+        return <span key={i} className="block">{renderLineWithLinks(line)}</span>;
+      })}
+    </span>
+  );
+}
 
 export default function DebatePage() {
   const { toast } = useToast();
@@ -38,7 +250,9 @@ export default function DebatePage() {
   const [loading, setLoading] = useState(false);
   const [uploadedDoc, setUploadedDoc] = useState<string>("");
   const [uploading, setUploading] = useState(false);
+  const [suggestions, setSuggestions] = useState<{label: string; prompt: string}[]>([]);
   const [modeOpen, setModeOpen] = useState(false);
+  const [slashOpen, setSlashOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -78,6 +292,7 @@ export default function DebatePage() {
     setMessages([]);
     setInput("");
     setUploadedDoc("");
+    setSuggestions([]);
     setTimeout(() => inputRef.current?.focus(), 50);
   };
 
@@ -93,7 +308,38 @@ export default function DebatePage() {
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       setUploadedDoc(file.name);
+
+      // Get contextual intro + suggestions from the document
+      const ifd = new FormData();
+      ifd.append("conversation_id", convId);
+      ifd.append("filename", file.name);
+      ifd.append("language", lang === "fr" ? "French" : "English");
+      const ires = await fetch(`${API}/debate/document-intro`, { method: "POST", body: ifd });
+      if (ires.ok) {
+        const intro = await ires.json();
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: intro.message,
+          suggestions: intro.suggestions ?? [],
+        }]);
+        setSuggestions([]);
+        // Save to MongoDB
+        const sfd = new FormData();
+        sfd.append("message", "");
+        sfd.append("mode", mode);
+        sfd.append("conversation_id", convId);
+        // Just persist the assistant message
+        await fetch(`${API}/debate/chat`, { method: "POST", body: (() => {
+          const f = new FormData();
+          f.append("message", `[Uploaded document: ${file.name}]`);
+          f.append("mode", mode);
+          f.append("conversation_id", convId);
+          return f;
+        })() });
+      }
+
       toast({ title: `Document indexed — ${data.chunks} chunks`, description: file.name });
+      loadConversations();
     } catch (e: any) {
       toast({ title: "Upload failed", description: e.message, variant: "destructive" });
     } finally {
@@ -126,6 +372,8 @@ export default function DebatePage() {
 
     setMessages(prev => [...prev, { role: "user", content: msg }]);
     setInput("");
+    setSuggestions([]);
+    setSlashOpen(false);
     setLoading(true);
 
     try {
@@ -154,6 +402,11 @@ export default function DebatePage() {
 
   const handleKey = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+  };
+
+  const handleTopicClick = (topic: string) => {
+    setInput(`Explain "${topic}" in detail with examples.`);
+    setTimeout(() => inputRef.current?.focus(), 50);
   };
 
   return (
@@ -199,7 +452,7 @@ export default function DebatePage() {
           <div className="p-3 border-t border-border/50 space-y-2">
             <button
               onClick={clearAllHistory}
-              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-all"
+              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-red-500 hover:text-red-400 hover:bg-red-500/10 transition-all mt-auto"
             >
               <Trash2 className="w-3.5 h-3.5" /> Clear all history
             </button>
@@ -310,18 +563,49 @@ export default function DebatePage() {
                   boxShadow: "0 0 0 1px hsl(var(--primary)/0.15), 0 0 16px 2px hsl(var(--primary)/0.12)"
                 } : undefined}
                 >
-                  {msg.role === "assistant" && i === messages.length - 1 ? (
-                    <TextType
-                      text={msg.content}
-                      typingSpeed={18}
-                      loop={false}
-                      showCursor={true}
-                      cursorCharacter="▋"
-                      cursorBlinkDuration={0.5}
-                      className="text-sm leading-relaxed whitespace-pre-wrap"
-                    />
-                  ) : (
+                  {msg.role === "assistant" ? (() => {
+                    const hasOutline = /^\s*[IVX]+\.\s+/m.test(msg.content);
+                    const hasUrl = /https?:\/\//.test(msg.content);
+                    if (hasOutline) {
+                      return <MessageContent content={msg.content} onTopicClick={handleTopicClick} conversationId={activeId} />;
+                    }
+                    if (hasUrl) {
+                      return <RenderWithLinks content={msg.content} />;
+                    }
+                    if (i === messages.length - 1) {
+                      return (
+                        <TextType
+                          text={msg.content}
+                          typingSpeed={18}
+                          loop={false}
+                          showCursor={true}
+                          cursorCharacter="▋"
+                          cursorBlinkDuration={0.5}
+                          className="text-sm leading-relaxed whitespace-pre-wrap"
+                        />
+                      );
+                    }
+                    return <RenderWithLinks content={msg.content} />;
+                  })() : (
                     <span className="whitespace-pre-wrap">{msg.content}</span>
+                  )}
+                  {/* Suggestion links inside the bubble */}
+                  {msg.suggestions && msg.suggestions.length > 0 && (
+                    <div className="mt-3 flex flex-col gap-1.5 border-t border-primary/10 pt-3">
+                      {msg.suggestions.map((s, si) => (
+                        <button
+                          key={si}
+                          onClick={() => {
+                            setInput(s.prompt);
+                            setSuggestions([]);
+                            setTimeout(() => inputRef.current?.focus(), 50);
+                          }}
+                          className="text-left text-xs text-primary hover:text-primary/80 hover:underline transition-all flex items-center gap-1.5"
+                        >
+                          <span className="opacity-60">→</span> {s.label}
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
               </motion.div>
@@ -372,14 +656,40 @@ export default function DebatePage() {
               className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ""; }}
             />
-            <div className="flex-1 flex flex-col">
+            <div className="flex-1 flex flex-col relative">
+              {/* Slash command menu */}
+              {slashOpen && (
+                <div className="absolute bottom-full mb-2 left-0 w-64 rounded-xl border border-border bg-popover shadow-xl z-[70] overflow-hidden">
+                  {SLASH_COMMANDS.map(c => (
+                    <button
+                      key={c.cmd}
+                      onMouseDown={e => {
+                        e.preventDefault();
+                        setInput(c.cmd + " ");
+                        setSlashOpen(false);
+                        setTimeout(() => inputRef.current?.focus(), 50);
+                      }}
+                      className="w-full text-left px-4 py-2.5 hover:bg-secondary/60 transition-colors flex items-center gap-3"
+                    >
+                      <span className="text-base">{c.icon}</span>
+                      <div>
+                        <p className="text-xs font-semibold text-primary">{c.label}</p>
+                        <p className="text-[11px] text-muted-foreground">{c.desc}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
               <textarea
                 ref={inputRef}
                 rows={1}
                 className="w-full bg-transparent resize-none text-sm focus:outline-none placeholder:text-muted-foreground max-h-36 overflow-y-auto"
-                placeholder="Ask anything… (Enter to send, Shift+Enter for new line)"
+                placeholder="Ask anything… or type / for commands"
                 value={input}
-                onChange={e => setInput(e.target.value)}
+                onChange={e => {
+                  setInput(e.target.value);
+                  setSlashOpen(e.target.value === "/");
+                }}
                 onKeyDown={handleKey}
                 style={{ lineHeight: "1.5" }}
               />

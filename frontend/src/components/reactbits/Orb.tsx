@@ -164,7 +164,7 @@ export default function Orb({
 
     function resize() {
       if (!container) return;
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5); // cap DPR
       const w = container.clientWidth;
       const h = container.clientHeight;
       renderer.setSize(w * dpr, h * dpr);
@@ -178,11 +178,20 @@ export default function Orb({
     let lastTime = 0;
     let currentRot = 0;
     let rafId: number;
+    const TARGET_FPS = 30;
+    const FRAME_MS   = 1000 / TARGET_FPS;
+    let lastFrame = 0;
+    let hidden = false;
+    const onVisibility = () => { hidden = document.hidden; };
+    document.addEventListener('visibilitychange', onVisibility);
 
     const update = (t: number) => {
       rafId = requestAnimationFrame(update);
+      if (hidden) return;
+      if (t - lastFrame < FRAME_MS) return;
       const dt = (t - lastTime) * 0.001;
       lastTime = t;
+      lastFrame = t;
 
       program.uniforms.iTime.value          = t * 0.001;
       program.uniforms.hue.value             = hue;
@@ -207,6 +216,7 @@ export default function Orb({
 
     return () => {
       cancelAnimationFrame(rafId);
+      document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('resize', resize);
       if (gl.canvas.parentElement) gl.canvas.parentElement.removeChild(gl.canvas);
       gl.getExtension('WEBGL_lose_context')?.loseContext();

@@ -904,6 +904,74 @@ async def quiz_image(
 # AI DEBATE PARTNER ENDPOINTS
 # ══════════════════════════════════════════════════════════════════════════════
 
+@app.get("/debate/preview/{conversation_id}/{page}")
+async def debate_page_preview(conversation_id: str, page: int):
+    """Lazily render and return a PDF page thumbnail as PNG."""
+    from modules.ai_debate_partner.rag_retriever import get_or_render_thumbnail
+    import asyncio
+    path = await asyncio.to_thread(get_or_render_thumbnail, conversation_id, page)
+    if not path:
+        raise HTTPException(404, "Page not found or PDF not stored")
+    return FileResponse(str(path), media_type="image/png")
+
+
+@app.post("/debate/document-intro")
+async def debate_document_intro(
+    conversation_id: str = Form(...),
+    filename: str = Form(""),
+    language: str = Form("English"),
+):
+    """
+    After a document is uploaded, generate a contextual intro message
+    with suggested actions the user can take.
+    Returns the assistant message and a list of suggestion chips.
+    """
+    from modules.ai_debate_partner.rag_retriever import retrieve
+    from modules.ai_debate_partner import DebateEngine
+
+    # Retrieve a broad sample of the document to understand its content
+    sample = retrieve(conversation_id, "main topics overview introduction", top_k=6)
+    if not sample:
+        return {
+            "message": f"I've indexed **{filename}**. What would you like to do with it?",
+            "suggestions": [
+                {"label": "📋 Summarize the course", "prompt": "Please summarize the main topics of this course in bullet points."},
+                {"label": "🔍 What is this course about?", "prompt": "Give me a brief overview of what this course covers."},
+                {"label": "🗂️ List all chapters/sections", "prompt": "List all the chapters and sections of this course using Roman numerals for chapters (I. II. III.) and bullet points (* ) for sections inside each chapter. For each item include the page number at the end in the format (p.X). Be thorough and hierarchical. Example:\nI. Introduction\n  * Overview (p.1)\nII. Chapter Name\n  * Section name (p.5)\n  * Section name (p.8)"},
+                {"label": "❓ Quiz me on this course", "prompt": "Generate 5 quiz questions based on the most important concepts in this course."},
+            ]
+        }
+
+    engine = DebateEngine()
+    prompt = f"""\
+A student just uploaded a course document called "{filename}".
+Here is a sample of the document content:
+
+{sample[:2000]}
+
+Write a SHORT, warm, conversational message (2-3 sentences max) in {language}:
+1. Acknowledge the document by name
+2. Briefly mention what it seems to be about (1 sentence)
+3. Ask what they'd like to do
+
+Write in plain text only. No markdown. Be friendly and concise like Aria would."""
+
+    if engine.llm.backend == "groq":
+        message = await engine.llm._call_groq(prompt, json_mode=False)
+    else:
+        message = await engine.llm._call_ollama(prompt, engine.llm.ollama_model, json_mode=False)
+
+    return {
+        "message": message.strip(),
+        "suggestions": [
+            {"label": "📋 Summarize the course", "prompt": "Please summarize the main topics of this course in clear bullet points."},
+            {"label": "🔍 What is this course about?", "prompt": "Give me a brief overview of what this course covers and its main objectives."},
+            {"label": "🗂️ List all chapters/sections", "prompt": "List all the chapters and sections of this course using Roman numerals for chapters (I. II. III.) and bullet points (* ) for sections inside each chapter. For each item include the page number at the end in the format (p.X). Be thorough and hierarchical. Example:\nI. Introduction\n  * Overview (p.1)\nII. Chapter Name\n  * Section name (p.5)\n  * Section name (p.8)"},
+            {"label": "❓ Quiz me on this course", "prompt": "Generate 5 quiz questions based on the most important concepts in this course."},
+        ]
+    }
+
+
 @app.post("/debate/upload")
 async def debate_upload(
     file: UploadFile = File(...),
@@ -928,6 +996,10 @@ async def debate_upload(
 
     if chunk_count == 0:
         raise HTTPException(422, "Could not extract text from the document")
+
+    # Save PDF for thumbnail generation
+    from modules.ai_debate_partner.rag_retriever import save_pdf
+    save_pdf(conversation_id, content)
 
     # Record document in MongoDB
     MemoryStore().set_document(conversation_id, file.filename or "document.pdf", chunk_count)

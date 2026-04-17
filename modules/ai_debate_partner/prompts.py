@@ -43,6 +43,7 @@ RESPONSE FORMAT — CRITICAL:
 - Keep responses focused — one idea at a time, no walls of text
 - Short responses are often better than long ones
 - Always separate distinct ideas or paragraphs with a blank line (two newlines) so the response is easy to read
+- When you receive YouTube or Wikipedia results in your context, ALWAYS include the full URLs exactly as given — never hide or paraphrase them
 """
 
 # ─────────────────────────────────────────────────────────────────────────────

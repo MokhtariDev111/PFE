@@ -214,7 +214,7 @@ export default function FloatingLines({
     const camera   = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
     camera.position.z = 1;
     const renderer = new WebGLRenderer({ antialias: true, alpha: false });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     renderer.domElement.style.width  = '100%';
     renderer.domElement.style.height = '100%';
     container.appendChild(renderer.domElement);
@@ -296,20 +296,30 @@ export default function FloatingLines({
     }
 
     let raf = 0;
-    const loop = () => {
+    const TARGET_FPS = 30;
+    const FRAME_MS   = 1000 / TARGET_FPS;
+    let lastFrame = 0;
+    let hidden = false;
+    const onVisibility = () => { hidden = document.hidden; };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    const loop = (t: number) => {
       if (!active) return;
-      uniforms.iTime.value = clock.getElapsedTime();
-      if (interactive) {
-        currentMouseRef.current.lerp(targetMouseRef.current, mouseDamping);
-        uniforms.iMouse.value.copy(currentMouseRef.current);
-        currentInfluenceRef.current += (targetInfluenceRef.current - currentInfluenceRef.current) * mouseDamping;
-        uniforms.bendInfluence.value = currentInfluenceRef.current;
+      if (!hidden && t - lastFrame >= FRAME_MS) {
+        lastFrame = t;
+        uniforms.iTime.value = clock.getElapsedTime();
+        if (interactive) {
+          currentMouseRef.current.lerp(targetMouseRef.current, mouseDamping);
+          uniforms.iMouse.value.copy(currentMouseRef.current);
+          currentInfluenceRef.current += (targetInfluenceRef.current - currentInfluenceRef.current) * mouseDamping;
+          uniforms.bendInfluence.value = currentInfluenceRef.current;
+        }
+        if (parallax) {
+          currentParallaxRef.current.lerp(targetParallaxRef.current, mouseDamping);
+          uniforms.parallaxOffset.value.copy(currentParallaxRef.current);
+        }
+        renderer.render(scene, camera);
       }
-      if (parallax) {
-        currentParallaxRef.current.lerp(targetParallaxRef.current, mouseDamping);
-        uniforms.parallaxOffset.value.copy(currentParallaxRef.current);
-      }
-      renderer.render(scene, camera);
       raf = requestAnimationFrame(loop);
     };
     loop();
@@ -317,6 +327,7 @@ export default function FloatingLines({
     return () => {
       active = false;
       cancelAnimationFrame(raf);
+      document.removeEventListener('visibilitychange', onVisibility);
       if (ro) ro.disconnect();
       if (interactive) {
         renderer.domElement.removeEventListener('pointermove', onMove);

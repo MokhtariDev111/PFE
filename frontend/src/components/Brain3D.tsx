@@ -70,13 +70,6 @@ export function Brain3D() {
       modelRef.current = object;
     });
 
-    // Mouse rotation — track globally but pointer-events none on canvas
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!modelRef.current) return;
-      const ny = (e.clientY / window.innerHeight - 0.5) * Math.PI * 0.3;
-      modelRef.current.rotation.x += (ny - modelRef.current.rotation.x) * 0.05;
-    };
-
     // Scroll zoom — listen on document so page scroll still works
     // We only zoom, not prevent default, so scrolling is unblocked
     const handleScroll = () => {
@@ -110,12 +103,10 @@ export function Brain3D() {
 
     window.addEventListener("resize", handleResize);
     window.addEventListener("scroll", handleScroll, { passive: true });
-    window.addEventListener("mousemove", handleMouseMove);
 
     return () => {
       window.removeEventListener("resize", handleResize);
       window.removeEventListener("scroll", handleScroll);
-      window.removeEventListener("mousemove", handleMouseMove);
       if (animationIdRef.current) cancelAnimationFrame(animationIdRef.current);
       if (containerRef.current?.contains(renderer.domElement)) {
         containerRef.current.removeChild(renderer.domElement);

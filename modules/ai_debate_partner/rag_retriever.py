@@ -115,3 +115,54 @@ def delete_index(conversation_id: str):
     if idx_dir.exists():
         shutil.rmtree(idx_dir)
         log.info(f"Deleted debate index for '{conversation_id}'")
+
+
+# ─── PDF storage (for thumbnail generation) ──────────────────────────────────
+
+def _pdf_path(conversation_id: str) -> Path:
+    return DEBATE_INDEX_DIR / conversation_id / "source.pdf"
+
+
+def save_pdf(conversation_id: str, pdf_bytes: bytes):
+    """Save the original PDF bytes for later thumbnail rendering."""
+    p = _pdf_path(conversation_id)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(pdf_bytes)
+
+
+def _thumb_path(conversation_id: str, page: int) -> Path:
+    p = DEBATE_INDEX_DIR / conversation_id / "thumbs"
+    p.mkdir(parents=True, exist_ok=True)
+    return p / f"page_{page}.png"
+
+
+def get_or_render_thumbnail(conversation_id: str, page: int) -> Path | None:
+    """
+    Return path to a thumbnail for the given page (1-indexed).
+    Renders it lazily on first request using the stored PDF.
+    Returns None if PDF not found or render fails.
+    """
+    cached = _thumb_path(conversation_id, page)
+    if cached.exists():
+        return cached
+
+    pdf = _pdf_path(conversation_id)
+    if not pdf.exists():
+        log.warning(f"No stored PDF for conversation '{conversation_id}'")
+        return None
+
+    try:
+        import fitz
+        doc = fitz.open(str(pdf))
+        if page < 1 or page > len(doc):
+            log.warning(f"Page {page} out of range (doc has {len(doc)} pages)")
+            return None
+        pg  = doc[page - 1]
+        mat = fitz.Matrix(200 / 72, 200 / 72)   # 200 DPI — balanced quality/speed
+        pix = pg.get_pixmap(matrix=mat, alpha=False)
+        pix.save(str(cached))
+        log.info(f"Thumbnail rendered: conv={conversation_id} page={page}")
+        return cached
+    except Exception as e:
+        log.error(f"Thumbnail render failed: {e}")
+        return None

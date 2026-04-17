@@ -11,7 +11,7 @@ const cards = [
     lucide: MessageSquare,
     title: "Generate from Prompt",
     desc: "Create a presentation from a simple text description in seconds.",
-    badge: null,
+    badge: "NOT AVAILABLE",
     route: "/generate/prompt",
     image: "/prompt.jpeg",
     available: false,
@@ -36,7 +36,7 @@ const cards = [
   },
   {
     lucide: GitBranch,
-    title: "AI Debate Partner",
+    title: "Aria — AI Debate Partner",
     desc: "Practice argumentation and critical thinking with an AI opponent.",
     badge: null,
     route: "/aria",
@@ -182,7 +182,7 @@ export default function CreationHub() {
               </div>
 
               {card.badge && (
-                <span className="absolute top-4 right-4 text-[10px] font-bold px-2.5 py-1 rounded-full bg-primary/15 text-primary border border-primary/20">
+                <span className="absolute top-4 right-4 text-[10px] font-bold px-2.5 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/20">
                   {card.badge}
                 </span>
               )}

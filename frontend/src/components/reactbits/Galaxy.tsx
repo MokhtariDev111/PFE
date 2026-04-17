@@ -236,9 +236,19 @@ export default function Galaxy({
     const mesh = new Mesh(gl, { geometry, program });
     ctn.appendChild(gl.canvas);
 
+    const TARGET_FPS = 30;
+    const FRAME_MS   = 1000 / TARGET_FPS;
+    let lastFrame = 0;
     let animateId: number;
+    let hidden = false;
+    const onVisibility = () => { hidden = document.hidden; };
+    document.addEventListener('visibilitychange', onVisibility);
+
     function update(t: number) {
       animateId = requestAnimationFrame(update);
+      if (hidden) return;
+      if (t - lastFrame < FRAME_MS) return;
+      lastFrame = t;
       if (!disableAnimation) {
         program.uniforms.uTime.value = t * 0.001;
         program.uniforms.uStarSpeed.value = (t * 0.001 * starSpeed) / 10.0;
@@ -256,6 +266,7 @@ export default function Galaxy({
 
     return () => {
       cancelAnimationFrame(animateId);
+      document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('resize', resize);
       if (gl.canvas.parentElement) gl.canvas.parentElement.removeChild(gl.canvas);
       gl.getExtension('WEBGL_lose_context')?.loseContext();

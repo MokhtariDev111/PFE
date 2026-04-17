@@ -1,11 +1,6 @@
 import { motion } from "framer-motion";
-import { Button } from "@/components/ui/button";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Sparkles, LayoutDashboard } from "lucide-react";
-
-const navLinks = [
-  { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-];
+import { Sparkles, ChevronLeft, ChevronRight } from "lucide-react";
 
 export function Navbar() {
   const navigate = useNavigate();
@@ -13,9 +8,6 @@ export function Navbar() {
 
   // Hide navbar on landing page — it has its own hero
   if (location.pathname === "/") return null;
-
-  const isActive = (path: string) =>
-    location.pathname === path || location.pathname.startsWith(path + "/");
 
   const isQuizPage = location.pathname === "/generate/quiz";
   const isAriaPage = location.pathname === "/aria";
@@ -31,7 +23,24 @@ export function Navbar() {
           : "bg-background/80 border-border/50"
       }`}
     >
-      <div className="max-w-7xl mx-auto px-6 py-3 flex items-center gap-4">
+      <div className="max-w-7xl mx-auto px-6 py-3 flex items-center gap-3">
+
+        {/* Back / Forward arrows */}
+        <button
+          onClick={() => window.history.back()}
+          className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-all"
+          title="Go back"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => window.history.forward()}
+          className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-all"
+          title="Go forward"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+
         {/* Logo */}
         <motion.div
           onClick={() => navigate("/")}
@@ -47,39 +56,6 @@ export function Navbar() {
           </div>
         </motion.div>
 
-        {/* Desktop links — hidden on immersive pages */}
-        {!isImmersive && (
-          <div className="hidden md:flex items-center gap-1">
-            {navLinks.map(({ path, label, icon: Icon }) => (
-              <Button
-                key={path}
-                variant={isActive(path) ? "default" : "ghost"}
-                size="sm"
-                onClick={() => navigate(path)}
-                className={`gap-1.5 ${isActive(path) ? "launch-button" : ""}`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                {label}
-              </Button>
-            ))}
-          </div>
-        )}
-
-        {/* Mobile — hidden on immersive pages */}
-        {!isImmersive && (
-          <div className="md:hidden flex items-center gap-1">
-            {navLinks.map(({ path, icon: Icon }) => (
-              <Button
-                key={path}
-                size="sm"
-                variant={isActive(path) ? "default" : "ghost"}
-                onClick={() => navigate(path)}
-              >
-                <Icon className="w-4 h-4" />
-              </Button>
-            ))}
-          </div>
-        )}
       </div>
     </motion.div>
   );

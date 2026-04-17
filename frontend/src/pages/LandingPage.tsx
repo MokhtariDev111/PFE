@@ -202,11 +202,11 @@ const features = [
   },
   {
     icon: Zap,
-    title: "RAG-Powered Intelligence",
-    desc: "Every tool is backed by hybrid retrieval (FAISS + BM25), Groq LLM, and persistent memory — not just generic AI.",
+    title: "Generate from Prompt",
+    desc: "Describe any topic and let AI build a complete presentation for you — no document needed.",
     color: "from-amber-500 to-orange-500",
     bg: "bg-amber-500/10",
-    route: "/dashboard",
+    route: "/generate/prompt",
   },
 ];
 

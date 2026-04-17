@@ -96,6 +96,29 @@ class DebateEngine:
             except Exception as e:
                 log.warning(f"Web search skipped: {e}")
 
+        # Slash command tools — /youtube and /wikipedia override web_context
+        msg_lower = message.lower()
+        if "/youtube" in msg_lower:
+            try:
+                from modules.ai_debate_partner.web_tools import search_youtube, format_youtube_results
+                query = msg_lower.replace("/youtube", "").strip() or message
+                results = await search_youtube(query, max_results=3)
+                if results:
+                    web_context = format_youtube_results(results)
+                    log.info(f"[/youtube] {len(results)} results for '{query}'")
+            except Exception as e:
+                log.warning(f"/youtube tool skipped: {e}")
+        elif "/wikipedia" in msg_lower:
+            try:
+                from modules.ai_debate_partner.web_tools import search_wikipedia, format_wikipedia_result
+                query = msg_lower.replace("/wikipedia", "").strip() or message
+                result = await search_wikipedia(query)
+                if result:
+                    web_context = format_wikipedia_result(result)
+                    log.info(f"[/wikipedia] result for '{query}'")
+            except Exception as e:
+                log.warning(f"/wikipedia tool skipped: {e}")
+
         system_prompt = build_system_prompt(
             mode=mode,
             memory_context=memory_context,
