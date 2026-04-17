@@ -17,8 +17,11 @@ from pathlib import Path
 from typing import Optional
 import threading
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
-CACHE_DIR = ROOT_DIR / "data" / "cache" / "llm"
+# File is at modules/core/llm_cache.py → go up 3 levels to reach project root
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+
+def _get_cache_dir(namespace: str = "generate_presentation") -> Path:
+    return ROOT_DIR / "data" / namespace / "cache" / "llm"
 
 log = logging.getLogger("llm_cache")
 
@@ -31,19 +34,20 @@ MAX_MEMORY_ENTRIES = 200  # Limit memory usage
 DISK_TTL_SECONDS = 24 * 60 * 60  # 24 hours
 
 
-def _cache_key(prompt: str, model: str) -> str:
-    """Generate a unique cache key from prompt + model."""
-    content = f"{model}::{prompt}"
+def _cache_key(prompt: str, model: str, namespace: str) -> str:
+    """Generate a unique cache key from namespace + prompt + model."""
+    content = f"{namespace}::{model}::{prompt}"
     return hashlib.sha256(content.encode()).hexdigest()[:32]
 
 
-def _disk_path(key: str) -> Path:
+def _disk_path(key: str, namespace: str) -> Path:
     """Get disk cache file path for a key."""
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    return CACHE_DIR / f"{key}.json"
+    cache_dir = _get_cache_dir(namespace)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir / f"{key}.json"
 
 
-def get_cached(prompt: str, model: str) -> Optional[str]:
+def get_cached(prompt: str, model: str, namespace: str = "generate_presentation") -> Optional[str]:
     """
     Retrieve cached LLM response if available.
     Checks L1 (memory) first, then L2 (disk).
@@ -51,7 +55,7 @@ def get_cached(prompt: str, model: str) -> Optional[str]:
     Returns:
         Cached response string, or None if not found/expired
     """
-    key = _cache_key(prompt, model)
+    key = _cache_key(prompt, model, namespace)
     
     # L1: Check memory cache
     with _cache_lock:
@@ -61,7 +65,7 @@ def get_cached(prompt: str, model: str) -> Optional[str]:
             return entry["response"]
     
     # L2: Check disk cache
-    disk_file = _disk_path(key)
+    disk_file = _disk_path(key, namespace)
     if disk_file.exists():
         try:
             data = json.loads(disk_file.read_text(encoding="utf-8"))
@@ -90,7 +94,7 @@ def get_cached(prompt: str, model: str) -> Optional[str]:
     return None
 
 
-def set_cached(prompt: str, model: str, response: str) -> None:
+def set_cached(prompt: str, model: str, response: str, namespace: str = "generate_presentation") -> None:
     """
     Store LLM response in both memory and disk cache.
     
@@ -98,11 +102,12 @@ def set_cached(prompt: str, model: str, response: str) -> None:
         prompt: The input prompt
         model: Model identifier
         response: LLM response to cache
+        namespace: Cache namespace for subproject separation
     """
     if not response or len(response) < 10:
         return  # Don't cache empty/error responses
     
-    key = _cache_key(prompt, model)
+    key = _cache_key(prompt, model, namespace)
     
     # L1: Store in memory
     with _cache_lock:
@@ -115,7 +120,7 @@ def set_cached(prompt: str, model: str, response: str) -> None:
     
     # L2: Store on disk
     try:
-        disk_file = _disk_path(key)
+        disk_file = _disk_path(key, namespace)
         data = {
             "prompt_preview": prompt[:100],  # For debugging
             "model": model,
@@ -129,9 +134,10 @@ def set_cached(prompt: str, model: str, response: str) -> None:
         log.warning(f"Cache write error: {e}")
 
 
-def clear_cache() -> int:
+def clear_cache(namespace: Optional[str] = None) -> int:
     """
     Clear all cached responses (memory + disk).
+    If namespace is provided, only clear that specific subproject's cache.
     
     Returns:
         Number of entries cleared
@@ -140,24 +146,53 @@ def clear_cache() -> int:
     
     # Clear memory
     with _cache_lock:
-        count += len(_memory_cache)
-        _memory_cache.clear()
+        if namespace:
+            prefix = f"{namespace}::"
+            keys_to_delete = [k for k in _memory_cache.keys() if k.startswith(prefix)]
+            for k in keys_to_delete:
+                del _memory_cache[k]
+                count += 1
+        else:
+            count += len(_memory_cache)
+            _memory_cache.clear()
     
     # Clear disk
-    if CACHE_DIR.exists():
-        for f in CACHE_DIR.glob("*.json"):
-            f.unlink()
-            count += 1
-    
+    if namespace:
+        cache_dir = _get_cache_dir(namespace)
+        if cache_dir.exists():
+            for f in cache_dir.glob("*.json"):
+                f.unlink()
+                count += 1
+    else:
+        # Scan all subproject namespace directories
+        data_root = ROOT_DIR / "data"
+        if data_root.exists():
+            for ns_dir in data_root.iterdir():
+                if not ns_dir.is_dir():
+                    continue
+                llm_dir = ns_dir / "cache" / "llm"
+                if llm_dir.exists():
+                    for f in llm_dir.glob("*.json"):
+                        f.unlink()
+                        count += 1
+
     log.info(f"Cache cleared: {count} entries removed")
     return count
 
 
 def cache_stats() -> dict:
-    """Get cache statistics."""
+    """Get cache statistics across all subproject namespaces."""
     memory_count = len(_memory_cache)
-    disk_count = len(list(CACHE_DIR.glob("*.json"))) if CACHE_DIR.exists() else 0
-    
+    disk_count = 0
+    data_root = ROOT_DIR / "data"
+    if data_root.exists():
+        for ns_dir in data_root.iterdir():
+            if not ns_dir.is_dir():
+                continue
+            llm_dir = ns_dir / "cache" / "llm"
+            if llm_dir.exists():
+                disk_count += len(list(llm_dir.glob("*.json")))
+
     return {
         "memory_entries": memory_count,
         "disk_entries": disk_count,

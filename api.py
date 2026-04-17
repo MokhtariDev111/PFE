@@ -34,7 +34,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
-from modules.core.config_loader import CONFIG
+from modules.core.config_loader import CONFIG, get_paths, get_index_path
 from modules.ingestion.ingestion import ingest_directory
 from modules.ingestion.ocr import run_ocr, warm_ocr_engine
 from modules.ingestion.text_processing import process_pages
@@ -97,15 +97,14 @@ class LRUCache(OrderedDict):
 
 _index_cache = LRUCache(maxsize=10)
 _session_store: dict[str, dict] = {}
-_llm_engine = None
+_llm_engines: dict[str, 'LLMEngine'] = {}
 
-def _get_llm_engine():
-    """Get or create cached LLM engine instance."""
-    global _llm_engine
-    if _llm_engine is None:
+def _get_llm_engine(namespace="generate_presentation"):
+    """Get or create cached LLM engine instance per namespace."""
+    if namespace not in _llm_engines:
         from modules.doc_generation.llm import LLMEngine
-        _llm_engine = LLMEngine()
-    return _llm_engine
+        _llm_engines[namespace] = LLMEngine(namespace=namespace)
+    return _llm_engines[namespace]
 
 def _files_hash_from_content(files_data: list[tuple[str, bytes]]) -> str:
     """Compute hash from file content BEFORE writing to disk."""
@@ -133,8 +132,8 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    engine = _get_llm_engine()
-    await engine.aclose()
+    for engine in _llm_engines.values():
+        await engine.aclose()
     log.info("HTTP clients closed.")
 
 
@@ -168,6 +167,7 @@ async def generate_stream(
     files: list[UploadFile] = File(default=[]),
     use_pdf_images: bool = Form(True),
     use_batch_mode: bool = Form(True),
+    namespace: str = Form("generate_presentation"),
 ):
     async def _stream():
         session_id = str(uuid.uuid4())
@@ -198,7 +198,8 @@ async def generate_stream(
                     safe_name = Path(f.filename).name.replace("..", "")
                     files_data.append((safe_name, content))
             else:
-                src = ROOT_DIR / CONFIG["paths"]["data_raw"]
+                ns_paths = get_paths(namespace)
+                src = ROOT_DIR / ns_paths["data_raw"]
                 if src.exists():
                     for p in src.iterdir():
                         if p.is_file():
@@ -365,7 +366,7 @@ async def generate_stream(
 
             # 3b. Extract ideas per section for multi-slide sections
             yield _emit("status", {"step": "generating", "message": "Analyzing section ideas…"})
-            llm = _get_llm_engine()
+            llm = _get_llm_engine(namespace=namespace)
             lang_label = "French" if language.lower() in ("fr", "french") else "English"
 
             # Build idea-level outline
@@ -792,7 +793,7 @@ async def evaluate_query(
 
 @app.delete("/cache")
 async def clear_llm_cache():
-    """Clear all cached LLM responses."""
+    """Clear all cached LLM responses across all namespaces."""
     count = clear_cache()
     return {"status": "cleared", "entries_removed": count}
 
@@ -819,7 +820,7 @@ async def quiz_concepts(
 ):
     """Step 1 — Extract concept tree for a topic."""
     from modules.quiz_generation import QuizGenerator
-    gen = QuizGenerator()
+    gen = QuizGenerator(namespace="quiz")
     result = await gen.extract_concepts(topic, language=language)
     return result
 
@@ -858,7 +859,7 @@ async def quiz_generate(
     """Step 3 — Generate quiz questions."""
     from modules.quiz_generation import QuizGenerator
     import json as _json
-    gen = QuizGenerator()
+    gen = QuizGenerator(namespace="quiz")
     try:
         concepts = _json.loads(selected_concepts)
     except Exception:
@@ -889,7 +890,7 @@ async def quiz_image(
 ):
     """Generate an SVG diagram for an image-type question."""
     from modules.quiz_generation import QuizImageGenerator
-    img_gen = QuizImageGenerator()
+    img_gen = QuizImageGenerator(namespace="quiz")
     svg = await img_gen.generate_image(
         image_prompt=image_prompt,
         concept=concept,
@@ -942,7 +943,7 @@ async def debate_document_intro(
             ]
         }
 
-    engine = DebateEngine()
+    engine = DebateEngine(namespace="aria")
     prompt = f"""\
 A student just uploaded a course document called "{filename}".
 Here is a sample of the document content:
@@ -1027,7 +1028,7 @@ async def debate_chat(
         history_list = _json.loads(history)
     except Exception:
         history_list = []
-    engine = DebateEngine()
+    engine = DebateEngine(namespace="aria")
     reply = await engine.chat(
         message=message, mode=mode, source=source,
         history=history_list if not conversation_id else None,
@@ -1053,7 +1054,7 @@ async def debate_chat_stream(
         history_list = _json.loads(history)
     except Exception:
         history_list = []
-    engine = DebateEngine()
+    engine = DebateEngine(namespace="aria")
     async def _stream():
         async for chunk in engine.chat_stream(
             message=message, mode=mode, source=source,

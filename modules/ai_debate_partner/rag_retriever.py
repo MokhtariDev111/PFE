@@ -20,8 +20,8 @@ from pathlib import Path
 
 log = logging.getLogger("debate.rag")
 
-# Base directory for all debate indexes — isolated from the main project
-DEBATE_INDEX_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "debate_indexes"
+# Base directory for all debate indexes — stored under the aria subproject folder
+DEBATE_INDEX_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "aria" / "debate_indexes"
 DEBATE_INDEX_DIR.mkdir(parents=True, exist_ok=True)
 
 

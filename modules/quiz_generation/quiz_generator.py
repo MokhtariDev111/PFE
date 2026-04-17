@@ -240,8 +240,8 @@ class QuizGenerator:
     back to the LLM so it can self-correct.
     """
 
-    def __init__(self, llm_engine: LLMEngine = None):
-        self.llm = llm_engine or LLMEngine()
+    def __init__(self, llm_engine: LLMEngine = None, namespace: str = "quiz"):
+        self.llm = llm_engine or LLMEngine(namespace=namespace)
         # Import here to avoid circular imports
         from modules.quiz_generation.quiz_validator import QuizValidator
         self.validator = QuizValidator()

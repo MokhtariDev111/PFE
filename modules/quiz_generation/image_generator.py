@@ -115,8 +115,8 @@ class QuizImageGenerator:
         # svg → "<svg width='800' height='500'>...</svg>"
     """
 
-    def __init__(self, llm_engine: LLMEngine = None):
-        self.llm = llm_engine or LLMEngine()
+    def __init__(self, llm_engine: LLMEngine = None, namespace: str = "quiz"):
+        self.llm = llm_engine or LLMEngine(namespace=namespace)
 
     async def generate_image(
         self,

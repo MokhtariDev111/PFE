@@ -25,6 +25,23 @@ def load_config(path: str | Path = CONFIG_PATH) -> dict:
 CONFIG: dict = load_config()
 
 import os
+
+# ── Per-request path helpers ──────────────────────────────────────────────────
+def get_paths(namespace: str) -> dict:
+    """
+    Return a dict of resolved data paths for a given subproject namespace.
+    Call this per-request rather than relying on CONFIG-level paths.
+    Supported namespaces: generate_presentation, quiz, aria, map3D
+    """
+    return {
+        "data_raw":       f"data/{namespace}/raw",
+        "data_processed": f"data/{namespace}/processed",
+        "data_output":    f"data/{namespace}/output",
+    }
+
+def get_index_path(namespace: str) -> str:
+    """Return the FAISS index base path for a given subproject namespace."""
+    return f"data/{namespace}/processed/faiss_index"
 # Allow environment variable overrides
 if os.getenv("OLLAMA_URL"):
     CONFIG["llm"]["api_url"] = os.getenv("OLLAMA_URL")

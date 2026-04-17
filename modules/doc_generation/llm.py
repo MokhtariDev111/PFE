@@ -35,7 +35,8 @@ if not log.hasHandlers():
 
 
 class LLMEngine:
-    def __init__(self):
+    def __init__(self, namespace="common"):
+        self.namespace = namespace
         # Ollama config (fallback)
         self.ollama_url = CONFIG["llm"]["api_url"]
         self.ollama_model = CONFIG["llm"]["model"]
@@ -93,7 +94,7 @@ class LLMEngine:
         model = model or self.groq_model
 
         # Check cache first
-        cached = get_cached(prompt, model)
+        cached = get_cached(prompt, model, namespace=self.namespace)
         if cached:
             log.info(f"  ⚡ Cache HIT for Groq ({model})")
             return cached
@@ -180,7 +181,7 @@ class LLMEngine:
             result = data["choices"][0]["message"]["content"].strip()
 
             # Cache successful response
-            set_cached(prompt, current_model, result)
+            set_cached(prompt, current_model, result, namespace=self.namespace)
 
             return result
         
@@ -210,7 +211,7 @@ class LLMEngine:
     # ══════════════════════════════════════════════════════════════════════════   
     async def _call_gemini(self, prompt: str) -> str:
         """Call Gemini API as fallback with exponential-backoff retry on rate limits."""
-        cached = get_cached(prompt, "gemini")
+        cached = get_cached(prompt, "gemini", namespace=self.namespace)
         if cached:
             log.info("  ⚡ Cache HIT for Gemini")
             return cached
@@ -247,7 +248,7 @@ class LLMEngine:
                     result = result[start+3:end].strip()
                     if result.startswith("json"):
                         result = result[4:].strip()
-            set_cached(prompt, "gemini", result)
+            set_cached(prompt, "gemini", result, namespace=self.namespace)
             log.info("✔ Gemini response received")
             return result
 
@@ -262,7 +263,7 @@ class LLMEngine:
     async def _call_ollama(self, prompt: str, model: str, json_mode: bool = True) -> str:
         """Call local Ollama API with caching."""
         # Check cache first
-        cached = get_cached(prompt, model)
+        cached = get_cached(prompt, model, namespace=self.namespace)
         if cached:
             log.info(f"  ⚡ Cache HIT for Ollama ({model})")
             return cached
@@ -288,7 +289,7 @@ class LLMEngine:
 
                 # Cache successful response
                 if result:
-                    set_cached(prompt, model, result)
+                    set_cached(prompt, model, result, namespace=self.namespace)
 
                 return result
 

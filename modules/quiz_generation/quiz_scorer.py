@@ -102,8 +102,8 @@ class QuizScorer:
         report = scorer.score_quiz_sync(questions, student_answers)
     """
 
-    def __init__(self, llm_engine: LLMEngine = None):
-        self.llm = llm_engine  # optional — only used for short-answer scoring
+    def __init__(self, llm_engine: LLMEngine = None, namespace: str = "quiz"):
+        self.llm = llm_engine or LLMEngine(namespace=namespace)
 
     # ── Public API ────────────────────────────────────────────────────────────
 

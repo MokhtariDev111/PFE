@@ -12,7 +12,8 @@ from datetime import datetime
 from pathlib import Path
 import sys
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+# File is at modules/core/history_store.py → go up 3 levels to reach project root
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
@@ -20,22 +21,26 @@ from modules.core.config_loader import CONFIG
 
 log = logging.getLogger("history_store")
 
-HISTORY_FILE = ROOT_DIR / CONFIG["paths"]["outputs"] / "presentation_history.json"
+def _history_file() -> Path:
+    """Resolve the history file path from CONFIG at call time (respects APP_NAMESPACE)."""
+    return ROOT_DIR / CONFIG["paths"]["outputs"] / "presentation_history.json"
 _history_lock = threading.Lock()
 
 
 def _load() -> list[dict]:
-    if HISTORY_FILE.exists():
+    hist = _history_file()
+    if hist.exists():
         try:
-            return json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
+            return json.loads(hist.read_text(encoding="utf-8"))
         except Exception:
             return []
     return []
 
 
 def _save(records: list[dict]):
-    HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    HISTORY_FILE.write_text(json.dumps(records, indent=2, ensure_ascii=False), encoding="utf-8")
+    hist = _history_file()
+    hist.parent.mkdir(parents=True, exist_ok=True)
+    hist.write_text(json.dumps(records, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def record_presentation(
@@ -78,6 +83,7 @@ def load_history() -> list[dict]:
 def clear_history():
     """Delete all presentation history and the underlying JSON file."""
     with _history_lock:
-        if HISTORY_FILE.exists():
-            HISTORY_FILE.unlink()
+        hist = _history_file()
+        if hist.exists():
+            hist.unlink()
     log.info("History cleared.")
