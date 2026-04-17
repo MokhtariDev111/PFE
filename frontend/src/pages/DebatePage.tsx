@@ -18,6 +18,7 @@ interface Message {
   role: Role;
   content: string;
   suggestions?: { label: string; prompt: string }[];
+  video_url?: string;
 }
 interface Conversation { conversation_id: string; title: string; mode: string; updated_at: string }
 
@@ -33,6 +34,7 @@ function genId() { return `conv_${Date.now()}_${Math.random().toString(36).slice
 const SLASH_COMMANDS = [
   { cmd: "/youtube",   icon: "▶",  label: "/youtube",   desc: "Search YouTube videos by views" },
   { cmd: "/wikipedia", icon: "📖", label: "/wikipedia",  desc: "Fetch Wikipedia article summary" },
+  { cmd: "/animation", icon: "🎬", label: "/animation",  desc: "Generate educational Manim animation" },
 ];
 
 // ─── Smart message renderer — makes bullet points clickable ──────────────────
@@ -251,6 +253,7 @@ export default function DebatePage() {
   const [uploadedDoc, setUploadedDoc] = useState<string>("");
   const [uploading, setUploading] = useState(false);
   const [suggestions, setSuggestions] = useState<{label: string; prompt: string}[]>([]);
+  const [animationLoading, setAnimationLoading] = useState(false);
   const [modeOpen, setModeOpen] = useState(false);
   const [slashOpen, setSlashOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -364,9 +367,8 @@ export default function DebatePage() {
 
   const send = async () => {
     const msg = input.trim();
-    if (!msg || loading) return;
+    if (!msg || loading || animationLoading) return;
 
-    // Ensure we have an active conversation ID
     const convId = activeId || genId();
     if (!activeId) setActiveId(convId);
 
@@ -374,6 +376,33 @@ export default function DebatePage() {
     setInput("");
     setSuggestions([]);
     setSlashOpen(false);
+
+    // Handle /animation BEFORE setting loading — intercept early
+    if (msg.toLowerCase().startsWith("/animation")) {
+      const topic = msg.replace(/\/animation\s*/i, "").trim();
+      setAnimationLoading(true);
+      try {
+        const fd = new FormData();
+        fd.append("topic", topic || msg);
+        fd.append("conversation_id", convId);
+        const res = await fetch(`${API}/debate/animation`, { method: "POST", body: fd });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: `🎬 Animation ready: **${data.topic}**\n${data.description}`,
+          video_url: `${API}${data.video_url}`,
+        }]);
+        loadConversations();
+      } catch (e: any) {
+        toast({ title: "Animation failed", description: e.message, variant: "destructive" });
+        setMessages(prev => prev.slice(0, -1));
+      } finally {
+        setAnimationLoading(false);
+      }
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -589,6 +618,18 @@ export default function DebatePage() {
                   })() : (
                     <span className="whitespace-pre-wrap">{msg.content}</span>
                   )}
+                  {/* Video player for /animation results */}
+                  {msg.video_url && (
+                    <div className="mt-3 rounded-xl overflow-hidden border border-border">
+                      <video
+                        src={msg.video_url}
+                        controls
+                        autoPlay
+                        className="w-full max-h-72"
+                        style={{ background: "#000" }}
+                      />
+                    </div>
+                  )}
                   {/* Suggestion links inside the bubble */}
                   {msg.suggestions && msg.suggestions.length > 0 && (
                     <div className="mt-3 flex flex-col gap-1.5 border-t border-primary/10 pt-3">
@@ -616,6 +657,16 @@ export default function DebatePage() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-start relative z-10">
               <div className="bg-card border border-border rounded-2xl rounded-bl-sm px-4 py-3">
                 <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+              </div>
+            </motion.div>
+          )}
+
+          {animationLoading && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-start relative z-10">
+              <div className="bg-card border border-primary/20 rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-3"
+                style={{ boxShadow: "0 0 16px 2px hsl(var(--primary)/0.12)" }}>
+                <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                <span className="text-sm text-muted-foreground">Generating animation… this may take 30-60s</span>
               </div>
             </motion.div>
           )}
@@ -657,9 +708,15 @@ export default function DebatePage() {
               onChange={e => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ""; }}
             />
             <div className="flex-1 flex flex-col relative">
-              {/* Slash command menu */}
-              {slashOpen && (
-                <div className="absolute bottom-full mb-2 left-0 w-64 rounded-xl border border-border bg-popover shadow-xl z-[70] overflow-hidden">
+              {/* Slash command menu — rendered via portal to escape all clipping */}
+              {slashOpen && inputRef.current && createPortal(
+                <div
+                  className="fixed z-[300] w-72 rounded-xl border border-border bg-popover shadow-2xl"
+                  style={{
+                    bottom: `${window.innerHeight - inputRef.current.getBoundingClientRect().top + 8}px`,
+                    left: `${inputRef.current.getBoundingClientRect().left}px`,
+                  }}
+                >
                   {SLASH_COMMANDS.map(c => (
                     <button
                       key={c.cmd}
@@ -669,16 +726,17 @@ export default function DebatePage() {
                         setSlashOpen(false);
                         setTimeout(() => inputRef.current?.focus(), 50);
                       }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-secondary/60 transition-colors flex items-center gap-3"
+                      className="w-full text-left px-4 py-3 hover:bg-secondary/60 transition-colors flex items-center gap-3 border-b border-border/40 last:border-0"
                     >
-                      <span className="text-base">{c.icon}</span>
+                      <span className="text-lg w-6 text-center">{c.icon}</span>
                       <div>
                         <p className="text-xs font-semibold text-primary">{c.label}</p>
                         <p className="text-[11px] text-muted-foreground">{c.desc}</p>
                       </div>
                     </button>
                   ))}
-                </div>
+                </div>,
+                document.body
               )}
               <textarea
                 ref={inputRef}

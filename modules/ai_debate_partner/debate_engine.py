@@ -97,7 +97,10 @@ class DebateEngine:
                 log.warning(f"Web search skipped: {e}")
 
         # Slash command tools — /youtube and /wikipedia override web_context
+        # /animation is handled by the dedicated API endpoint, not here
         msg_lower = message.lower()
+        if msg_lower.startswith("/animation"):
+            return mode, "__ANIMATION_COMMAND__"
         if "/youtube" in msg_lower:
             try:
                 from modules.ai_debate_partner.web_tools import search_youtube, format_youtube_results
@@ -118,7 +121,6 @@ class DebateEngine:
                     log.info(f"[/wikipedia] result for '{query}'")
             except Exception as e:
                 log.warning(f"/wikipedia tool skipped: {e}")
-
         system_prompt = build_system_prompt(
             mode=mode,
             memory_context=memory_context,
@@ -186,6 +188,9 @@ class DebateEngine:
             memory_context, rag_context, web_context, language,
         )
 
+        if full_prompt == "__ANIMATION_COMMAND__":
+            return "Use the /animation command from the Aria chat interface to generate a Manim animation."
+
         reply = (await self._call_llm_plain(full_prompt)).strip()
 
         # Persist to MongoDB
@@ -215,6 +220,10 @@ class DebateEngine:
             message, mode, source, history, conversation_id,
             memory_context, rag_context, web_context, language,
         )
+
+        if full_prompt == "__ANIMATION_COMMAND__":
+            yield "Use the /animation command from the Aria chat interface to generate a Manim animation."
+            return
 
         streamer = self._stream_groq(full_prompt)
 

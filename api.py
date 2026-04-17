@@ -916,6 +916,37 @@ async def debate_page_preview(conversation_id: str, page: int):
     return FileResponse(str(path), media_type="image/png")
 
 
+@app.post("/debate/animation")
+async def debate_animation(
+    topic: str = Form(...),
+    conversation_id: str = Form(""),
+):
+    """Generate a Manim educational animation for a topic."""
+    from modules.ai_debate_partner.animation_engine import AnimationEngine
+    engine = AnimationEngine()
+    result = await engine.generate(topic)
+    if "error" in result:
+        raise HTTPException(500, result["error"])
+    video_path = result["video_path"]
+    filename = Path(video_path).name
+    return {
+        "video_url": f"/debate/animation/video/{filename}",
+        "description": result.get("description", ""),
+        "topic": topic,
+    }
+
+
+@app.get("/debate/animation/video/{filename}")
+async def debate_animation_video(filename: str):
+    """Serve a rendered animation video."""
+    from pathlib import Path as _Path
+    videos_dir = ROOT_DIR / "outputs" / "animations"
+    path = videos_dir / filename
+    if not path.exists():
+        raise HTTPException(404, "Video not found")
+    return FileResponse(str(path), media_type="video/mp4")
+
+
 @app.post("/debate/document-intro")
 async def debate_document_intro(
     conversation_id: str = Form(...),
