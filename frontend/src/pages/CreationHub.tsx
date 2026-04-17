@@ -9,19 +9,19 @@ import { useTheme } from "@/components/ThemeProvider";
 const cards = [
   {
     lucide: MessageSquare,
-    title: "Generate from Prompt",
+    title: "Tek-Up Navigator 3D",
     desc: "Create a presentation from a simple text description in seconds.",
     badge: "NOT AVAILABLE",
     route: "/generate/prompt",
-    image: "/prompt.jpeg",
+    image: "/navigator.png",
     available: false,
   },
   {
     lucide: FileText,
-    title: "Import from Document",
+    title: "Generate Presentations",
     desc: "Upload a PDF or text file and let AI build your presentation.",
     badge: null,
-    route: "/generate_from_doc",
+    route: "/generate/presentations",
     image: "/doc.png",
     available: true,
   },

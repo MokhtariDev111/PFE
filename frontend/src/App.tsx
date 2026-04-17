@@ -9,6 +9,7 @@ import LandingPage from "./pages/LandingPage";
 import CreationHub from "./pages/CreationHub";
 import Dashboard from "./pages/Dashboard.tsx";
 import GeneratePage from "./pages/GeneratePage.tsx";
+import PresentationsHub from "./pages/PresentationsHub";
 import HistoryPage from "./pages/HistoryPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import { PromptPage } from "./pages/ComingSoon";
@@ -39,6 +40,7 @@ const App = () => {
             <Routes>              <Route path="/" element={<LandingPage />} />
               <Route path="/dashboard" element={<CreationHub />} />
               <Route path="/stats" element={<Dashboard />} />
+              <Route path="/generate/presentations" element={<PresentationsHub />} />
               <Route path="/generate_from_doc" element={<GeneratePage />} />
               <Route path="/generate/prompt" element={<PromptPage />} />
               <Route path="/generate/quiz" element={<QuizPage />} />
