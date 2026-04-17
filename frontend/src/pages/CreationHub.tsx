@@ -22,12 +22,12 @@ const cards = [
     desc: "Upload a PDF or text file and let AI build your presentation.",
     badge: null,
     route: "/generate/presentations",
-    image: "/doc.png",
+    image: "/presentations.png",
     available: true,
   },
   {
     lucide: Brain,
-    title: "Create a Quiz",
+    title: "Generate Quiz",
     desc: "Generate interactive quizzes from any topic or document.",
     badge: null,
     route: "/generate/quiz",
@@ -36,7 +36,7 @@ const cards = [
   },
   {
     lucide: GitBranch,
-    title: "Aria — AI Debate Partner",
+    title: "Aria — Your Learning Companion",
     desc: "Practice argumentation and critical thinking with an AI opponent.",
     badge: null,
     route: "/aria",
