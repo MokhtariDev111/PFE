@@ -348,9 +348,9 @@ class AnimationScene(Scene):
         root = node("Age > 30?", [0, 2.5, 0], BLUE)
         left = node("Income > 50k?", [-3, 0.8, 0], GREEN)
         right = node("Has Degree?", [3, 0.8, 0], GREEN)
-        ll = node("Approve", [-4.5, -1, 0], EMERALD)
+        ll = node("Approve", [-4.5, -1, 0], TEAL)
         lr = node("Reject", [-1.5, -1, 0], RED)
-        rl = node("Approve", [1.5, -1, 0], EMERALD)
+        rl = node("Approve", [1.5, -1, 0], TEAL)
         rr = node("Reject", [4.5, -1, 0], RED)
 
         self.play(FadeIn(root))
@@ -528,16 +528,16 @@ class AnimationScene(Scene):
         for i in range(min(n - 1, 3)):
             for j in range(n - i - 1):
                 self.play(bars[j][0].animate.set_color(YELLOW),
-                          bars[j+1][0].animate.set_color(YELLOW), run_time=0.2)
+                          bars[j+1][0].animate.set_color(YELLOW), run_time=0.3)
                 if arr[j] > arr[j+1]:
                     arr[j], arr[j+1] = arr[j+1], arr[j]
                     pos_j = bars[j].get_center()
                     pos_j1 = bars[j+1].get_center()
                     self.play(bars[j].animate.move_to(pos_j1),
-                              bars[j+1].animate.move_to(pos_j), run_time=0.4)
+                              bars[j+1].animate.move_to(pos_j), run_time=0.5)
                     bars[j], bars[j+1] = bars[j+1], bars[j]
                 self.play(bars[j][0].animate.set_color(BLUE),
-                          bars[j+1][0].animate.set_color(BLUE), run_time=0.15)
+                          bars[j+1][0].animate.set_color(BLUE), run_time=0.3)
 
         note = Text("Bubble Sort: compare adjacent pairs, swap if out of order", font_size=18, color=WHITE)
         note.to_edge(DOWN)
@@ -581,8 +581,7 @@ class AnimationScene(Scene):
         self.wait(0.5)
         step2 = Text("Step 2: Assign each point to nearest centroid", font_size=20, color=YELLOW).to_edge(DOWN)
         self.play(Transform(step1, step2))
-        for d, col in all_dots:
-            self.play(d.animate.set_color(col), run_time=0.04)
+        self.play(*[d.animate.set_color(col) for d, col in all_dots], run_time=0.8)
         self.wait(0.5)
         step3 = Text("Step 3: Move centroids to cluster mean", font_size=20, color=YELLOW).to_edge(DOWN)
         self.play(Transform(step1, step3))
@@ -1087,7 +1086,7 @@ def _render(code: str, topic: str) -> tuple[str | None, str | None]:
         cmd = [
             sys.executable, "-m", "manim", "render",
             "--media_dir", tmp,
-            "-qh",
+            "-qm",
             "--format", "mp4",
             str(scene_file), "AnimationScene",
         ]
