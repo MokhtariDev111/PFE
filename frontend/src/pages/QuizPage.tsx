@@ -10,7 +10,7 @@ import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/components/ui/use-toast";
 import {
   Brain, Zap, ArrowRight, Check, ChevronDown, ChevronUp,
-  RotateCcw, Download, Loader2, Image as ImageIcon,
+  RotateCcw, Download, Loader2, Image as ImageIcon, Trophy, XCircle,
 } from "lucide-react";
 
 const API = "http://127.0.0.1:8000";
@@ -61,9 +61,19 @@ function StepDot({ n, active, done }: { n: number; active: boolean; done: boolea
 
 // ─── Question card ────────────────────────────────────────────────────────────
 
-function QuestionCard({ q, index }: { q: Question; index: number }) {
+function QuestionCard({ q, index, onAnswer }: {
+  q: Question;
+  index: number;
+  onAnswer?: (index: number, selected: string | null) => void;
+}) {
   const [revealed, setRevealed] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+
+  const handleSelect = (opt: string) => {
+    if (revealed) return;
+    setSelected(opt);
+    onAnswer?.(index, opt);
+  };
 
   return (
     <motion.div
@@ -130,7 +140,7 @@ function QuestionCard({ q, index }: { q: Question; index: number }) {
                 return (
                   <button
                     key={opt}
-                    onClick={() => !revealed && setSelected(opt)}
+                    onClick={() => handleSelect(opt)}
                     className={`w-full text-left px-4 py-2.5 rounded-lg border text-sm transition-all ${cls}`}
                   >
                     {revealed && isAns && <Check className="inline w-3.5 h-3.5 mr-2 text-emerald-400" />}
@@ -200,6 +210,8 @@ export default function QuizPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [userAnswers, setUserAnswers] = useState<Record<number, string | null>>({});
+  const [showScore, setShowScore] = useState(false);
 
   const [loadingConcepts, setLoadingConcepts] = useState(false);
   const [loadingQuiz, setLoadingQuiz] = useState(false);
@@ -238,6 +250,8 @@ export default function QuizPage() {
     }
     setLoadingQuiz(true);
     setQuestions([]);
+    setUserAnswers({});
+    setShowScore(false);
     try {
       const fd = new FormData();
       fd.append("topic", topic);
@@ -314,6 +328,7 @@ export default function QuizPage() {
   const reset = () => {
     setTopic(""); setConceptTree(null);
     setSelected(new Set()); setQuestions([]);
+    setUserAnswers({}); setShowScore(false);
   };
 
   const toggleConcept = (c: string) =>
@@ -642,8 +657,104 @@ export default function QuizPage() {
                   </div>
 
                   <div className="space-y-4">
-                    {questions.map((q, i) => <QuestionCard key={i} q={q} index={i} />)}
+                    {questions.map((q, i) => (
+                      <QuestionCard
+                        key={i} q={q} index={i}
+                        onAnswer={(idx, ans) => setUserAnswers(prev => ({ ...prev, [idx]: ans }))}
+                      />
+                    ))}
                   </div>
+
+                  {/* Submit button — appears when all gradable questions answered */}
+                  {(() => {
+                    const gradable = questions.filter(q => q.format !== "short_answer");
+                    const answered = gradable.filter((_, i) => userAnswers[questions.indexOf(gradable[i])] != null);
+                    const allDone = gradable.length > 0 && answered.length === gradable.length;
+                    return allDone && !showScore ? (
+                      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                        <Button
+                          onClick={() => setShowScore(true)}
+                          className="launch-button w-full"
+                          size="lg"
+                        >
+                          <Trophy className="w-4 h-4" /> See My Score
+                        </Button>
+                      </motion.div>
+                    ) : null;
+                  })()}
+
+                  {/* Score screen */}
+                  <AnimatePresence>
+                    {showScore && (() => {
+                      const gradable = questions.filter(q => q.format !== "short_answer");
+                      const correct = gradable.filter((q, gi) => {
+                        const qIdx = questions.indexOf(q);
+                        return userAnswers[qIdx] === q.answer;
+                      });
+                      const pct = gradable.length > 0 ? Math.round((correct.length / gradable.length) * 100) : 0;
+                      const grade = pct >= 90 ? "🏆 Excellent!" : pct >= 70 ? "👍 Good job!" : pct >= 50 ? "📚 Keep studying" : "💪 Need more practice";
+                      const gradeColor = pct >= 90 ? "text-emerald-400" : pct >= 70 ? "text-blue-400" : pct >= 50 ? "text-amber-400" : "text-red-400";
+                      return (
+                        <motion.div
+                          key="score"
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0 }}
+                        >
+                          <Card className="glass-card border-primary/30 overflow-hidden"
+                            style={{ boxShadow: "0 0 32px hsl(var(--primary)/0.15)" }}>
+                            <div className="h-1 w-full bg-gradient-to-r from-primary via-accent to-primary" />
+                            <CardContent className="pt-6 pb-6 text-center space-y-4">
+                              <Trophy className="w-12 h-12 mx-auto text-primary" />
+                              <div>
+                                <p className="text-5xl font-bold gradient-text">{pct}%</p>
+                                <p className={`text-lg font-semibold mt-1 ${gradeColor}`}>{grade}</p>
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  {correct.length} / {gradable.length} correct
+                                </p>
+                              </div>
+
+                              {/* Per-difficulty breakdown */}
+                              <div className="flex justify-center gap-4 pt-2">
+                                {(["easy","medium","hard"] as const).map(d => {
+                                  const dqs = gradable.filter(q => q.difficulty === d);
+                                  if (!dqs.length) return null;
+                                  const dCorrect = dqs.filter(q => userAnswers[questions.indexOf(q)] === q.answer).length;
+                                  return (
+                                    <div key={d} className={`px-3 py-1.5 rounded-xl border text-xs ${DIFF_COLOR[d]}`}>
+                                      {d}: {dCorrect}/{dqs.length}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Wrong answers review */}
+                              {gradable.filter(q => userAnswers[questions.indexOf(q)] !== q.answer).length > 0 && (
+                                <div className="text-left space-y-2 pt-2 border-t border-border/50">
+                                  <p className="text-xs font-semibold text-muted-foreground">Review wrong answers:</p>
+                                  {gradable.filter(q => userAnswers[questions.indexOf(q)] !== q.answer).map((q, i) => (
+                                    <div key={i} className="text-xs p-2 rounded-lg bg-red-500/5 border border-red-500/20">
+                                      <p className="text-foreground/80 mb-1">{q.question}</p>
+                                      <p className="text-red-400 flex items-center gap-1">
+                                        <XCircle className="w-3 h-3" /> Your answer: {userAnswers[questions.indexOf(q)] ?? "—"}
+                                      </p>
+                                      <p className="text-emerald-400 flex items-center gap-1">
+                                        <Check className="w-3 h-3" /> Correct: {q.answer}
+                                      </p>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
+                              <Button variant="outline" size="sm" onClick={() => setShowScore(false)} className="gap-1.5">
+                                <RotateCcw className="w-3.5 h-3.5" /> Review all questions
+                              </Button>
+                            </CardContent>
+                          </Card>
+                        </motion.div>
+                      );
+                    })()}
+                  </AnimatePresence>
 
                   <Button onClick={() => generateQuiz(Date.now())} disabled={loadingQuiz} variant="outline" className="w-full gap-2">
                     {loadingQuiz ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
