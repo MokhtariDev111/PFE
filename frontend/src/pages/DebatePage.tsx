@@ -390,7 +390,7 @@ export default function DebatePage() {
         const data = await res.json();
         setMessages(prev => [...prev, {
           role: "assistant",
-          content: `🎬 Animation ready: **${data.topic}**\n${data.description}`,
+          content: `🎬 Animation ready: **${data.topic}**\n${data.description}${data.prebuilt ? "\n\n📚 Pre-built animation" : ""}`,
           video_url: `${API}${data.video_url}`,
         }]);
         loadConversations();
@@ -431,6 +431,19 @@ export default function DebatePage() {
 
   const handleKey = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+    if (e.key === "Tab" && slashOpen) {
+      e.preventDefault();
+      const filtered = SLASH_COMMANDS.filter(c =>
+        input === "/" || c.cmd.includes(input.slice(1).toLowerCase())
+      );
+      if (filtered.length > 0) {
+        setInput(filtered[0].cmd + " ");
+        setSlashOpen(false);
+      }
+    }
+    if (e.key === "Escape" && slashOpen) {
+      setSlashOpen(false);
+    }
   };
 
   const handleTopicClick = (topic: string) => {
@@ -717,7 +730,9 @@ export default function DebatePage() {
                     left: `${inputRef.current.getBoundingClientRect().left}px`,
                   }}
                 >
-                  {SLASH_COMMANDS.map(c => (
+                  {SLASH_COMMANDS.filter(c =>
+                    input === "/" || c.cmd.includes(input.slice(1).toLowerCase())
+                  ).map(c => (
                     <button
                       key={c.cmd}
                       onMouseDown={e => {
@@ -746,7 +761,8 @@ export default function DebatePage() {
                 value={input}
                 onChange={e => {
                   setInput(e.target.value);
-                  setSlashOpen(e.target.value === "/");
+                  const val = e.target.value;
+                  setSlashOpen(val.startsWith("/") && !val.includes(" "));
                 }}
                 onKeyDown={handleKey}
                 style={{ lineHeight: "1.5" }}
