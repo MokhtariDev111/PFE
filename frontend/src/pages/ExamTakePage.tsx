@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Clock, ChevronRight, CheckCircle2, Loader2 } from "lucide-react";
@@ -53,6 +53,103 @@ function ProgressBar({ current, total }: { current: number; total: number }) {
       />
     </div>
   );
+}
+
+// ── Question Text Formatter ───────────────────────────────────────────────────
+
+// Keyword labels for instruction sentences
+const STEP_LABELS: [RegExp, string, string][] = [
+  [/^given\b/i,     "Given",     "text-blue-400 bg-blue-500/10 border-blue-500/20"],
+  [/^use\b/i,       "Task",      "text-primary bg-primary/10 border-primary/20"],
+  [/^using\b/i,     "Task",      "text-primary bg-primary/10 border-primary/20"],
+  [/^find\b/i,      "Find",      "text-orange-400 bg-orange-500/10 border-orange-500/20"],
+  [/^calculate\b/i, "Calculate", "text-orange-400 bg-orange-500/10 border-orange-500/20"],
+  [/^compute\b/i,   "Compute",   "text-orange-400 bg-orange-500/10 border-orange-500/20"],
+  [/^determine\b/i, "Determine", "text-orange-400 bg-orange-500/10 border-orange-500/20"],
+  [/^assume\b/i,    "Assume",    "text-amber-400 bg-amber-500/10 border-amber-500/20"],
+  [/^note\b/i,      "Note",      "text-muted-foreground bg-muted border-border"],
+  [/^hint\b/i,      "Hint",      "text-muted-foreground bg-muted border-border"],
+];
+
+// Match 2+ consecutive data points: (x1, y1) = (2, 4), (x2, y2) = (4, 5) ...
+const DATA_CHAIN_RE = /(?:\([^)]{1,30}\)\s*=\s*\([^)]{1,30}\)(?:,\s*)?){2,}/g;
+
+// Wrap inline math equations (containing operators or greek letters) in code style
+function renderInline(text: string): React.ReactNode {
+  const re = /([A-Za-zβα_]\w*\s*=\s*[^\s,;()\n][^,;()\n]{0,40})/g;
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const val = m[0];
+    if (/[+\-*\/βαμσ₀₁²³∑Σ]/.test(val)) {
+      if (last < m.index) parts.push(text.slice(last, m.index));
+      parts.push(
+        <code key={m.index} className="px-1.5 py-0.5 mx-0.5 rounded bg-muted font-mono text-[12px] text-foreground border border-border/60">
+          {val}
+        </code>
+      );
+      last = m.index + val.length;
+    }
+  }
+  parts.push(text.slice(last));
+  return <>{parts}</>;
+}
+
+function QuestionText({ text, size = "base" }: { text: string; size?: "sm" | "base" }) {
+  const sizeClass = size === "sm" ? "text-sm" : "text-base font-medium";
+
+  // Split into sentences at ". " before an uppercase letter
+  const sentences = text
+    .replace(/\.\s+(?=[A-Z])/g, ".\n")
+    .split("\n")
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  const renderSentence = (sentence: string, i: number) => {
+    // Extract data point chains and remove them from the body text
+    const chains: string[][] = [];
+    const textBody = sentence
+      .replace(DATA_CHAIN_RE, match => {
+        const pts = match.split(/,\s*/).map(s => s.trim()).filter(s => s.includes("="));
+        chains.push(pts);
+        return "";
+      })
+      .replace(/:\s*$/, ":")
+      .trim();
+
+    const labelDef = STEP_LABELS.find(([re]) => re.test(sentence));
+
+    const body = (
+      <div className={`${sizeClass} leading-relaxed`}>
+        {textBody && renderInline(textBody)}
+        {chains.map((pts, ci) => (
+          <div key={ci} className="flex flex-wrap gap-1.5 mt-2">
+            {pts.map((p, pi) => (
+              <span key={pi} className="inline-flex items-center px-2.5 py-1 rounded-lg bg-muted border border-border font-mono text-xs text-foreground">
+                {p}
+              </span>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+
+    if (labelDef) {
+      return (
+        <div key={i} className="flex items-start gap-2.5">
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded border shrink-0 mt-0.5 uppercase tracking-wide whitespace-nowrap ${labelDef[2]}`}>
+            {labelDef[1]}
+          </span>
+          {body}
+        </div>
+      );
+    }
+    return <div key={i}>{body}</div>;
+  };
+
+  if (sentences.length <= 1) return renderSentence(text, 0);
+  return <div className="space-y-2.5">{sentences.map((s, i) => renderSentence(s, i))}</div>;
 }
 
 // ── MCQ ──────────────────────────────────────────────────────────────────────
@@ -125,7 +222,7 @@ function ProblemCard({ q, onAnswer }: { q: ProblemQ; onAnswer: (a: string) => vo
   const [answer, setAnswer] = useState("");
   return (
     <div>
-      <p className="text-base font-medium leading-relaxed mb-4">{q.question}</p>
+      <div className="mb-5"><QuestionText text={q.question} /></div>
       <textarea
         value={answer} onChange={e => setAnswer(e.target.value)}
         rows={6}
@@ -187,7 +284,7 @@ function CaseStudyCard({ q, onAnswer }: { q: CaseStudyQ; onAnswer: (answers: str
           </span>
           <span className="text-xs text-muted-foreground">{q.subquestions[subIdx].points} pts</span>
         </div>
-        <p className="text-sm font-medium mb-3">{q.subquestions[subIdx].question}</p>
+        <div className="mb-3"><QuestionText text={q.subquestions[subIdx].question} size="sm" /></div>
         <textarea
           value={answers[subIdx]}
           onChange={e => setAnswers(prev => { const a = [...prev]; a[subIdx] = e.target.value; return a; })}

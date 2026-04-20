@@ -1238,6 +1238,66 @@ async def exam_grade(request: Request):
     return result
 
 
+@app.post("/exam/generate-pdf")
+async def exam_generate_pdf(request: Request):
+    """Generate exam sheet + answer key PDFs in TEK-UP format."""
+    body       = await request.json()
+    topic      = body.get("topic", "").strip()
+    focus      = body.get("focus", "").strip()
+    difficulty = body.get("difficulty", "Medium")
+    mix        = body.get("mix", {})
+    language   = body.get("language", "French")
+    header     = body.get("header", {})
+
+    if not topic:
+        raise HTTPException(400, "topic is required")
+    if not any(mix.get(k, 0) > 0 for k in ("mcq", "truefalse", "problem", "casestudy")):
+        raise HTTPException(400, "at least one question type must be selected")
+
+    # Fill subject from topic if not provided
+    if not header.get("subject"):
+        header["subject"] = topic
+    header["topic"] = topic
+
+    from modules.exam_generation.exam_engine import ExamEngine
+    from modules.exam_generation.pdf_generator import generate_pdfs_b64
+
+    engine = ExamEngine()
+    try:
+        exam = await engine.generate_exam(topic, focus, difficulty, mix, language)
+    except Exception as e:
+        log.error(f"Exam generation failed: {e}")
+        raise HTTPException(500, f"Failed to generate exam: {str(e)}")
+
+    try:
+        result = generate_pdfs_b64(exam, header)
+    except Exception as e:
+        log.error(f"PDF generation failed: {e}")
+        raise HTTPException(500, f"Failed to generate PDF: {str(e)}")
+
+    # Save to data/exam_simulator/
+    try:
+        import base64, json as _json
+        _data_dir = os.path.join(os.path.dirname(__file__), "data", "exam_simulator")
+        _pdfs_dir = os.path.join(_data_dir, "pdfs")
+        _exams_dir = os.path.join(_data_dir, "exams")
+        os.makedirs(_pdfs_dir, exist_ok=True)
+        os.makedirs(_exams_dir, exist_ok=True)
+
+        with open(os.path.join(_pdfs_dir, result["exam_filename"]), "wb") as f:
+            f.write(base64.b64decode(result["exam_pdf"]))
+        with open(os.path.join(_pdfs_dir, result["key_filename"]), "wb") as f:
+            f.write(base64.b64decode(result["key_pdf"]))
+
+        _stem = result["exam_filename"].replace(".pdf", "")
+        with open(os.path.join(_exams_dir, f"{_stem}.json"), "w", encoding="utf-8") as f:
+            _json.dump({"topic": topic, "difficulty": difficulty, "language": language, "exam": exam}, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log.warning(f"Could not save exam to disk: {e}")
+
+    return result
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8000)

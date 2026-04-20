@@ -17,8 +17,6 @@ import QuizPage from "./pages/QuizPage";
 import DebatePage from "./pages/DebatePage";
 import ExamSimulatorPage from "./pages/ExamSimulatorPage";
 import ExamPromptConfig from "./pages/ExamPromptConfig";
-import ExamTakePage from "./pages/ExamTakePage";
-import ExamResultsPage from "./pages/ExamResultsPage";
 import { ThemeProvider } from "./components/ThemeProvider";
 
 const queryClient = new QueryClient();
@@ -51,8 +49,6 @@ const App = () => {
               <Route path="/aria" element={<DebatePage />} />
               <Route path="/exam" element={<ExamSimulatorPage />} />
               <Route path="/exam/prompt" element={<ExamPromptConfig />} />
-              <Route path="/exam/take" element={<ExamTakePage />} />
-              <Route path="/exam/results" element={<ExamResultsPage />} />
               <Route path="/history" element={<HistoryPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

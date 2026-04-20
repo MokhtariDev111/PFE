@@ -1,9 +1,14 @@
 """
 exam_engine.py — AI-powered exam generator
 ==========================================
-Handles:
+Uses a 3-agent sequential pipeline for high-quality output:
+  1. Planner  — decides what concepts to test and how many of each type
+  2. Writer   — writes full questions based on the plan
+  3. Reviewer — fixes quality issues and validates the final JSON
+
+Also handles:
   - Topic suggestions (debounced autocomplete)
-  - Full exam generation from prompt (MCQ, True/False, Problem Solving, Case Study)
+  - Focus suggestions (subtopic chips)
   - LLM-based grading for free-text answers
 """
 
@@ -51,7 +56,7 @@ class ExamEngine:
         return self._parse_string_list(raw, limit=5)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # EXAM GENERATION
+    # EXAM GENERATION  (3-agent pipeline)
     # ─────────────────────────────────────────────────────────────────────────
 
     async def generate_exam(
@@ -62,20 +67,117 @@ class ExamEngine:
         mix: dict,
         language: str,
     ) -> dict:
-        """Generate a complete structured exam."""
+        """
+        Generate a complete structured exam using a 3-step agent pipeline:
+          Step 1 — Planner:  decide which specific concepts to test
+          Step 2 — Writer:   write all questions from the plan
+          Step 3 — Reviewer: validate quality and fix any issues
+        """
+        log.info(f"[ExamEngine] Starting 3-agent pipeline: topic={topic!r}, difficulty={difficulty}")
 
+        # ── Step 1: Planner ───────────────────────────────────────────────────
+        plan = await self._run_planner(topic, focus, difficulty, mix, language)
+        log.info(f"[ExamEngine] Plan ready: {len(plan.get('concepts', []))} concepts")
+
+        # ── Step 2: Writer ────────────────────────────────────────────────────
+        draft = await self._run_writer(topic, focus, difficulty, mix, language, plan)
+        log.info(f"[ExamEngine] Draft ready: {len(draft.get('questions', []))} questions")
+
+        # ── Step 3: Reviewer ──────────────────────────────────────────────────
+        final = await self._run_reviewer(topic, difficulty, language, mix, draft)
+        log.info(f"[ExamEngine] Review done: {len(final.get('questions', []))} questions finalised")
+
+        if not final or "questions" not in final:
+            raise ValueError("Pipeline failed to produce valid exam JSON")
+
+        final["topic"]      = topic
+        final["difficulty"] = difficulty
+        final["language"]   = language
+        final["id"]         = uuid.uuid4().hex[:8]
+        return final
+
+    # ── Agent 1: Planner ──────────────────────────────────────────────────────
+
+    async def _run_planner(
+        self,
+        topic: str,
+        focus: str,
+        difficulty: str,
+        mix: dict,
+        language: str,
+    ) -> dict:
+        """
+        Produces a question-by-question outline: concept to test, question type,
+        and the core idea. No full questions yet — just intent.
+        """
+        focus_line = f"Focus areas: {focus}." if focus else ""
         parts = []
-        if mix.get("mcq", 0):
-            parts.append(f"{mix['mcq']} MCQ (4 options A/B/C/D, exactly one correct)")
-        if mix.get("truefalse", 0):
-            parts.append(f"{mix['truefalse']} True/False questions")
-        if mix.get("problem", 0):
-            parts.append(f"{mix['problem']} Problem Solving questions (open free-text answer)")
-        if mix.get("casestudy", 0):
-            parts.append(
-                f"{mix['casestudy']} Case Study questions "
-                "(realistic scenario + data table with ≥3 rows + 3 sub-questions each)"
-            )
+        if mix.get("mcq"):       parts.append(f"{mix['mcq']} MCQ")
+        if mix.get("truefalse"): parts.append(f"{mix['truefalse']} True/False")
+        if mix.get("problem"):   parts.append(f"{mix['problem']} Problem Solving")
+        if mix.get("casestudy"): parts.append(f"{mix['casestudy']} Case Study")
+
+        diff_hint = {
+            "Easy":   "basic recall and definitions",
+            "Medium": "application and understanding, some calculation",
+            "Hard":   "analysis, synthesis, multi-step and critical thinking",
+        }.get(difficulty, "medium difficulty")
+
+        prompt = f"""You are an expert university professor planning a {difficulty} exam on "{topic}".
+{focus_line}
+Difficulty guide: {diff_hint}.
+Language: {language}.
+
+You need to create: {', '.join(parts)}.
+
+Your task: produce a PLAN — for each question, decide:
+- Which specific concept or subtopic to test (be precise, not generic)
+- The question type
+- One sentence describing the core idea of the question
+
+Return ONLY valid JSON:
+{{
+  "exam_title": "descriptive title",
+  "concepts": [
+    {{"index": 1, "type": "mcq",       "concept": "specific concept", "idea": "one sentence question intent"}},
+    {{"index": 2, "type": "truefalse", "concept": "specific concept", "idea": "one sentence statement idea"}},
+    {{"index": 3, "type": "problem",   "concept": "specific concept", "idea": "one sentence problem description"}},
+    {{"index": 4, "type": "casestudy", "concept": "specific concept", "idea": "one sentence scenario idea"}}
+  ]
+}}
+
+Rules:
+- Cover DIFFERENT concepts — no repetition across questions
+- Be specific: "Gradient Descent learning rate effect" not just "Machine Learning"
+- Total concepts must match exactly: {sum(mix.values())} questions
+- Types must match: {', '.join(parts)}
+"""
+        raw = await self.llm.generate_async("", [], prompt_override=prompt)
+        plan = _parse_json(raw)
+        if not plan or "concepts" not in plan:
+            log.warning("[Planner] Failed to parse plan, using fallback empty plan")
+            plan = {"exam_title": f"{topic} Exam", "concepts": []}
+        return plan
+
+    # ── Agent 2: Writer ───────────────────────────────────────────────────────
+
+    async def _run_writer(
+        self,
+        topic: str,
+        focus: str,
+        difficulty: str,
+        mix: dict,
+        language: str,
+        plan: dict,
+    ) -> dict:
+        """
+        Takes the planner's outline and writes full, detailed questions.
+        Each question is grounded in a specific concept from the plan.
+        """
+        concepts_text = "\n".join(
+            f"  Q{c['index']} ({c['type']}): concept={c['concept']!r}, idea={c['idea']!r}"
+            for c in plan.get("concepts", [])
+        )
 
         diff_hint = {
             "Easy":   "straightforward definitions and basic recall",
@@ -83,53 +185,53 @@ class ExamEngine:
             "Hard":   "analysis, synthesis, multi-step problems and critical thinking",
         }.get(difficulty, "medium difficulty")
 
-        focus_line = f" with specific focus on: {focus}" if focus else ""
+        prompt = f"""You are an expert university professor writing exam questions on "{topic}".
+Difficulty: {difficulty} — {diff_hint}.
+Language: {language}.
 
-        prompt = f"""You are an expert university professor creating a {difficulty} exam on "{topic}"{focus_line}.
-All text must be in {language}.
-Difficulty guide: {diff_hint}.
+The planner has decided what to test. Your job is to write complete, high-quality questions
+for each item in this plan:
 
-Generate EXACTLY:
-{chr(10).join(f"  - {p}" for p in parts)}
+{concepts_text}
 
-Return ONLY valid JSON with this exact structure (no markdown, no explanation):
+Return ONLY valid JSON:
 {{
-  "title": "descriptive exam title",
+  "title": "{plan.get('exam_title', topic + ' Exam')}",
   "questions": [
 
-    // ── MCQ example ──
+    // MCQ format:
     {{
       "id": 1,
       "type": "mcq",
-      "question": "question text",
+      "question": "precise, educational question text",
       "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
       "correct": 0,
-      "explanation": "why the correct answer is right"
+      "explanation": "clear explanation of why the correct answer is right"
     }},
 
-    // ── True/False example ──
+    // True/False format:
     {{
       "id": 2,
       "type": "truefalse",
-      "question": "a statement to evaluate as true or false",
+      "question": "a precise statement to evaluate",
       "correct": true,
-      "explanation": "explanation of why it is true or false"
+      "explanation": "explanation"
     }},
 
-    // ── Problem Solving example ──
+    // Problem Solving format:
     {{
       "id": 3,
       "type": "problem",
-      "question": "detailed problem description — be specific and educational",
-      "model_answer": "complete expected answer",
+      "question": "detailed, specific problem — include numbers/data if relevant",
+      "model_answer": "thorough expected answer covering all key aspects",
       "key_points": ["key concept 1", "key concept 2", "key concept 3"]
     }},
 
-    // ── Case Study example ──
+    // Case Study format:
     {{
       "id": 4,
       "type": "casestudy",
-      "context": "realistic real-world scenario description (2-3 sentences)",
+      "context": "realistic real-world scenario (2-3 sentences with specific details)",
       "table": {{
         "headers": ["Column1", "Column2", "Column3"],
         "rows": [
@@ -139,34 +241,85 @@ Return ONLY valid JSON with this exact structure (no markdown, no explanation):
         ]
       }},
       "subquestions": [
-        {{"id": "4a", "question": "first sub-question", "model_answer": "expected answer", "points": 4}},
-        {{"id": "4b", "question": "second sub-question", "model_answer": "expected answer", "points": 3}},
-        {{"id": "4c", "question": "third sub-question", "model_answer": "expected answer", "points": 3}}
+        {{"id": "4a", "question": "sub-question 1", "model_answer": "expected answer", "points": 4}},
+        {{"id": "4b", "question": "sub-question 2", "model_answer": "expected answer", "points": 3}},
+        {{"id": "4c", "question": "sub-question 3", "model_answer": "expected answer", "points": 3}}
       ]
     }}
 
   ]
 }}
 
-IMPORTANT:
-- Generate EXACTLY the number of questions requested for each type
-- The "correct" field for MCQ is the 0-based index of the correct option
-- All content must be accurate and genuinely educational
-- Case study table must have at least 3 data rows and meaningful column names
-- Make sub-question points sum to 10 per case study
+Rules:
+- Follow the plan exactly — same types, same order, same concepts
+- Questions must be genuinely educational and accurate
+- MCQ options must be plausible (not obviously wrong distractors)
+- Problem questions must be specific and non-trivial
+- Case study table must have ≥3 rows and meaningful column names
+- Sub-question points must sum to 10 per case study
+- The "correct" field for MCQ is 0-based index
 """
-
         raw = await self.llm.generate_async("", [], prompt_override=prompt)
-        data = _parse_json(raw)
-        if not data or "questions" not in data:
-            log.error(f"Failed to parse exam JSON. Raw:\n{raw[:500]}")
-            raise ValueError("LLM did not return valid exam JSON")
+        draft = _parse_json(raw)
+        if not draft or "questions" not in draft:
+            log.error("[Writer] Failed to parse draft JSON")
+            raise ValueError("Writer agent failed to produce valid question JSON")
+        return draft
 
-        data["topic"]      = topic
-        data["difficulty"] = difficulty
-        data["language"]   = language
-        data["id"]         = uuid.uuid4().hex[:8]
-        return data
+    # ── Agent 3: Reviewer ─────────────────────────────────────────────────────
+
+    async def _run_reviewer(
+        self,
+        topic: str,
+        difficulty: str,
+        language: str,
+        mix: dict,
+        draft: dict,
+    ) -> dict:
+        """
+        Reviews the draft for quality issues:
+        - Vague or generic questions → rewrite them
+        - Wrong difficulty level → adjust wording
+        - Inconsistent JSON structure → fix it
+        - Missing fields → add them
+        Returns the corrected final exam JSON.
+        """
+        expected_counts = {k: v for k, v in mix.items() if v > 0}
+        draft_json = json.dumps(draft, ensure_ascii=False)
+
+        prompt = f"""You are a senior professor reviewing an AI-generated exam on "{topic}".
+Difficulty target: {difficulty}. Language: {language}.
+Expected question counts: {expected_counts}.
+
+Review this draft exam and fix ALL of the following issues if present:
+1. Generic or vague questions (e.g. "What is machine learning?") → rewrite to be specific and precise
+2. Difficulty mismatch → adjust question wording to match {difficulty} level
+3. MCQ with obviously wrong distractors → make all options plausible
+4. Missing or incomplete fields → add them
+5. Duplicate or very similar questions → replace with different concepts
+6. Incorrect JSON structure → fix it
+
+Draft exam:
+{draft_json}
+
+Return ONLY the corrected exam JSON with the exact same structure.
+Do NOT change the number of questions or their types.
+Do NOT add any explanation outside the JSON.
+"""
+        raw = await self.llm.generate_async("", [], prompt_override=prompt)
+        reviewed = _parse_json(raw)
+
+        # Fall back to draft if reviewer breaks the structure
+        if not reviewed or "questions" not in reviewed:
+            log.warning("[Reviewer] Could not parse reviewed JSON, keeping draft")
+            return draft
+
+        # Sanity check: reviewer must not drop questions
+        if len(reviewed.get("questions", [])) < len(draft.get("questions", [])):
+            log.warning("[Reviewer] Reviewer dropped questions, keeping draft")
+            return draft
+
+        return reviewed
 
     # ─────────────────────────────────────────────────────────────────────────
     # GRADING
