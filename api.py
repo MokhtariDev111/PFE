@@ -30,7 +30,7 @@ from modules.doc_generation.image_pipeline import _build_image_registry, _extrac
 ROOT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT_DIR))
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
@@ -1165,6 +1165,77 @@ async def debate_update_profile(updates: str = Form(...)):
         raise HTTPException(400, "updates must be valid JSON")
     MemoryStore().update_profile(data)
     return {"status": "updated"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EXAM SIMULATOR
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get("/exam/suggestions")
+async def exam_suggestions(q: str = ""):
+    """Return 5 topic suggestions for the exam config autocomplete."""
+    if not q or len(q.strip()) < 2:
+        return {"suggestions": []}
+    from modules.exam_generation.exam_engine import ExamEngine
+    engine = ExamEngine()
+    suggestions = await engine.get_suggestions(q.strip())
+    return {"suggestions": suggestions}
+
+
+@app.get("/exam/focus-suggestions")
+async def exam_focus_suggestions(topic: str = "", q: str = ""):
+    """Return 8 subtopic suggestions for the focus field based on the main topic."""
+    if not topic or len(topic.strip()) < 2:
+        return {"suggestions": []}
+    from modules.exam_generation.exam_engine import ExamEngine
+    engine = ExamEngine()
+    suggestions = await engine.get_focus_suggestions(topic.strip(), q.strip())
+    return {"suggestions": suggestions}
+
+
+@app.post("/exam/generate")
+async def exam_generate(request: Request):
+    """Generate a complete exam from a prompt configuration."""
+    body = await request.json()
+    topic      = body.get("topic", "").strip()
+    focus      = body.get("focus", "").strip()
+    difficulty = body.get("difficulty", "Medium")
+    mix        = body.get("mix", {"mcq": 3, "truefalse": 0, "problem": 1, "casestudy": 1})
+    time_limit = body.get("time_limit", "30 min")
+    language   = body.get("language", "English")
+
+    if not topic:
+        raise HTTPException(400, "topic is required")
+    total = sum(mix.values())
+    if total == 0:
+        raise HTTPException(400, "at least one question type must be selected")
+
+    from modules.exam_generation.exam_engine import ExamEngine
+    engine = ExamEngine()
+    try:
+        exam = await engine.generate_exam(topic, focus, difficulty, mix, language)
+        exam["time_limit"] = time_limit
+        return exam
+    except Exception as e:
+        log.error(f"Exam generation failed: {e}")
+        raise HTTPException(500, f"Failed to generate exam: {str(e)}")
+
+
+@app.post("/exam/grade")
+async def exam_grade(request: Request):
+    """Grade a free-text answer (problem solving or case study)."""
+    body = await request.json()
+    question       = body.get("question", {})
+    student_answer = body.get("student_answer", "").strip()
+    language       = body.get("language", "English")
+
+    if not question or not student_answer:
+        raise HTTPException(400, "question and student_answer are required")
+
+    from modules.exam_generation.exam_engine import ExamEngine
+    engine = ExamEngine()
+    result = await engine.grade_answer(question, student_answer, language)
+    return result
 
 
 if __name__ == "__main__":

@@ -8,13 +8,13 @@ import { useTheme } from "@/components/ThemeProvider";
 
 const cards = [
   {
-    lucide: MessageSquare,
-    title: "Tek-Up Navigator 3D",
-    desc: "Create a presentation from a simple text description in seconds.",
-    badge: "NOT AVAILABLE",
-    route: "/generate/prompt",
-    image: "/navigator.png",
-    available: false,
+    lucide: FileText,
+    title: "Exam Simulator",
+    desc: "Generate and take AI-powered exams from a topic or your course PDF.",
+    badge: "UNDER DEVELOPMENT",
+    route: "/exam",
+    image: "/exam.jpg",
+    available: true,
   },
   {
     lucide: FileText,
@@ -42,6 +42,15 @@ const cards = [
     route: "/aria",
     image: "/chatbot.png",
     available: true,
+  },
+  {
+    lucide: MessageSquare,
+    title: "Tek-Up Navigator 3D",
+    desc: "Create a presentation from a simple text description in seconds.",
+    badge: "NOT AVAILABLE",
+    route: "/generate/prompt",
+    image: "/navigator.png",
+    available: false,
   },
 ];
 
@@ -114,7 +123,11 @@ export default function CreationHub() {
                   transition={{ duration: 0.45, ease: [0.76, 0, 0.24, 1] }}
                 />
                 <div className="absolute inset-0 bg-black/10" />
-                {expanding.card.available && (
+                {expanding.card.badge ? (
+                  <span className="absolute top-4 right-4 text-[10px] font-bold px-2.5 py-1 rounded-full bg-orange-500/20 text-orange-300 border border-orange-400/40">
+                    {expanding.card.badge}
+                  </span>
+                ) : expanding.card.available && (
                   <span className="absolute top-4 right-4 text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
                     AVAILABLE
                   </span>
@@ -166,7 +179,7 @@ export default function CreationHub() {
               transition={{ duration: 0.4, delay: i * 0.08 }}
               whileHover={card.available ? { y: -4, scale: 1.01 } : {}}
               onClick={(e) => handleCardClick(e, card)}
-              className={`relative bg-card border border-border rounded-2xl p-6 group transition-all duration-200 overflow-hidden ${
+              className={`relative bg-card border border-border rounded-2xl p-6 group transition-all duration-200 ${
                 !card.available
                   ? "opacity-70 cursor-not-allowed"
                   : "cursor-pointer hover:border-primary/40 hover:shadow-xl hover:shadow-primary/10"
@@ -182,12 +195,16 @@ export default function CreationHub() {
               </div>
 
               {card.badge && (
-                <span className="absolute top-4 right-4 text-[10px] font-bold px-2.5 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/20">
+                <span className={`absolute -top-3 right-3 text-[10px] font-bold px-2.5 py-1 rounded-full border shadow-md ${
+                  card.badge === "UNDER DEVELOPMENT"
+                    ? "bg-orange-500 text-white border-orange-400"
+                    : "bg-red-500 text-white border-red-400"
+                }`}>
                   {card.badge}
                 </span>
               )}
-              {card.available && (
-                <span className="absolute top-4 right-4 text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-500 border border-emerald-500/20">
+              {card.available && !card.badge && (
+                <span className="absolute -top-3 right-3 text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-500 text-white border border-emerald-400 shadow-md">
                   AVAILABLE
                 </span>
               )}
