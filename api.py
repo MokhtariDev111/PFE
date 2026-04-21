@@ -1238,23 +1238,79 @@ async def exam_grade(request: Request):
     return result
 
 
-@app.post("/exam/generate-pdf")
-async def exam_generate_pdf(request: Request):
-    """Generate exam sheet + answer key PDFs in TEK-UP format."""
-    body       = await request.json()
-    topic      = body.get("topic", "").strip()
-    focus      = body.get("focus", "").strip()
-    difficulty = body.get("difficulty", "Medium")
-    mix        = body.get("mix", {})
-    language   = body.get("language", "French")
-    header     = body.get("header", {})
+@app.post("/exam/slot-suggestions")
+async def exam_slot_suggestions(request: Request):
+    """Return type-aware focus suggestions for a question slot."""
+    body   = await request.json()
+    topic  = body.get("topic", "").strip()
+    q_type = body.get("type", "mcq")
+    if not topic:
+        raise HTTPException(400, "topic is required")
+    from modules.exam_generation.exam_engine import ExamEngine
+    engine = ExamEngine()
+    suggestions = await engine.get_slot_focus_suggestions(topic, q_type)
+    return {"suggestions": suggestions}
+
+
+@app.post("/exam/generate-question")
+async def exam_generate_question(request: Request):
+    """Generate a single question for the slot-based exam builder."""
+    body          = await request.json()
+    q_type        = body.get("type", "mcq")
+    topic         = body.get("topic", "").strip()
+    focus         = body.get("focus", "").strip()
+    difficulty    = body.get("difficulty", "Medium")
+    language      = body.get("language", "French")
+    code          = body.get("code", "").strip()
+    code_language = body.get("code_language", "Python").strip()
+    instruction   = body.get("instruction", "").strip()
 
     if not topic:
         raise HTTPException(400, "topic is required")
-    if not any(mix.get(k, 0) > 0 for k in ("mcq", "truefalse", "problem", "casestudy")):
-        raise HTTPException(400, "at least one question type must be selected")
 
-    # Fill subject from topic if not provided
+    from modules.exam_generation.exam_engine import ExamEngine
+    engine = ExamEngine()
+    try:
+        result = await engine.generate_single_question(
+            q_type, topic, focus, difficulty, language,
+            code=code, code_language=code_language, instruction=instruction,
+        )
+        return result
+    except Exception as e:
+        log.error(f"Single question generation failed: {e}")
+        raise HTTPException(500, str(e))
+
+
+@app.post("/exam/code-suggestions")
+async def exam_code_suggestions(request: Request):
+    """Return AI-suggested question angles for a code snippet."""
+    body          = await request.json()
+    code          = body.get("code", "").strip()
+    code_language = body.get("code_language", "Python").strip()
+    topic         = body.get("topic", "").strip()
+
+    if not code:
+        raise HTTPException(400, "code is required")
+
+    from modules.exam_generation.exam_engine import ExamEngine
+    engine = ExamEngine()
+    suggestions = await engine.get_code_suggestions(code, code_language, topic)
+    return {"suggestions": suggestions}
+
+
+@app.post("/exam/generate-pdf")
+async def exam_generate_pdf(request: Request):
+    """Generate exam sheet + answer key PDFs in TEK-UP format.
+    Accepts either pre-built ordered_questions list (slot-based UI)
+    or the legacy topic/mix params (generates questions from scratch).
+    """
+    body              = await request.json()
+    topic             = body.get("topic", "").strip()
+    difficulty        = body.get("difficulty", "Medium")
+    language          = body.get("language", "French")
+    header            = body.get("header", {})
+    ordered_questions = body.get("ordered_questions")   # new slot-based path
+
     if not header.get("subject"):
         header["subject"] = topic
     header["topic"] = topic
@@ -1262,12 +1318,30 @@ async def exam_generate_pdf(request: Request):
     from modules.exam_generation.exam_engine import ExamEngine
     from modules.exam_generation.pdf_generator import generate_pdfs_b64
 
-    engine = ExamEngine()
-    try:
-        exam = await engine.generate_exam(topic, focus, difficulty, mix, language)
-    except Exception as e:
-        log.error(f"Exam generation failed: {e}")
-        raise HTTPException(500, f"Failed to generate exam: {str(e)}")
+    if ordered_questions:
+        # Slot-based path: questions already generated, just build PDF
+        if not ordered_questions:
+            raise HTTPException(400, "ordered_questions is empty")
+        exam = {
+            "questions": ordered_questions,
+            "topic": topic,
+            "difficulty": difficulty,
+            "language": language,
+        }
+    else:
+        # Legacy path: generate questions from scratch via 3-agent pipeline
+        focus = body.get("focus", "").strip()
+        mix   = body.get("mix", {})
+        if not topic:
+            raise HTTPException(400, "topic is required")
+        if not any(mix.get(k, 0) > 0 for k in ("mcq", "truefalse", "problem", "casestudy")):
+            raise HTTPException(400, "at least one question type must be selected")
+        engine = ExamEngine()
+        try:
+            exam = await engine.generate_exam(topic, focus, difficulty, mix, language)
+        except Exception as e:
+            log.error(f"Exam generation failed: {e}")
+            raise HTTPException(500, f"Failed to generate exam: {str(e)}")
 
     try:
         result = generate_pdfs_b64(exam, header)
@@ -1277,21 +1351,20 @@ async def exam_generate_pdf(request: Request):
 
     # Save to data/exam_simulator/
     try:
-        import base64, json as _json
-        _data_dir = os.path.join(os.path.dirname(__file__), "data", "exam_simulator")
-        _pdfs_dir = os.path.join(_data_dir, "pdfs")
+        import base64 as _b64, json as _json
+        _data_dir  = os.path.join(os.path.dirname(__file__), "data", "exam_simulator")
+        _pdfs_dir  = os.path.join(_data_dir, "pdfs")
         _exams_dir = os.path.join(_data_dir, "exams")
         os.makedirs(_pdfs_dir, exist_ok=True)
         os.makedirs(_exams_dir, exist_ok=True)
-
         with open(os.path.join(_pdfs_dir, result["exam_filename"]), "wb") as f:
-            f.write(base64.b64decode(result["exam_pdf"]))
+            f.write(_b64.b64decode(result["exam_pdf"]))
         with open(os.path.join(_pdfs_dir, result["key_filename"]), "wb") as f:
-            f.write(base64.b64decode(result["key_pdf"]))
-
+            f.write(_b64.b64decode(result["key_pdf"]))
         _stem = result["exam_filename"].replace(".pdf", "")
         with open(os.path.join(_exams_dir, f"{_stem}.json"), "w", encoding="utf-8") as f:
-            _json.dump({"topic": topic, "difficulty": difficulty, "language": language, "exam": exam}, f, ensure_ascii=False, indent=2)
+            _json.dump({"topic": topic, "difficulty": difficulty, "language": language, "exam": exam},
+                       f, ensure_ascii=False, indent=2)
     except Exception as e:
         log.warning(f"Could not save exam to disk: {e}")
 

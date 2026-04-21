@@ -123,89 +123,90 @@ def _make_doc(buf):
 def _header_flowables(header: dict, s: dict, is_key: bool) -> list:
     items = []
 
-    # Logo sits ABOVE the bordered table, left-aligned (matches real TEK-UP layout)
+    # ── 1. Logo (standalone, top-left) ────────────────────────────────────────
     if os.path.exists(_LOGO):
-        logo = Image(_LOGO, width=4.0 * cm, height=2.6 * cm, kind="proportional")
+        logo = Image(_LOGO, width=3.8 * cm, height=2.5 * cm, kind="proportional")
         logo.hAlign = "LEFT"
         items.append(logo)
-        items.append(Spacer(1, 0.15 * cm))
+        items.append(Spacer(1, 0.2 * cm))
 
-    # ── Bordered info table ────────────────────────────────────────────────────
+    # ── 2. Title box (separate bordered box, full width) ──────────────────────
     title_style = ParagraphStyle(
-        "tbl_title", fontName="Helvetica-Bold", fontSize=13,
-        alignment=TA_CENTER, leading=17,
+        "tbl_title", fontName="Helvetica-Bold", fontSize=14,
+        alignment=TA_CENTER, leading=18,
     )
     title_txt = "<b>Ecole Supérieure Privée Technologies &amp; Ingénierie</b>"
     if is_key:
         title_txt += "<br/><font color='#cc0000'>— CORRIGÉ —</font>"
 
-    def B(text):
-        return Paragraph(f"<b>{text}</b>", s["hdr_val"])
+    title_tbl = Table([[Paragraph(title_txt, title_style)]], colWidths=[CONTENT_W])
+    title_tbl.setStyle(TableStyle([
+        ("BOX",           (0, 0), (-1, -1), 1.5, colors.black),
+        ("TOPPADDING",    (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+    ]))
+    items.append(title_tbl)
+    items.append(Spacer(1, 0.08 * cm))
 
-    def V(text):
-        return Paragraph(f":&nbsp;&nbsp;&nbsp;{text or ''}", s["hdr_val"])
+    # ── 3. Data rows — 2-column table, horizontal separators only ────────────────
+    hb = ParagraphStyle("hb", fontName="Helvetica-Bold", fontSize=10, leading=13)
+    hv = ParagraphStyle("hv", fontName="Helvetica",      fontSize=10, leading=13)
 
-    def E():
-        return Paragraph("", s["hdr_val"])
+    def B(text): return Paragraph(f"<b>{text}</b>", hb)
+    def V(val):  return Paragraph(f"&nbsp;:&nbsp;&nbsp;{val or ''}", hv)
 
     year = header.get("academic_year", "2024-2025")
     sem  = header.get("semester", "1")
     date = header.get("date", "")
     dur  = header.get("duration", "")
 
-    # 3 columns: [label (c1) | colon+value (c2) | extra (c3)]
-    c1 = 4.8 * cm
-    c3 = 3.2 * cm
-    c2 = CONTENT_W - c1 - c3
+    # 2 columns only — eliminates all vertical-line rendering artifacts
+    c1 = 5.0 * cm
+    c2 = CONTENT_W - c1
 
     rows = [
-        # Row 0 — school title, spans all 3 cols
-        [Paragraph(title_txt, title_style), E(), E()],
-        # Row 1 — Type d'épreuve with ■ indicator
-        [B("Type d'épreuve"), V(header.get("exam_type", "Devoir")),
-         Paragraph("<font size='14'>■</font>", s["hdr_val"])],
-        # Row 2-9 — regular rows (col2+col3 merged via SPAN)
-        [B("Enseignant"),        V(header.get("teacher", "")),            E()],
-        [B("Matière"),           V(header.get("subject", header.get("topic", ""))), E()],
+        [B("Type d'épreuve"),
+         Paragraph(f"&nbsp;:&nbsp;&nbsp;{header.get('exam_type','Devoir')}"
+                   f"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+                   f"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+                   f"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+                   f"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>■</b>", hv)],
+        [B("Enseignant"),          V(header.get("teacher", ""))],
+        [B("Matière"),             V(header.get("subject", header.get("topic", "")))],
         [B("Année Universitaire"),
-         Paragraph(f":&nbsp;&nbsp;&nbsp;{year}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
-                   f"<b>Semestre</b>&nbsp;&nbsp;:&nbsp;&nbsp;{sem}", s["hdr_val"]), E()],
-        [B("Classe"),            V(header.get("class_name", "")),         E()],
-        [B("Documents"),         V(header.get("documents", "Non autorisés")), E()],
+         Paragraph(f"&nbsp;:&nbsp;&nbsp;{year}"
+                   f"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+                   f"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+                   f"<b>Semestre</b>&nbsp;:&nbsp;{sem}", hv)],
+        [B("Classe"),              V(header.get("class_name", ""))],
+        [B("Documents"),           V(header.get("documents", "Non autorisés"))],
         [B("Date"),
-         Paragraph(f":&nbsp;&nbsp;&nbsp;{date}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
-                   f"<b>Durée :</b>&nbsp;&nbsp;{dur}", s["hdr_val"]), E()],
-        [B("Nombre de pages"),   V(""),                                   E()],
-        [B("Barème"),            V(header.get("bareme", "")),              E()],
+         Paragraph(f"&nbsp;:&nbsp;&nbsp;{date}"
+                   f"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+                   f"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+                   f"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+                   f"<b>Durée</b>&nbsp;:&nbsp;{dur}", hv)],
+        [B("Nombre de pages"),     V(header.get("_total_pages", ""))],
+        [B("Barème"),              V(header.get("bareme", ""))],
     ]
 
-    tbl_style = [
-        ("BOX",          (0, 0), (-1, -1), 1.3, colors.black),
-        ("LINEBELOW",    (0, 0), (-1,  0), 1.0, colors.black),   # below title
-        ("LINEBELOW",    (0, 1), (-1, -2), 0.5, colors.black),   # between info rows
-        ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
-        ("ALIGN",        (0, 0), (-1,  0), "CENTER"),             # title centered
-        ("TOPPADDING",   (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 4),
-        ("LEFTPADDING",  (0, 0), (-1, -1), 7),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
-        # Title spans all 3 cols
-        ("SPAN",         (0, 0), (2,  0)),
-        # Rows 2-9: merge col1+col2 (index 1 and 2)
-        ("SPAN",         (1, 2), (2,  2)),
-        ("SPAN",         (1, 3), (2,  3)),
-        ("SPAN",         (1, 4), (2,  4)),
-        ("SPAN",         (1, 5), (2,  5)),
-        ("SPAN",         (1, 6), (2,  6)),
-        ("SPAN",         (1, 7), (2,  7)),
-        ("SPAN",         (1, 8), (2,  8)),
-        ("SPAN",         (1, 9), (2,  9)),
-    ]
+    data_tbl = Table(rows, colWidths=[c1, c2])
+    data_tbl.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
+    ]))
+    items.append(data_tbl)
 
-    tbl = Table(rows, colWidths=[c1, c2, c3])
-    tbl.setStyle(TableStyle(tbl_style))
-    items.append(tbl)
-    items.append(Spacer(1, 0.5 * cm))
+    # ── 4. Thick bottom HR (matches the <hr> in the HTML reference) ───────────
+    items.append(Spacer(1, 0.15 * cm))
+    items.append(HRFlowable(width=CONTENT_W, thickness=1.5, color=colors.black))
+    items.append(Spacer(1, 0.45 * cm))
+
     return items
 
 
@@ -330,67 +331,140 @@ def _casestudy_block(q: dict, s: dict, is_key: bool, ex_num: int) -> list:
     return items
 
 
+# ── Code Analysis block ───────────────────────────────────────────────────────
+
+def _code_block(q: dict, s: dict, is_key: bool, ex_num: int) -> list:
+    items = [Paragraph(
+        f"<b>Exercice {ex_num}</b> — Analyse de Code"
+        + (f" ({q.get('code_language', '')})" if q.get("code_language") else ""),
+        s["exercise_h"],
+    )]
+
+    if q.get("context"):
+        items.append(Paragraph(_safe(q["context"]), s["body"]))
+        items.append(Spacer(1, 0.2 * cm))
+
+    # Code rendered in a monospace table with grey background
+    code_style = ParagraphStyle(
+        "code_blk", fontName="Courier", fontSize=9, leading=12,
+        leftIndent=0, rightIndent=0,
+    )
+    code_lines = (q.get("code") or "").split("\n")
+    code_rows  = [[Paragraph(_safe(ln) or "&nbsp;", code_style)] for ln in code_lines]
+    code_tbl   = Table(code_rows, colWidths=[CONTENT_W])
+    code_tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), colors.HexColor("#f4f4f4")),
+        ("BOX",           (0, 0), (-1, -1), 0.7, colors.HexColor("#bbbbbb")),
+        ("TOPPADDING",    (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+    ]))
+    items.append(code_tbl)
+    items.append(Spacer(1, 0.3 * cm))
+
+    for subq in q.get("subquestions", []):
+        pts       = subq.get("points", "")
+        sid       = subq.get("id", "")
+        pts_label = f" ({pts} pts)" if pts else ""
+        items.append(Paragraph(
+            f"<b>{sid})</b>{pts_label} {_safe(subq.get('question', ''))}",
+            s["subq_label"],
+        ))
+        if is_key:
+            items.append(Paragraph(_safe(subq.get("model_answer", "")), s["model_ans"]))
+        else:
+            for _ in range(3):
+                items.append(HRFlowable(width=CONTENT_W, thickness=0.3, color=colors.lightgrey))
+                items.append(Spacer(1, 0.3 * cm))
+
+    return items
+
+
+# ── Story builder (ordered question list) ─────────────────────────────────────
+
+def _build_story(questions: list, header: dict, s: dict, is_key: bool,
+                 total_pages: int = 0) -> list:
+    """
+    Build a complete PDF story from an ORDERED list of question dicts.
+    Each question becomes its own Exercice — order is exactly as given.
+    Consecutive MCQs/TF questions are grouped into one Exercice.
+    """
+    hdr = dict(header)
+    hdr["_total_pages"] = str(total_pages) if total_pages else ""
+
+    story  = _header_flowables(hdr, s, is_key)
+    ex_num = 1
+    i      = 0
+
+    while i < len(questions):
+        q      = questions[i]
+        q_type = q.get("type")
+
+        # Group consecutive same-type MCQ / TF into one exercice
+        if q_type in ("mcq", "truefalse"):
+            group = [q]
+            j     = i + 1
+            while j < len(questions) and questions[j].get("type") == q_type:
+                group.append(questions[j])
+                j += 1
+            if q_type == "mcq":
+                story += _mcq_block(group, s, is_key, ex_num)
+            else:
+                story += _tf_block(group, s, is_key, ex_num)
+            i = j
+        elif q_type == "problem":
+            story += _problem_block(q, s, is_key, ex_num)
+            i += 1
+        elif q_type == "casestudy":
+            story += _casestudy_block(q, s, is_key, ex_num)
+            i += 1
+        elif q_type == "code":
+            story += _code_block(q, s, is_key, ex_num)
+            i += 1
+        else:
+            i += 1
+            continue
+
+        ex_num += 1
+        story.append(Spacer(1, 0.3 * cm))
+
+    return story
+
+
 # ── Main entry point ──────────────────────────────────────────────────────────
 
 def generate_pdfs(exam: dict, header: dict) -> tuple[bytes, bytes]:
-    """
-    Generate exam sheet + answer key.
-    Returns (exam_bytes, key_bytes).
-    """
-    s = _make_styles()
+    """Generate exam sheet + answer key. Returns (exam_bytes, key_bytes)."""
+    s         = _make_styles()
+    questions = exam.get("questions", [])
 
-    def build(is_key: bool) -> bytes:
-        buf = io.BytesIO()
-        doc = _make_doc(buf)
-        story = []
-
-        # Header
-        story += _header_flowables(header, s, is_key)
-
-        # Group questions by type, preserving order
-        questions = exam.get("questions", [])
-        mcq_qs  = [q for q in questions if q.get("type") == "mcq"]
-        tf_qs   = [q for q in questions if q.get("type") == "truefalse"]
-        prob_qs = [q for q in questions if q.get("type") == "problem"]
-        case_qs = [q for q in questions if q.get("type") == "casestudy"]
-
-        ex_num = 1
-
-        if mcq_qs:
-            story += _mcq_block(mcq_qs, s, is_key, ex_num)
-            ex_num += 1
-            story.append(Spacer(1, 0.3 * cm))
-
-        if tf_qs:
-            story += _tf_block(tf_qs, s, is_key, ex_num)
-            ex_num += 1
-            story.append(Spacer(1, 0.3 * cm))
-
-        for pq in prob_qs:
-            story += _problem_block(pq, s, is_key, ex_num)
-            ex_num += 1
-            story.append(Spacer(1, 0.3 * cm))
-
-        for cq in case_qs:
-            story += _casestudy_block(cq, s, is_key, ex_num)
-            ex_num += 1
-            story.append(Spacer(1, 0.3 * cm))
-
+    def _build_bytes(is_key: bool, total_pages: int = 0) -> tuple[bytes, int]:
+        buf  = io.BytesIO()
+        doc  = _make_doc(buf)
+        story = _build_story(questions, header, s, is_key, total_pages)
         doc.build(story)
-        return buf.getvalue()
+        return buf.getvalue(), doc.page
 
-    return build(False), build(True)
+    # Two-pass build so "Nombre de pages" reflects the real page count
+    _, exam_pages = _build_bytes(False, 0)
+    exam_bytes, _ = _build_bytes(False, exam_pages)
+
+    _, key_pages  = _build_bytes(True, 0)
+    key_bytes, _  = _build_bytes(True, key_pages)
+
+    return exam_bytes, key_bytes
 
 
 def generate_pdfs_b64(exam: dict, header: dict) -> dict:
-    """Return both PDFs as base64 strings + suggested filename."""
+    """Return both PDFs as base64 strings + suggested filenames."""
     exam_bytes, key_bytes = generate_pdfs(exam, header)
     topic   = exam.get("topic", "exam").replace(" ", "_").lower()
     subject = header.get("subject", "").replace(" ", "_").lower() or topic
     year    = header.get("academic_year", "2024-2025").replace("-", "_")
     return {
-        "exam_pdf": base64.b64encode(exam_bytes).decode(),
-        "key_pdf":  base64.b64encode(key_bytes).decode(),
+        "exam_pdf":      base64.b64encode(exam_bytes).decode(),
+        "key_pdf":       base64.b64encode(key_bytes).decode(),
         "exam_filename": f"exam_{subject}_{year}.pdf",
         "key_filename":  f"corrige_{subject}_{year}.pdf",
     }

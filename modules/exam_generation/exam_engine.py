@@ -386,6 +386,130 @@ Return ONLY JSON:
         return {"score": 0, "max_score": 10, "feedback": "Grading unavailable — review manually"}
 
     # ─────────────────────────────────────────────────────────────────────────
+    # SINGLE QUESTION GENERATION  (slot-based UI)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def generate_single_question(
+        self,
+        q_type: str,
+        topic: str,
+        focus: str,
+        difficulty: str,
+        language: str,
+        code: str = "",
+        code_language: str = "",
+        instruction: str = "",
+    ) -> dict:
+        """Generate exactly one question of any type for the slot-based exam builder."""
+        diff_hint = {
+            "Easy":   "basic recall and definitions",
+            "Medium": "application and understanding, some calculation",
+            "Hard":   "analysis, synthesis, multi-step and critical thinking",
+        }.get(difficulty, "medium difficulty")
+
+        focus_line = f"Specific focus: {focus}." if focus.strip() else ""
+        instr_line = f"Teacher instruction: {instruction}." if instruction.strip() else ""
+        code_block = (
+            f"\nCode ({code_language or 'code'}):\n```\n{code}\n```\n"
+            if code.strip() else ""
+        )
+
+        if q_type == "mcq":
+            prompt = (
+                f'Generate exactly ONE MCQ for a {difficulty} university exam on "{topic}".\n'
+                f"{focus_line} {instr_line}\nDifficulty guide: {diff_hint}. Language: {language}.\n"
+                f"{code_block}\nReturn ONLY valid JSON:\n"
+                '{{"id":1,"type":"mcq","question":"...","options":["A) ...","B) ...","C) ...","D) ..."],'
+                '"correct":0,"explanation":"..."}}'
+            )
+        elif q_type == "truefalse":
+            prompt = (
+                f'Generate exactly ONE True/False question for a {difficulty} university exam on "{topic}".\n'
+                f"{focus_line} {instr_line}\nDifficulty guide: {diff_hint}. Language: {language}.\n"
+                f"{code_block}\nReturn ONLY valid JSON:\n"
+                '{{"id":1,"type":"truefalse","question":"...","correct":true,"explanation":"..."}}'
+            )
+        elif q_type == "problem":
+            prompt = (
+                f'Generate exactly ONE Problem Solving question for a {difficulty} university exam on "{topic}".\n'
+                f"{focus_line} {instr_line}\nDifficulty guide: {diff_hint}. Language: {language}.\n"
+                f"{code_block}\nReturn ONLY valid JSON:\n"
+                '{{"id":1,"type":"problem","question":"...","model_answer":"...","key_points":["...","...","..."]}}'
+            )
+        elif q_type == "casestudy":
+            prompt = (
+                f'Generate exactly ONE Case Study question for a {difficulty} university exam on "{topic}".\n'
+                f"{focus_line} {instr_line}\nDifficulty guide: {diff_hint}. Language: {language}.\n"
+                f"{code_block}\nReturn ONLY valid JSON:\n"
+                '{{"id":1,"type":"casestudy","context":"realistic scenario (2-3 sentences)",'
+                '"table":{{"headers":["Col1","Col2","Col3"],"rows":[["v1","v2","v3"],["v4","v5","v6"],["v7","v8","v9"]]}},'
+                '"subquestions":[{{"id":"a","question":"...","model_answer":"...","points":4}},'
+                '{{"id":"b","question":"...","model_answer":"...","points":3}},'
+                '{{"id":"c","question":"...","model_answer":"...","points":3}}]}}'
+            )
+        elif q_type == "code":
+            prompt = (
+                f'Generate a Code Analysis exam question for a {difficulty} university exam on "{topic}".\n'
+                f"{focus_line} {instr_line}\nDifficulty guide: {diff_hint}. Language: {language}.\n"
+                f"Code ({code_language}):\n```\n{code}\n```\n\n"
+                "Generate 2-3 educational sub-questions (comprehension, analysis, improvement).\n"
+                "Return ONLY valid JSON:\n"
+                '{{"id":1,"type":"code","code":"<the code>","code_language":"...","context":"what this code does",'
+                '"subquestions":[{{"id":"a","question":"...","model_answer":"...","points":4}},'
+                '{{"id":"b","question":"...","model_answer":"...","points":3}},'
+                '{{"id":"c","question":"...","model_answer":"...","points":3}}]}}'
+            )
+        else:
+            raise ValueError(f"Unknown question type: {q_type}")
+
+        raw = await self.llm.generate_async("", [], prompt_override=prompt)
+        result = _parse_json(raw)
+        if not result:
+            raise ValueError(f"Failed to parse {q_type} question from LLM response")
+        result["type"] = q_type
+        return result
+
+    async def get_slot_focus_suggestions(self, topic: str, q_type: str) -> list[str]:
+        """Return 6 type-specific focus ideas for a question slot."""
+        guidance = {
+            "mcq":       "specific concepts, definitions, or short factual topics suitable for MCQ",
+            "truefalse": "precise statements that can be clearly evaluated as true or false",
+            "problem":   "specific calculation, derivation, or application problem types",
+            "casestudy": "realistic scenarios or industry contexts to build a case study around",
+            "code":      "code analysis, debugging, or optimization tasks",
+        }.get(q_type, "specific subtopics")
+
+        prompt = (
+            f'A professor is building a {q_type.upper()} question about "{topic}".\n'
+            f"Suggest exactly 6 specific, concise focus ideas for {guidance}.\n"
+            "Each suggestion should be 2–6 words. Be precise and educational — not generic.\n"
+            "Return ONLY a JSON array of 6 strings.\n"
+            f'Example for MCQ on SQL: ["SELECT with JOIN", "NULL handling", '
+            f'"GROUP BY aggregate", "Subquery vs JOIN", "Index optimization", "ACID properties"]'
+        )
+        raw = await self.llm.generate_async("", [], prompt_override=prompt)
+        return self._parse_string_list(raw, limit=6)
+
+    async def get_code_suggestions(
+        self,
+        code: str,
+        code_language: str,
+        topic: str,
+    ) -> list[str]:
+        """Return 5 AI-suggested question angles for a given code snippet."""
+        prompt = (
+            f"A professor wants to create exam questions about this {code_language} code:\n"
+            f"```\n{code[:1200]}\n```\n"
+            f"Topic context: {topic or 'programming'}.\n\n"
+            "Suggest exactly 5 specific, concise questions (under 15 words each) "
+            "a professor could ask students about this code.\n"
+            "Return ONLY a JSON array of 5 strings.\n"
+            'Example: ["What is the time complexity?", "Find the bug in the loop", ...]'
+        )
+        raw = await self.llm.generate_async("", [], prompt_override=prompt)
+        return self._parse_string_list(raw, limit=5)
+
+    # ─────────────────────────────────────────────────────────────────────────
     # HELPERS
     # ─────────────────────────────────────────────────────────────────────────
 
