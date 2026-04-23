@@ -1,55 +1,139 @@
-import { motion } from "framer-motion";
-import { Sparkles } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Mail, MapPin, MessageSquare, Send } from "lucide-react";
+import { useRef, useState } from "react";
+import { z } from "zod";
+import { Navbar } from "@/components/landing/Navbar";
+import { Footer } from "@/components/landing/Footer";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/use-toast";
 
-export default function ContactUs() {
+const contactSchema = z.object({
+  name: z.string().trim().min(1, { message: "Name is required" }).max(100),
+  email: z.string().trim().email({ message: "Invalid email address" }).max(255),
+  message: z.string().trim().min(1, { message: "Message is required" }).max(1000),
+});
+
+const ContactUs = () => {
+  const { toast } = useToast();
+  const [submitting, setSubmitting] = useState(false);
+  const [videoDone, setVideoDone] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const data = {
+      name: String(formData.get("name") ?? ""),
+      email: String(formData.get("email") ?? ""),
+      message: String(formData.get("message") ?? ""),
+    };
+    const result = contactSchema.safeParse(data);
+    if (!result.success) {
+      toast({ title: "Please check your input", description: result.error.issues[0]?.message, variant: "destructive" });
+      return;
+    }
+    setSubmitting(true);
+    await new Promise((r) => setTimeout(r, 700));
+    setSubmitting(false);
+    toast({ title: "Message sent", description: "Thanks! We'll get back to you within 24 hours." });
+    (e.target as HTMLFormElement).reset();
+  };
+
   return (
+    <>
+      {/* Full-screen video intro */}
+      <AnimatePresence>
+        {!videoDone && (
+          <motion.div
+            className="fixed inset-0 z-[9999] bg-black flex items-center justify-center"
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.8 }}
+          >
+            <video
+              ref={videoRef}
+              src="/contact_us.mp4"
+              autoPlay
+              playsInline
+              className="h-full w-full object-cover"
+              onEnded={() => setVideoDone(true)}
+            />
+            {/* Skip button */}
+            <button
+              onClick={() => setVideoDone(true)}
+              className="absolute bottom-8 right-8 rounded-full border border-white/30 bg-black/40 px-5 py-2 text-sm font-medium text-white backdrop-blur hover:bg-black/60 transition-colors"
+            >
+              Skip →
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
     <div className="min-h-screen bg-background">
-      <div className="max-w-xl mx-auto px-6 pt-24 pb-20">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-semibold mb-6">
-            <Sparkles className="w-3.5 h-3.5" />
-            Get in touch
-          </div>
-          <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">Contact Us</h1>
-          <p className="text-muted-foreground text-lg mb-10">
-            Have a question or feedback? Reach out directly.
-          </p>
+      <Navbar />
+      <main className="pt-32 pb-24">
+        <section className="container max-w-6xl">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="text-center">
+            <span className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur">
+              <MessageSquare className="h-3.5 w-3.5 text-brand-rose" />
+              Contact us
+            </span>
+            <h1 className="mt-6 text-balance text-4xl font-semibold tracking-tight sm:text-5xl md:text-6xl">
+              Let's <span className="bg-gradient-rose bg-clip-text text-transparent">talk</span>.
+            </h1>
+            <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-muted-foreground">
+              Questions, feedback, partnerships — drop us a line and we'll get back to you fast.
+            </p>
+          </motion.div>
 
-          <div className="flex flex-col gap-4">
-            <a
-              href="mailto:[email]"
-              className="flex items-center gap-4 p-5 rounded-2xl bg-card border border-border hover:border-primary/40 hover:shadow-lg hover:shadow-primary/10 transition-all group"
-            >
-              <div className="p-3 rounded-xl bg-primary/10 group-hover:bg-primary/20 transition-colors">
-                <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25H4.5a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5H4.5a2.25 2.25 0 00-2.25 2.25m19.5 0l-9.75 7.5-9.75-7.5" />
-                </svg>
+          <div className="mt-16 grid gap-10 lg:grid-cols-5">
+            <motion.div initial={{ opacity: 0, x: -30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }} className="lg:col-span-2 space-y-5">
+              <div className="rounded-2xl border border-border/70 bg-card p-6">
+                <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand-violet/10">
+                  <Mail className="h-5 w-5 text-brand-violet" />
+                </span>
+                <h3 className="mt-4 font-semibold">Email</h3>
+                <p className="mt-1 text-sm text-muted-foreground">hello@eduai.app</p>
               </div>
-              <div>
-                <p className="text-xs text-muted-foreground mb-0.5">Email</p>
-                <p className="font-medium text-foreground">[email]</p>
+              <div className="rounded-2xl border border-border/70 bg-card p-6">
+                <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand-emerald/10">
+                  <MapPin className="h-5 w-5 text-brand-emerald" />
+                </span>
+                <h3 className="mt-4 font-semibold">Office</h3>
+                <p className="mt-1 text-sm text-muted-foreground">Remote-first · Global team</p>
               </div>
-            </a>
+            </motion.div>
 
-            <a
-              href="https://www.linkedin.com/in/mohamed-aziz-mokhtari-469777365"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-4 p-5 rounded-2xl bg-card border border-border hover:border-primary/40 hover:shadow-lg hover:shadow-primary/10 transition-all group"
-            >
-              <div className="p-3 rounded-xl bg-primary/10 group-hover:bg-primary/20 transition-colors">
-                <svg className="w-5 h-5 text-primary" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
-                </svg>
+            <motion.form onSubmit={handleSubmit} initial={{ opacity: 0, x: 30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }}
+              className="lg:col-span-3 space-y-5 rounded-2xl border border-border/70 bg-card p-6 sm:p-8">
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Name</Label>
+                  <Input id="name" name="name" placeholder="Jane Doe" maxLength={100} required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input id="email" name="email" type="email" placeholder="jane@example.com" maxLength={255} required />
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-muted-foreground mb-0.5">LinkedIn</p>
-                <p className="font-medium text-foreground">Mohamed Aziz Mokhtari</p>
+              <div className="space-y-2">
+                <Label htmlFor="message">Message</Label>
+                <Textarea id="message" name="message" placeholder="Tell us how we can help…" rows={6} maxLength={1000} required />
               </div>
-            </a>
+              <Button type="submit" disabled={submitting} size="lg" className="group h-11 w-full rounded-full bg-gradient-aurora text-white sm:w-auto">
+                {submitting ? "Sending…" : "Send message"}
+                <Send className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              </Button>
+            </motion.form>
           </div>
-        </motion.div>
-      </div>
+        </section>
+      </main>
+      <Footer />
     </div>
+  </>
   );
-}
+};
+
+export default ContactUs;

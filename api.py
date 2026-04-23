@@ -810,6 +810,40 @@ async def quick_health():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# PLATFORM STATS ENDPOINTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+_STATS_FILE = ROOT_DIR / "data" / "stats.json"
+
+def _read_stats() -> dict:
+    try:
+        if _STATS_FILE.exists():
+            with open(_STATS_FILE, encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {"user_count": 0}
+
+def _write_stats(data: dict):
+    _STATS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(_STATS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+@app.get("/stats")
+async def get_stats():
+    """Return platform statistics."""
+    return _read_stats()
+
+@app.post("/stats/register-user")
+async def register_user():
+    """Increment user count. Call this when a new user signs up."""
+    data = _read_stats()
+    data["user_count"] = data.get("user_count", 0) + 1
+    _write_stats(data)
+    return data
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # QUIZ GENERATION ENDPOINTS
 # ══════════════════════════════════════════════════════════════════════════════
 

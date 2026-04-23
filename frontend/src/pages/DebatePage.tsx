@@ -500,7 +500,7 @@ export default function DebatePage() {
             </button>
             <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
               <Brain className="w-3.5 h-3.5 text-primary" />
-              <span className="font-medium">Aria — TEK-UP AI</span>
+              <span className="font-medium">Aria — EduAI</span>
             </div>
           </div>
         </div>
@@ -510,7 +510,7 @@ export default function DebatePage() {
       <div className="flex-1 flex flex-col min-w-0 relative">
 
         {/* Top bar — title + source toggle */}
-        <div className="flex items-center justify-between px-5 py-2.5 border-b border-border/50 bg-card/30 shrink-0 gap-4">
+        <div className="flex items-center justify-between px-5 py-2.5 border-b border-border/50 bg-background/90 backdrop-blur-xl shrink-0 gap-4">
           {/* Sidebar toggle */}
           <button
             onClick={() => setSidebarOpen(o => !o)}

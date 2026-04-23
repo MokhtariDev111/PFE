@@ -103,7 +103,7 @@ export default function Dashboard() {
 
           <motion.div variants={item} className="mb-10">
             <h1 className="text-4xl font-bold gradient-text mb-1">Stats</h1>
-            <p className="text-muted-foreground">Overview of everything you've created with TEKUP AI</p>
+            <p className="text-muted-foreground">Overview of everything you've created with EduAI</p>
           </motion.div>
 
           {SECTIONS.map((section, si) => (

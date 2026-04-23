@@ -6,8 +6,9 @@ export function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Hide navbar on landing page — it has its own hero
-  if (location.pathname === "/") return null;
+  // Hide navbar on pages that have their own navbar
+  const pagesWithOwnNav = ["/", "/about", "/contact", "/login"];
+  if (pagesWithOwnNav.includes(location.pathname)) return null;
 
   const isQuizPage = location.pathname === "/generate/quiz";
   const isAriaPage = location.pathname === "/aria";
@@ -51,7 +52,7 @@ export function Navbar() {
             <Sparkles className="w-4 h-4 text-white" />
           </div>
           <div>
-            <h1 className="font-bold text-base gradient-text leading-none">TEKUP AI</h1>
+            <h1 className="font-bold text-base gradient-text leading-none">EduAI</h1>
             <p className="text-[10px] text-muted-foreground leading-none mt-0.5">Learning Assistant</p>
           </div>
         </motion.div>

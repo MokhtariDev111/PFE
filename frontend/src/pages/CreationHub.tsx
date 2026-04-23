@@ -10,7 +10,7 @@ const cards = [
   {
     lucide: FileText,
     title: "Exam Simulator",
-    desc: "Generate and take AI-powered exams from a topic or your course PDF.",
+    desc: "Generate and take AI-powered exams.",
     badge: "UNDER DEVELOPMENT",
     route: "/exam",
     image: "/exam.jpg",
@@ -160,7 +160,7 @@ export default function CreationHub() {
         >
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-semibold mb-4">
             <Sparkles className="w-3.5 h-3.5" />
-            TEKUP AI
+            EduAI
           </div>
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-3">
             <SplitText key={animationKey} text="What would you like to create?" delay={50} duration={1.25} />
@@ -237,6 +237,7 @@ export default function CreationHub() {
           </motion.button>
         </div>
       </div>
+
     </div>
   );
 }

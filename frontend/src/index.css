@@ -4,6 +4,10 @@
 @tailwind components;
 @tailwind utilities;
 
+html, body {
+  overflow-x: hidden;
+}
+
 @layer base {
   :root {
     --background: 220 25% 97%;
@@ -29,6 +33,30 @@
     --glass: 0 0% 100%;
     --glass-border: 220 20% 88%;
     --navy-deep: 224 45% 8%;
+
+    /* Brand palette */
+    --brand-violet: 262 83% 62%;
+    --brand-indigo: 235 80% 60%;
+    --brand-blue: 217 91% 60%;
+    --brand-cyan: 189 94% 50%;
+    --brand-emerald: 158 75% 42%;
+    --brand-teal: 174 80% 40%;
+    --brand-rose: 346 86% 60%;
+    --brand-pink: 330 85% 65%;
+
+    /* Tinted panels */
+    --tint-violet: 262 83% 97%;
+    --tint-emerald: 158 75% 96%;
+    --tint-blue: 217 91% 97%;
+    --tint-rose: 346 86% 97%;
+
+    /* Gradients */
+    --gradient-violet: linear-gradient(135deg, hsl(var(--brand-violet)), hsl(var(--brand-indigo)));
+    --gradient-blue: linear-gradient(135deg, hsl(var(--brand-blue)), hsl(var(--brand-cyan)));
+    --gradient-emerald: linear-gradient(135deg, hsl(var(--brand-emerald)), hsl(var(--brand-teal)));
+    --gradient-rose: linear-gradient(135deg, hsl(var(--brand-rose)), hsl(var(--brand-pink)));
+    --gradient-aurora: linear-gradient(135deg, hsl(var(--brand-violet)), hsl(var(--brand-blue)) 50%, hsl(var(--brand-emerald)));
+    --gradient-headline: linear-gradient(120deg, hsl(var(--brand-violet)), hsl(var(--brand-blue)) 50%, hsl(var(--brand-emerald)));
   }
 
   .dark {
@@ -54,6 +82,22 @@
     --glass: 224 32% 9%;
     --glass-border: 224 25% 18%;
     --navy-deep: 224 45% 4%;
+
+    /* Brand palette (dark) */
+    --brand-violet: 262 90% 70%;
+    --brand-indigo: 235 85% 70%;
+    --brand-blue: 217 95% 70%;
+    --brand-cyan: 189 94% 60%;
+    --brand-emerald: 158 75% 55%;
+    --brand-teal: 174 80% 55%;
+    --brand-rose: 346 90% 70%;
+    --brand-pink: 330 90% 75%;
+
+    /* Tinted panels (dark) */
+    --tint-violet: 262 50% 12%;
+    --tint-emerald: 158 50% 10%;
+    --tint-blue: 217 50% 12%;
+    --tint-rose: 346 50% 12%;
   }
 }
 
@@ -98,6 +142,48 @@
     background-image: radial-gradient(hsl(var(--border)) 1px, transparent 1px);
     background-size: 28px 28px;
   }
+  /* Landing page gradient utilities */
+  .text-gradient-headline {
+    background: var(--gradient-headline);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .bg-gradient-violet { background-image: var(--gradient-violet); }
+  .bg-gradient-blue { background-image: var(--gradient-blue); }
+  .bg-gradient-emerald { background-image: var(--gradient-emerald); }
+  .bg-gradient-rose { background-image: var(--gradient-rose); }
+  .bg-gradient-aurora { background-image: var(--gradient-aurora); }
+
+  .glass {
+    background: hsl(var(--background) / 0.6);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+  }
+
+  /* Glare sweep on hover */
+  .glare {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+  }
+  .glare::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(115deg, transparent 30%, hsl(0 0% 100% / 0.18) 50%, transparent 70%);
+    transform: translateX(-100%);
+    transition: transform 0.9s ease;
+    pointer-events: none;
+  }
+  .glare:hover::after { transform: translateX(100%); }
+
+  .ring-glow {
+    box-shadow:
+      0 0 0 1px hsl(var(--border)),
+      0 20px 60px -20px hsl(var(--brand-violet) / 0.35);
+  }
+
   ::-webkit-scrollbar { width: 5px; height: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { @apply bg-border rounded-full; }
