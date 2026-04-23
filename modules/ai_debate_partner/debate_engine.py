@@ -10,9 +10,25 @@ Handles:
 
 import json as _json
 import logging
+import re
 from typing import AsyncGenerator
 
 import httpx
+
+_SMALL_TALK_RE = re.compile(
+    r"^\s*(hi+|hello+|hey+|howdy|sup|what'?s up|how are you|how r u|"
+    r"good morning|good afternoon|good evening|bonjour|salut|ça va|"
+    r"merci|thank(s| you)|bye|goodbye|ok+|okay|lol|haha|nice|cool|"
+    r"great|wow|yes|no|sure|who are you|what are you|are you (an )?ai)\b[!?.]*\s*$",
+    re.IGNORECASE,
+)
+
+def _skip_web_search(message: str, mode: str = "") -> bool:
+    """Return True when a web search would add nothing (small talk, greetings, very short messages, virtual mode)."""
+    if mode == "virtual":
+        return True
+    msg = message.strip()
+    return len(msg) < 25 or bool(_SMALL_TALK_RE.match(msg))
 
 from modules.doc_generation.llm import LLMEngine
 from modules.ai_debate_partner.prompts import build_system_prompt
@@ -20,7 +36,7 @@ from modules.ai_debate_partner.memory_store import MemoryStore
 
 log = logging.getLogger("debate.engine")
 
-VALID_MODES = {"debate", "explain", "coach", "auto"}
+VALID_MODES = {"debate", "explain", "coach", "auto", "virtual"}
 
 
 class DebateEngine:
@@ -89,7 +105,8 @@ class DebateEngine:
                 log.warning(f"RAG retrieval skipped: {e}")
 
         # Web search — runs for "web" (always) and "mix" (alongside RAG)
-        if not web_context and source in ("web", "mix"):
+        # Skip for small talk / very short messages where a search adds nothing
+        if not web_context and source in ("web", "mix") and not _skip_web_search(message, mode):
             try:
                 from modules.ai_debate_partner.web_search import search
                 web_context = await search(message, max_results=3)

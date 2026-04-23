@@ -3,13 +3,13 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
-import { Send, Loader2, Brain, Plus, Trash2, MessageSquare, Paperclip, FileText, X, ChevronDown, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Send, Loader2, Brain, Plus, Trash2, MessageSquare, Paperclip, FileText, X, ChevronDown, PanelLeftClose, PanelLeftOpen, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
 import Orb from "@/components/reactbits/Orb";
 import Galaxy from "@/components/reactbits/Galaxy";
 import TextType from "@/components/reactbits/TextType";
 const API = "http://127.0.0.1:8000";
 
-type Mode = "auto" | "debate" | "explain" | "coach";
+type Mode = "auto" | "debate" | "explain" | "coach" | "virtual";
 type Source = "web" | "doc" | "mix";
 type Lang = "en" | "fr";
 type Role = "user" | "assistant";
@@ -27,11 +27,13 @@ const MODE_META: Record<Mode, { label: string; active: string; desc: string }> =
   debate:  { label: "Debate",  active: "bg-primary/15 text-primary border-primary/30",                  desc: "Socratic questioning" },
   explain: { label: "Explain", active: "bg-blue-500/15 text-blue-400 border-blue-500/30",               desc: "Clear structured teaching" },
   coach:   { label: "Coach",   active: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",      desc: "Study plans & goals" },
+  virtual: { label: "Virtual", active: "bg-violet-500/15 text-violet-400 border-violet-500/30",         desc: "Face-to-face with Adam" },
 };
 
 function genId() { return `conv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`; }
 
 const SLASH_COMMANDS = [
+  { cmd: "/virtual",   icon: "👤", label: "/virtual",   desc: "Talk face-to-face with Adam" },
   { cmd: "/youtube",   icon: "▶",  label: "/youtube",   desc: "Search YouTube videos by views" },
   { cmd: "/wikipedia", icon: "📖", label: "/wikipedia",  desc: "Fetch Wikipedia article summary" },
   { cmd: "/animation", icon: "🎬", label: "/animation",  desc: "Generate educational Manim animation" },
@@ -257,9 +259,27 @@ export default function DebatePage() {
   const [modeOpen, setModeOpen] = useState(false);
   const [slashOpen, setSlashOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Voice
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  // Virtual mode
+  const [virtualOpen, setVirtualOpen] = useState(false);
+  const [virtualPhase, setVirtualPhase] = useState<"intro" | "idle" | "talking">("intro");
+  const [virtualMessages, setVirtualMessages] = useState<{ role: Role; content: string }[]>([]);
+  const [virtualInput, setVirtualInput] = useState("");
+  const [virtualLoading, setVirtualLoading] = useState(false);
+  const [virtualListening, setVirtualListening] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<any>(null);
+  const introVideoRef = useRef<HTMLVideoElement>(null);
+  const idleVideoRef = useRef<HTMLVideoElement>(null);
+  const talkingVideoRef = useRef<HTMLVideoElement>(null);
+  const virtualRecognitionRef = useRef<any>(null);
+  const sendVirtualMsgRef = useRef<(msg: string) => void>();
+  const pendingVirtualTranscript = useRef("");
 
   // Load conversation list on mount
   const loadConversations = useCallback(async () => {
@@ -277,6 +297,144 @@ export default function DebatePage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+      virtualRecognitionRef.current?.stop();
+      window.speechSynthesis?.cancel();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!virtualOpen) return;
+    if (virtualPhase === "idle") {
+      // Pause talking video and freeze idle video at frame 0 — just his face
+      talkingVideoRef.current?.pause();
+      if (idleVideoRef.current) {
+        idleVideoRef.current.currentTime = 0;
+        idleVideoRef.current.pause();
+      }
+    } else if (virtualPhase === "talking") {
+      // Loop talking video while Adam speaks
+      idleVideoRef.current?.pause();
+      talkingVideoRef.current?.play().catch(() => {});
+    }
+  }, [virtualPhase, virtualOpen]);
+
+  // ── Voice helpers ─────────────────────────────────────────────────────────
+
+  const startListening = useCallback(() => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) { toast({ title: "Voice not supported", description: "Please use Chrome or Edge.", variant: "destructive" }); return; }
+    if (isListening) { recognitionRef.current?.stop(); return; }
+    const rec = new SR();
+    rec.lang = lang === "fr" ? "fr-FR" : "en-US";
+    rec.interimResults = false;
+    rec.onstart = () => setIsListening(true);
+    rec.onresult = (e: any) => {
+      const transcript = Array.from(e.results as any[]).map((r: any) => r[0].transcript).join(" ");
+      setInput(transcript);
+    };
+    rec.onend = () => setIsListening(false);
+    rec.onerror = () => setIsListening(false);
+    recognitionRef.current = rec;
+    rec.start();
+  }, [isListening, lang, toast]);
+
+  const speakText = useCallback((text: string) => {
+    if (!voiceEnabled || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const clean = text.replace(/\*\*/g, "").replace(/\*/g, "").replace(/#+\s/g, "").replace(/\[.*?\]\(.*?\)/g, "");
+    const utt = new SpeechSynthesisUtterance(clean);
+    utt.lang = lang === "fr" ? "fr-FR" : "en-US";
+    utt.rate = 1.05;
+    utt.onstart = () => setIsSpeaking(true);
+    utt.onend = () => setIsSpeaking(false);
+    utt.onerror = () => setIsSpeaking(false);
+    window.speechSynthesis.speak(utt);
+  }, [voiceEnabled, lang]);
+
+  const stopSpeaking = useCallback(() => { window.speechSynthesis?.cancel(); setIsSpeaking(false); }, []);
+
+  // ── Virtual mode helpers ──────────────────────────────────────────────────
+
+  const speakVirtualText = (text: string) => {
+    if (!window.speechSynthesis) { setVirtualPhase("idle"); return; }
+    window.speechSynthesis.cancel();
+    const clean = text.replace(/\*\*/g, "").replace(/\*/g, "").replace(/#+\s/g, "");
+    const utt = new SpeechSynthesisUtterance(clean);
+    utt.lang = lang === "fr" ? "fr-FR" : "en-US";
+    utt.rate = 0.95;
+    utt.pitch = 0.85;
+    utt.onend = () => setVirtualPhase("idle");
+    utt.onerror = () => setVirtualPhase("idle");
+    setVirtualPhase("talking");
+    window.speechSynthesis.speak(utt);
+  };
+
+  const sendVirtualMsg = async (msg: string) => {
+    if (!msg.trim() || virtualLoading) return;
+    const convId = activeId || genId();
+    if (!activeId) setActiveId(convId);
+    setVirtualMessages(prev => [...prev, { role: "user", content: msg.trim() }]);
+    setVirtualInput("");
+    setVirtualLoading(true);
+    setVirtualPhase("talking");
+    try {
+      const fd = new FormData();
+      fd.append("message", msg.trim());
+      fd.append("mode", "virtual");
+      fd.append("source", "web");
+      fd.append("language", lang);
+      fd.append("conversation_id", `virtual_${convId}`);
+      const res = await fetch(`${API}/debate/chat`, { method: "POST", body: fd });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setVirtualMessages(prev => [...prev, { role: "assistant", content: data.reply }]);
+      speakVirtualText(data.reply);
+    } catch (e: any) {
+      toast({ title: "Connection error", description: e.message, variant: "destructive" });
+      setVirtualPhase("idle");
+    } finally {
+      setVirtualLoading(false);
+    }
+  };
+  sendVirtualMsgRef.current = sendVirtualMsg;
+
+  const startVirtualListening = () => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) { toast({ title: "Voice not supported", description: "Use Chrome or Edge", variant: "destructive" }); return; }
+    if (virtualListening) { virtualRecognitionRef.current?.stop(); return; }
+    const rec = new SR();
+    rec.lang = lang === "fr" ? "fr-FR" : "en-US";
+    rec.interimResults = false;
+    rec.onstart = () => setVirtualListening(true);
+    rec.onresult = (e: any) => {
+      const t = Array.from(e.results as any[]).map((r: any) => r[0].transcript).join(" ");
+      pendingVirtualTranscript.current = t;
+      setVirtualInput(t);
+    };
+    rec.onend = () => {
+      setVirtualListening(false);
+      const msg = pendingVirtualTranscript.current.trim();
+      pendingVirtualTranscript.current = "";
+      if (msg) sendVirtualMsgRef.current?.(msg);
+    };
+    rec.onerror = () => setVirtualListening(false);
+    virtualRecognitionRef.current = rec;
+    rec.start();
+  };
+
+  const closeVirtual = () => {
+    setVirtualOpen(false);
+    window.speechSynthesis?.cancel();
+    virtualRecognitionRef.current?.stop();
+    setVirtualPhase("intro");
+    setVirtualMessages([]);
+    setVirtualInput("");
+    setVirtualListening(false);
+  };
 
   // Load a conversation's history
   const openConversation = async (id: string) => {
@@ -372,6 +530,16 @@ export default function DebatePage() {
     const convId = activeId || genId();
     if (!activeId) setActiveId(convId);
 
+    // Handle /virtual — open immersive overlay without polluting main chat
+    if (msg.toLowerCase() === "/virtual") {
+      setInput("");
+      setSlashOpen(false);
+      setVirtualOpen(true);
+      setVirtualPhase("intro");
+      setVirtualMessages([]);
+      return;
+    }
+
     setMessages(prev => [...prev, { role: "user", content: msg }]);
     setInput("");
     setSuggestions([]);
@@ -418,7 +586,7 @@ export default function DebatePage() {
       const data = await res.json();
 
       setMessages(prev => [...prev, { role: "assistant", content: data.reply }]);
-      // Refresh sidebar
+      speakText(data.reply);
       loadConversations();
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
@@ -452,6 +620,97 @@ export default function DebatePage() {
   };
 
   return (
+    <>
+    {/* ── Virtual Mode Overlay ── */}
+    <AnimatePresence>
+      {virtualOpen && (
+        <motion.div
+          className="fixed inset-0 z-[9999] bg-black overflow-hidden"
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          {/* Videos — all preloaded, only the active one is visible */}
+          <video ref={introVideoRef} src="/aria sitting.mp4" autoPlay playsInline preload="auto"
+            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${virtualPhase === "intro" ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+            onEnded={() => {
+              setVirtualPhase("idle");
+              const greeting = "Hey, great to see you. What's on your mind?";
+              setVirtualMessages([{ role: "assistant", content: greeting }]);
+              speakVirtualText(greeting);
+            }}
+          />
+          <video ref={idleVideoRef} src="/aria asking me.mp4" playsInline muted preload="auto"
+            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${virtualPhase === "idle" ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+          />
+          <video ref={talkingVideoRef} src="/aria talking.mp4" loop playsInline muted preload="auto"
+            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${virtualPhase === "talking" ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+          />
+
+          {/* Bottom gradient */}
+          <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/90 via-black/50 to-transparent pointer-events-none" />
+
+          {/* Top bar */}
+          <div className="absolute top-0 inset-x-0 flex items-center justify-between px-6 py-5 z-10">
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full transition-colors ${
+                virtualPhase === "talking" ? "bg-green-400 animate-pulse" :
+                virtualListening ? "bg-red-400 animate-pulse" : "bg-white/40"
+              }`} />
+              <span className="text-white/80 text-sm font-medium tracking-wide">Adam</span>
+            </div>
+            <button onClick={closeVirtual}
+              className="rounded-full bg-black/40 border border-white/20 p-2 text-white hover:bg-black/60 transition-colors backdrop-blur">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Chat area */}
+          <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col" style={{ maxHeight: "45vh" }}>
+            <div className="flex-1 overflow-y-auto px-6 py-3 space-y-2">
+              <AnimatePresence initial={false}>
+                {virtualMessages.slice(-5).map((msg, i) => (
+                  <motion.div key={i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-xs sm:max-w-sm px-4 py-2.5 rounded-2xl text-sm leading-relaxed backdrop-blur-sm ${
+                      msg.role === "user"
+                        ? "bg-white/15 text-white border border-white/20 rounded-br-sm"
+                        : "bg-black/40 text-white/90 border border-white/10 rounded-bl-sm"
+                    }`}>{msg.content}</div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+              {virtualLoading && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-start">
+                  <div className="bg-black/40 border border-white/10 rounded-2xl rounded-bl-sm px-4 py-3 flex gap-1 items-center">
+                    {[0, 150, 300].map(d => (
+                      <span key={d} className="w-1.5 h-1.5 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: `${d}ms` }} />
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </div>
+            <div className="px-6 pb-8 pt-2">
+              <div className="flex items-center gap-3 bg-black/50 border border-white/15 rounded-full px-5 py-3 backdrop-blur-md">
+                <input type="text" value={virtualInput} onChange={e => setVirtualInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") sendVirtualMsgRef.current?.(virtualInput); }}
+                  placeholder="Say something to Adam…"
+                  className="flex-1 bg-transparent text-white placeholder:text-white/35 text-sm focus:outline-none" />
+                <button onClick={startVirtualListening} title={virtualListening ? "Stop" : "Speak"}
+                  className={`shrink-0 transition-colors ${virtualListening ? "text-red-400 animate-pulse" : "text-white/50 hover:text-white"}`}>
+                  {virtualListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                </button>
+                <button onClick={() => sendVirtualMsgRef.current?.(virtualInput)}
+                  disabled={virtualLoading || !virtualInput.trim()}
+                  className="shrink-0 text-white/50 hover:text-white transition-colors disabled:opacity-30">
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+
     <div className="flex h-[calc(100vh-56px)] bg-background overflow-hidden">
 
       {/* ── Sidebar ── */}
@@ -500,7 +759,7 @@ export default function DebatePage() {
             </button>
             <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
               <Brain className="w-3.5 h-3.5 text-primary" />
-              <span className="font-medium">Aria — EduAI</span>
+              <span className="font-medium">Adam — EduAI</span>
             </div>
           </div>
         </div>
@@ -540,6 +799,17 @@ export default function DebatePage() {
               ))}
             </div>
 
+            {/* Voice toggle */}
+            <button
+              onClick={() => { setVoiceEnabled(v => !v); if (isSpeaking) stopSpeaking(); }}
+              title={voiceEnabled ? "Disable voice responses" : "Enable voice responses"}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-all ${
+                voiceEnabled ? "bg-primary/15 text-primary border-primary/30" : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {voiceEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+            </button>
+
             {/* Source toggle */}
             {(["web", "doc", "mix"] as Source[]).map(s => (
               <button
@@ -575,7 +845,7 @@ export default function DebatePage() {
             <div className="flex flex-col items-center justify-center h-full text-center gap-4 text-muted-foreground relative z-10">
               <div className="max-w-md">
                 <TextType
-                  text="Hey there! I'm Aria, your AI learning partner at TEK-UP. What's on your mind?"
+                  text="Hey there! I'm Adam, your AI learning partner at EduAI. What's on your mind?"
                   typingSpeed={28}
                   loop={false}
                   showCursor={true}
@@ -599,7 +869,7 @@ export default function DebatePage() {
                 <div className={`max-w-2xl px-4 py-3 rounded-2xl text-sm leading-relaxed ${
                   msg.role === "user"
                     ? "bg-primary text-primary-foreground rounded-br-sm whitespace-pre-wrap"
-                    : "bg-card/80 backdrop-blur-sm rounded-bl-sm border border-primary/20"
+                    : "bg-card/80 backdrop-blur-sm rounded-bl-sm border border-primary/20 text-foreground"
                 }`}
                 style={msg.role === "assistant" ? {
                   boxShadow: "0 0 0 1px hsl(var(--primary)/0.15), 0 0 16px 2px hsl(var(--primary)/0.12)"
@@ -756,7 +1026,7 @@ export default function DebatePage() {
               <textarea
                 ref={inputRef}
                 rows={1}
-                className="w-full bg-transparent resize-none text-sm focus:outline-none placeholder:text-muted-foreground max-h-36 overflow-y-auto"
+                className="w-full bg-transparent resize-none text-sm text-foreground focus:outline-none placeholder:text-muted-foreground max-h-36 overflow-y-auto"
                 placeholder="Ask anything… or type / for commands"
                 value={input}
                 onChange={e => {
@@ -805,6 +1075,17 @@ export default function DebatePage() {
               )}
             </div>
 
+            {isSpeaking && (
+              <button onClick={stopSpeaking} title="Stop speaking"
+                className="shrink-0 text-primary animate-pulse hover:text-primary/70 transition-colors mb-0.5">
+                <VolumeX className="w-4 h-4" />
+              </button>
+            )}
+            <button onClick={startListening} title={isListening ? "Stop listening" : "Speak your message"}
+              className={`shrink-0 transition-colors mb-0.5 ${isListening ? "text-red-500 animate-pulse" : "text-muted-foreground hover:text-primary"}`}>
+              {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+            </button>
+
             <Button size="icon" onClick={send} disabled={loading || !input.trim()} className="shrink-0 rounded-xl h-8 w-8">
               <Send className="w-3.5 h-3.5" />
             </Button>
@@ -812,5 +1093,6 @@ export default function DebatePage() {
         </div>
       </div>
     </div>
+    </>
   );
 }

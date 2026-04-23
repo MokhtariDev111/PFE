@@ -36,7 +36,7 @@ const cards = [
   },
   {
     lucide: GitBranch,
-    title: "Aria — Your Learning Companion",
+    title: "Adam — Your Learning Companion",
     desc: "Practice argumentation and critical thinking with an AI opponent.",
     badge: null,
     route: "/aria",
