@@ -32,7 +32,8 @@ sys.path.insert(0, str(ROOT_DIR))
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, Response
+import httpx
 
 from modules.core.config_loader import CONFIG, get_paths, get_index_path
 from modules.ingestion.ingestion import ingest_directory
@@ -1403,6 +1404,41 @@ async def exam_generate_pdf(request: Request):
         log.warning(f"Could not save exam to disk: {e}")
 
     return result
+
+
+# ─── Virtual Adam — ElevenLabs TTS ──────────────────────────────────────────
+
+_ELEVENLABS_API_KEY  = os.getenv("ELEVENLABS_API_KEY", "")
+_ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
+
+
+@app.post("/virtual/speak")
+async def virtual_speak(text: str = Form(...)):
+    """
+    Generate ElevenLabs TTS audio for Adam's voice.
+    Returns audio/mpeg directly — play it in the browser.
+    """
+    if not _ELEVENLABS_API_KEY:
+        raise HTTPException(503, "ELEVENLABS_API_KEY not set in environment")
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            f"https://api.elevenlabs.io/v1/text-to-speech/{_ELEVENLABS_VOICE_ID}",
+            headers={
+                "xi-api-key": _ELEVENLABS_API_KEY,
+                "Content-Type": "application/json",
+                "Accept": "audio/mpeg",
+            },
+            json={
+                "text": text,
+                "model_id": "eleven_multilingual_v2",
+                "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+            },
+        )
+        if not resp.is_success:
+            raise HTTPException(502, f"ElevenLabs TTS failed: {resp.text}")
+
+    return Response(content=resp.content, media_type="audio/mpeg")
 
 
 if __name__ == "__main__":

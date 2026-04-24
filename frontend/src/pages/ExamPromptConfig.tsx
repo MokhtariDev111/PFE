@@ -830,12 +830,12 @@ export default function ExamPromptConfig() {
     setDoneSlots(prev => prev.filter(s => s.id !== id));
   };
 
-  const generateSlot = async (id: string) => {
-    const slot = slots.find(s => s.id === id);
+  const generateSlot = useCallback(async (id: string) => {
+    // Fall back to doneSlots so regenerate works even if left-panel slot was removed
+    const slot = slots.find(s => s.id === id) ?? doneSlots.find(s => s.id === id);
     if (!slot || !topic.trim()) return;
 
     updateSlot(id, { status: "loading" });
-    // Also update in doneSlots if already there
     setDoneSlots(prev => prev.map(s => s.id === id ? { ...s, status: "loading" } : s));
 
     try {
@@ -851,22 +851,20 @@ export default function ExamPromptConfig() {
       const result = await res.json();
 
       updateSlot(id, { status: "done", result });
-
       setDoneSlots(prev => {
-        const existing = prev.findIndex(s => s.id === id);
-        const updated  = { ...slot, status: "done" as SlotStatus, result };
-        if (existing >= 0) {
+        const idx = prev.findIndex(s => s.id === id);
+        if (idx >= 0) {
           const arr = [...prev];
-          arr[existing] = updated;
+          arr[idx] = { ...arr[idx], status: "done", result };
           return arr;
         }
-        return [...prev, updated];
+        return [...prev, { ...slot, status: "done", result }];
       });
-    } catch (e: any) {
+    } catch {
       updateSlot(id, { status: "error" });
       setDoneSlots(prev => prev.map(s => s.id === id ? { ...s, status: "error" } : s));
     }
-  };
+  }, [slots, doneSlots, topic, difficulty, language]);
 
   // ── Drag-and-drop (right panel) ───────────────────────────────────────────────
   const handleDragStart = (id: string) => setDragId(id);

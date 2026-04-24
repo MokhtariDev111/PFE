@@ -9,7 +9,7 @@ const options = [
     icon: FileText,
     title: "Generate from Document",
     desc: "Upload a PDF or text file and let AI build a structured presentation from your content.",
-    image: "/doc.png",
+    image: "/doc.webp",
     route: "/generate_from_doc",
     available: true,
     badge: null,

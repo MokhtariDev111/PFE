@@ -270,6 +270,11 @@ export default function DebatePage() {
   const [virtualInput, setVirtualInput] = useState("");
   const [virtualLoading, setVirtualLoading] = useState(false);
   const [virtualListening, setVirtualListening] = useState(false);
+  const [videoBlobs, setVideoBlobs] = useState<{ intro: string; idle: string; talking: string }>({
+    intro: "/aria_sitting_opt.mp4",
+    idle: "/aria_asking_opt.mp4",
+    talking: "/adam_opt.mp4",
+  });
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -278,6 +283,7 @@ export default function DebatePage() {
   const idleVideoRef = useRef<HTMLVideoElement>(null);
   const talkingVideoRef = useRef<HTMLVideoElement>(null);
   const virtualRecognitionRef = useRef<any>(null);
+  const virtualAudioRef = useRef<HTMLAudioElement | null>(null);
   const sendVirtualMsgRef = useRef<(msg: string) => void>();
   const pendingVirtualTranscript = useRef("");
 
@@ -298,10 +304,30 @@ export default function DebatePage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Preload all virtual videos as blob URLs the first time the overlay opens
+  useEffect(() => {
+    if (!virtualOpen) return;
+    const sources = [
+      { key: "intro",   src: "/aria_sitting_opt.mp4" },
+      { key: "idle",    src: "/aria_asking_opt.mp4" },
+      { key: "talking", src: "/adam_opt.mp4" },
+    ] as const;
+    sources.forEach(({ key, src }) => {
+      fetch(src)
+        .then(r => r.blob())
+        .then(blob => {
+          const url = URL.createObjectURL(blob);
+          setVideoBlobs(prev => ({ ...prev, [key]: url }));
+        })
+        .catch(() => {});
+    });
+  }, [virtualOpen]);
+
   useEffect(() => {
     return () => {
       recognitionRef.current?.stop();
       virtualRecognitionRef.current?.stop();
+      virtualAudioRef.current?.pause();
       window.speechSynthesis?.cancel();
     };
   }, []);
@@ -309,14 +335,12 @@ export default function DebatePage() {
   useEffect(() => {
     if (!virtualOpen) return;
     if (virtualPhase === "idle") {
-      // Pause talking video and freeze idle video at frame 0 — just his face
       talkingVideoRef.current?.pause();
       if (idleVideoRef.current) {
         idleVideoRef.current.currentTime = 0;
         idleVideoRef.current.pause();
       }
     } else if (virtualPhase === "talking") {
-      // Loop talking video while Adam speaks
       idleVideoRef.current?.pause();
       talkingVideoRef.current?.play().catch(() => {});
     }
@@ -359,18 +383,35 @@ export default function DebatePage() {
 
   // ── Virtual mode helpers ──────────────────────────────────────────────────
 
-  const speakVirtualText = (text: string) => {
-    if (!window.speechSynthesis) { setVirtualPhase("idle"); return; }
-    window.speechSynthesis.cancel();
+  const speakVirtualText = async (text: string) => {
+    virtualAudioRef.current?.pause();
     const clean = text.replace(/\*\*/g, "").replace(/\*/g, "").replace(/#+\s/g, "");
-    const utt = new SpeechSynthesisUtterance(clean);
-    utt.lang = lang === "fr" ? "fr-FR" : "en-US";
-    utt.rate = 0.95;
-    utt.pitch = 0.85;
-    utt.onend = () => setVirtualPhase("idle");
-    utt.onerror = () => setVirtualPhase("idle");
-    setVirtualPhase("talking");
-    window.speechSynthesis.speak(utt);
+    try {
+      const fd = new FormData();
+      fd.append("text", clean);
+      const res = await fetch(`${API}/virtual/speak`, { method: "POST", body: fd });
+      if (!res.ok) throw new Error("TTS failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      virtualAudioRef.current = audio;
+      setVirtualPhase("talking");
+      audio.onended = () => { setVirtualPhase("idle"); URL.revokeObjectURL(url); };
+      audio.onerror = () => { setVirtualPhase("idle"); URL.revokeObjectURL(url); };
+      await audio.play();
+    } catch {
+      // fallback to browser TTS
+      if (!window.speechSynthesis) { setVirtualPhase("idle"); return; }
+      window.speechSynthesis.cancel();
+      const utt = new SpeechSynthesisUtterance(clean);
+      utt.lang = lang === "fr" ? "fr-FR" : "en-US";
+      utt.rate = 0.95;
+      utt.pitch = 0.85;
+      utt.onend = () => setVirtualPhase("idle");
+      utt.onerror = () => setVirtualPhase("idle");
+      setVirtualPhase("talking");
+      window.speechSynthesis.speak(utt);
+    }
   };
 
   const sendVirtualMsg = async (msg: string) => {
@@ -382,17 +423,17 @@ export default function DebatePage() {
     setVirtualLoading(true);
     setVirtualPhase("talking");
     try {
-      const fd = new FormData();
-      fd.append("message", msg.trim());
-      fd.append("mode", "virtual");
-      fd.append("source", "web");
-      fd.append("language", lang);
-      fd.append("conversation_id", `virtual_${convId}`);
-      const res = await fetch(`${API}/debate/chat`, { method: "POST", body: fd });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setVirtualMessages(prev => [...prev, { role: "assistant", content: data.reply }]);
-      speakVirtualText(data.reply);
+      const chatFd = new FormData();
+      chatFd.append("message", msg.trim());
+      chatFd.append("mode", "virtual");
+      chatFd.append("source", "web");
+      chatFd.append("language", lang);
+      chatFd.append("conversation_id", `virtual_${convId}`);
+      const chatRes = await fetch(`${API}/debate/chat`, { method: "POST", body: chatFd });
+      if (!chatRes.ok) throw new Error(await chatRes.text());
+      const reply: string = (await chatRes.json()).reply;
+      setVirtualMessages(prev => [...prev, { role: "assistant", content: reply }]);
+      speakVirtualText(reply);
     } catch (e: any) {
       toast({ title: "Connection error", description: e.message, variant: "destructive" });
       setVirtualPhase("idle");
@@ -428,6 +469,8 @@ export default function DebatePage() {
 
   const closeVirtual = () => {
     setVirtualOpen(false);
+    virtualAudioRef.current?.pause();
+    virtualAudioRef.current = null;
     window.speechSynthesis?.cancel();
     virtualRecognitionRef.current?.stop();
     setVirtualPhase("intro");
@@ -630,7 +673,7 @@ export default function DebatePage() {
           transition={{ duration: 0.5 }}
         >
           {/* Videos — all preloaded, only the active one is visible */}
-          <video ref={introVideoRef} src="/aria sitting.mp4" autoPlay playsInline preload="auto"
+          <video ref={introVideoRef} src={videoBlobs.intro} autoPlay playsInline preload="auto"
             className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${virtualPhase === "intro" ? "opacity-100" : "opacity-0 pointer-events-none"}`}
             onEnded={() => {
               setVirtualPhase("idle");
@@ -639,10 +682,10 @@ export default function DebatePage() {
               speakVirtualText(greeting);
             }}
           />
-          <video ref={idleVideoRef} src="/aria asking me.mp4" playsInline muted preload="auto"
+          <video ref={idleVideoRef} src={videoBlobs.idle} playsInline muted preload="auto"
             className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${virtualPhase === "idle" ? "opacity-100" : "opacity-0 pointer-events-none"}`}
           />
-          <video ref={talkingVideoRef} src="/aria talking.mp4" loop playsInline muted preload="auto"
+          <video ref={talkingVideoRef} src={videoBlobs.talking} playsInline muted loop preload="auto"
             className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${virtualPhase === "talking" ? "opacity-100" : "opacity-0 pointer-events-none"}`}
           />
 

@@ -11,7 +11,7 @@ const cards = [
     lucide: FileText,
     title: "Exam Simulator",
     desc: "Generate and take AI-powered exams.",
-    badge: "UNDER DEVELOPMENT",
+    badge: null,
     route: "/exam",
     image: "/exam.jpg",
     available: true,
@@ -22,7 +22,7 @@ const cards = [
     desc: "Upload a PDF or text file and let AI build your presentation.",
     badge: null,
     route: "/generate/presentations",
-    image: "/presentations.png",
+    image: "/presentations.webp",
     available: true,
   },
   {
@@ -49,7 +49,7 @@ const cards = [
     desc: "Create a presentation from a simple text description in seconds.",
     badge: "NOT AVAILABLE",
     route: "/generate/prompt",
-    image: "/navigator.png",
+    image: "/navigator.webp",
     available: false,
   },
 ];

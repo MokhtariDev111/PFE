@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import WelcomeSplash from "./components/WelcomeSplash";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
@@ -6,22 +6,23 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Navbar } from "./components/Navbar";
-import LandingPage from "./pages/LandingPage";
-import CreationHub from "./pages/CreationHub";
-import Dashboard from "./pages/Dashboard.tsx";
-import GeneratePage from "./pages/GeneratePage.tsx";
-import PresentationsHub from "./pages/PresentationsHub";
-import HistoryPage from "./pages/HistoryPage.tsx";
-import NotFound from "./pages/NotFound.tsx";
-import { PromptPage } from "./pages/ComingSoon";
-import QuizPage from "./pages/QuizPage";
-import DebatePage from "./pages/DebatePage";
-import ExamSimulatorPage from "./pages/ExamSimulatorPage";
-import ExamPromptConfig from "./pages/ExamPromptConfig";
-import AboutUs from "./pages/AboutUs";
-import ContactUs from "./pages/ContactUs";
-import Login from "./pages/Login";
 import { ThemeProvider } from "./components/ThemeProvider";
+import LandingPage from "./pages/LandingPage";
+
+const CreationHub        = lazy(() => import("./pages/CreationHub"));
+const Dashboard          = lazy(() => import("./pages/Dashboard"));
+const GeneratePage       = lazy(() => import("./pages/GeneratePage"));
+const PresentationsHub   = lazy(() => import("./pages/PresentationsHub"));
+const HistoryPage        = lazy(() => import("./pages/HistoryPage"));
+const NotFound           = lazy(() => import("./pages/NotFound"));
+const QuizPage           = lazy(() => import("./pages/QuizPage"));
+const DebatePage         = lazy(() => import("./pages/DebatePage"));
+const ExamSimulatorPage  = lazy(() => import("./pages/ExamSimulatorPage"));
+const ExamPromptConfig   = lazy(() => import("./pages/ExamPromptConfig"));
+const AboutUs            = lazy(() => import("./pages/AboutUs"));
+const ContactUs          = lazy(() => import("./pages/ContactUs"));
+const Login              = lazy(() => import("./pages/Login"));
+const PromptPage         = lazy(() => import("./pages/ComingSoon").then(m => ({ default: m.PromptPage })));
 
 const queryClient = new QueryClient();
 
@@ -33,23 +34,25 @@ function AppShell() {
   return (
     <>
       {showNav && <Navbar />}
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/about" element={<AboutUs />} />
-        <Route path="/contact" element={<ContactUs />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/dashboard" element={<CreationHub />} />
-        <Route path="/stats" element={<Dashboard />} />
-        <Route path="/generate/presentations" element={<PresentationsHub />} />
-        <Route path="/generate_from_doc" element={<GeneratePage />} />
-        <Route path="/generate/prompt" element={<PromptPage />} />
-        <Route path="/generate/quiz" element={<div className="dark"><QuizPage /></div>} />
-        <Route path="/aria" element={<div className="dark"><DebatePage /></div>} />
-        <Route path="/exam" element={<ExamSimulatorPage />} />
-        <Route path="/exam/prompt" element={<ExamPromptConfig />} />
-        <Route path="/history" element={<HistoryPage />} />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
+      <Suspense fallback={<div className="min-h-screen bg-background" />}>
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/about" element={<AboutUs />} />
+          <Route path="/contact" element={<ContactUs />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/dashboard" element={<CreationHub />} />
+          <Route path="/stats" element={<Dashboard />} />
+          <Route path="/generate/presentations" element={<PresentationsHub />} />
+          <Route path="/generate_from_doc" element={<GeneratePage />} />
+          <Route path="/generate/prompt" element={<PromptPage />} />
+          <Route path="/generate/quiz" element={<div className="dark"><QuizPage /></div>} />
+          <Route path="/aria" element={<div className="dark"><DebatePage /></div>} />
+          <Route path="/exam" element={<ExamSimulatorPage />} />
+          <Route path="/exam/prompt" element={<ExamPromptConfig />} />
+          <Route path="/history" element={<HistoryPage />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </Suspense>
     </>
   );
 }
