@@ -1,14 +1,18 @@
 import { motion } from "framer-motion";
 import { GraduationCap, Lock, Mail, Sparkles, User } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { z } from "zod";
+import { GoogleLogin, GoogleOAuthProvider } from "@react-oauth/google";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { useToast } from "@/components/ui/use-toast";
+import { useAuth } from "@/context/AuthContext";
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 
 const loginSchema = z.object({
   email: z.string().trim().email({ message: "Please enter a valid email" }).max(255),
@@ -21,9 +25,21 @@ const signupSchema = z.object({
   password: z.string().min(8, { message: "Password must be at least 8 characters" }).max(128),
 });
 
-const Login = () => {
-  const { toast } = useToast();
+const LoginInner = () => {
+  const { toast }    = useToast();
+  const { login, signup, googleLogin } = useAuth();
+  const navigate     = useNavigate();
   const [submitting, setSubmitting] = useState(false);
+
+  const handleGoogleSuccess = async (response: { credential?: string }) => {
+    if (!response.credential) return;
+    try {
+      await googleLogin(response.credential);
+      navigate("/", { replace: true });
+    } catch (err) {
+      toast({ title: "Google sign-in failed", description: err instanceof Error ? err.message : "Try again", variant: "destructive" });
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -32,9 +48,14 @@ const Login = () => {
     const result = loginSchema.safeParse(data);
     if (!result.success) { toast({ title: "Invalid input", description: result.error.issues[0]?.message, variant: "destructive" }); return; }
     setSubmitting(true);
-    await new Promise((r) => setTimeout(r, 600));
-    setSubmitting(false);
-    toast({ title: "Almost there", description: "Hook this form up to your auth backend." });
+    try {
+      await login(data.email, data.password);
+      navigate("/", { replace: true });
+    } catch (err) {
+      toast({ title: "Sign in failed", description: err instanceof Error ? err.message : "Invalid email or password", variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -44,13 +65,18 @@ const Login = () => {
     const result = signupSchema.safeParse(data);
     if (!result.success) { toast({ title: "Invalid input", description: result.error.issues[0]?.message, variant: "destructive" }); return; }
     setSubmitting(true);
-    await new Promise((r) => setTimeout(r, 600));
-    setSubmitting(false);
-    toast({ title: "Account ready to wire up", description: "Hook this form up to your auth backend." });
+    try {
+      await signup(data.name, data.email, data.password);
+      navigate("/", { replace: true });
+    } catch (err) {
+      toast({ title: "Registration failed", description: err instanceof Error ? err.message : "Could not create account", variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-background">
+    <div className="relative min-h-screen overflow-hidden bg-background" >
       <div className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute -left-24 -top-24 h-96 w-96 rounded-full bg-brand-violet/20 blur-3xl" />
         <div className="absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-brand-rose/20 blur-3xl" />
@@ -80,9 +106,27 @@ const Login = () => {
               <TabsTrigger value="signup">Sign up</TabsTrigger>
             </TabsList>
 
+            {/* Google Sign-In */}
+            {GOOGLE_CLIENT_ID && GOOGLE_CLIENT_ID !== "your-google-client-id-here" && (
+              <div className="mt-6 flex flex-col items-center gap-3">
+                <div className="flex w-full items-center gap-3">
+                  <div className="h-px flex-1 bg-border" />
+                  <span className="text-xs uppercase tracking-wider text-muted-foreground">or continue with</span>
+                  <div className="h-px flex-1 bg-border" />
+                </div>
+                <GoogleLogin
+                  onSuccess={handleGoogleSuccess}
+                  onError={() => toast({ title: "Google sign-in failed", variant: "destructive" })}
+                  theme="outline"
+                  shape="pill"
+                  width="340"
+                />
+              </div>
+            )}
+
             <div className="my-6 flex items-center gap-3">
               <div className="h-px flex-1 bg-border" />
-              <span className="text-xs uppercase tracking-wider text-muted-foreground">or</span>
+              <span className="text-xs uppercase tracking-wider text-muted-foreground">or with email</span>
               <div className="h-px flex-1 bg-border" />
             </div>
 
@@ -140,6 +184,17 @@ const Login = () => {
         </motion.div>
       </main>
     </div>
+  );
+};
+
+const Login = () => {
+  const clientId = GOOGLE_CLIENT_ID && GOOGLE_CLIENT_ID !== "your-google-client-id-here"
+    ? GOOGLE_CLIENT_ID
+    : "placeholder";
+  return (
+    <GoogleOAuthProvider clientId={clientId}>
+      <LoginInner />
+    </GoogleOAuthProvider>
   );
 };
 

@@ -23,6 +23,10 @@ from pathlib import Path
 from datetime import datetime
 from collections import OrderedDict
 
+# Load .env FIRST — before any project module imports that read os.getenv at module level
+from dotenv import load_dotenv
+load_dotenv()
+
 from modules.doc_generation.pedagogical_engine import _build_slide_prompt
 from modules.doc_generation.image_pipeline import _build_image_registry, _extract_figure_refs_from_chunks, _assign_fallback_images
 
@@ -30,10 +34,53 @@ from modules.doc_generation.image_pipeline import _build_image_registry, _extrac
 ROOT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT_DIR))
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse, Response
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import httpx
+
+# ── Auth helpers ──────────────────────────────────────────────────────────────
+from modules.core.auth import hash_password, verify_password, create_token, decode_token, verify_google_token
+from modules.core.users_store import (
+    create_user, get_user_by_email, get_user_by_id, ensure_indexes,
+    create_or_get_google_user, list_users, delete_user,
+    ban_user, unban_user, get_admin_stats, save_contact, list_contacts,
+    save_contact_reply, update_profile,
+)
+
+_bearer = HTTPBearer(auto_error=False)
+
+async def get_current_user(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> dict:
+    """Require a valid JWT. Raises 401/403 if missing, invalid, or banned."""
+    if not creds:
+        raise HTTPException(401, "Not authenticated")
+    payload = decode_token(creds.credentials)
+    if not payload:
+        raise HTTPException(401, "Invalid or expired token")
+    user = await get_user_by_id(payload["sub"])
+    if not user:
+        raise HTTPException(401, "User not found")
+    if user.get("is_banned"):
+        raise HTTPException(403, "Your account has been suspended")
+    return user
+
+async def get_optional_user(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> dict:
+    """Return user dict if token valid, else anonymous fallback."""
+    if creds:
+        payload = decode_token(creds.credentials)
+        if payload:
+            user = await get_user_by_id(payload["sub"])
+            if user:
+                return user
+    return {"user_id": "anonymous", "name": "Guest", "email": ""}
+
+async def get_admin_user(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> dict:
+    """Require a valid JWT from an admin user."""
+    user = await get_current_user(creds)
+    if not user.get("is_admin"):
+        raise HTTPException(403, "Admin access required")
+    return user
 
 from modules.core.config_loader import CONFIG, get_paths, get_index_path
 from modules.ingestion.ingestion import ingest_directory
@@ -48,10 +95,8 @@ from modules.retrieval.context_manager import prepare_context_for_slides, extrac
 from modules.core.llm_cache import clear_cache, cache_stats
 from modules.retrieval.evaluation import RAGEvaluator
 from modules.core.health import full_health_check, quick_status
-from dotenv import load_dotenv
 import time
 
-load_dotenv()
 log = logging.getLogger("api")
 logging.basicConfig(level=logging.INFO)
 
@@ -116,6 +161,41 @@ def _files_hash_from_content(files_data: list[tuple[str, bytes]]) -> str:
     return h.hexdigest()
 
 
+# ── Persistent per-user presentation indexes ─────────────────────────────────
+_PRES_INDEX_DIR = ROOT_DIR / "data" / "generate_presentation" / "indexes"
+_PRES_INDEX_DIR.mkdir(parents=True, exist_ok=True)
+
+def _user_index_path(user_id: str, file_hash: str) -> Path:
+    """Stable on-disk FAISS path, isolated per user and content hash."""
+    p = _PRES_INDEX_DIR / user_id / file_hash
+    p.mkdir(parents=True, exist_ok=True)
+    return p / "faiss"
+
+def _save_index_meta(index_dir: Path, data: dict) -> None:
+    """Persist image/figure metadata alongside the FAISS index files."""
+    payload = {
+        "pdf_images":          data.get("pdf_images", {}),
+        "available_image_ids": data.get("available_image_ids", []),
+        "image_contexts":      data.get("image_contexts", {}),
+        "image_captions":      data.get("image_captions", {}),
+        "figure_ref_map":      data.get("figure_ref_map", {}),
+        "img_page_map":        data.get("img_page_map", {}),
+    }
+    with open(index_dir / "meta.json", "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False)
+
+def _load_index_meta(index_dir: Path) -> dict | None:
+    """Load persisted metadata; returns None if missing or corrupt."""
+    p = index_dir / "meta.json"
+    if not p.exists():
+        return None
+    try:
+        with open(p, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
 
 
 
@@ -128,7 +208,186 @@ async def startup_event():
     VectorDB()._load_model()
     if CONFIG.get("retrieval", {}).get("use_reranker", False):
         _load_reranker(CONFIG["retrieval"]["reranker_model"])
+    await ensure_indexes()
     log.info("✔ System Ready")
+
+
+# ── Auth endpoints ────────────────────────────────────────────────────────────
+
+@app.post("/auth/register")
+async def auth_register(
+    name:     str = Form(...),
+    email:    str = Form(...),
+    password: str = Form(...),
+):
+    if len(password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+    existing = await get_user_by_email(email)
+    if existing:
+        raise HTTPException(409, "An account with this email already exists")
+    user  = await create_user(name, email, hash_password(password))
+    token = create_token(user["user_id"], user["email"])
+    return {"token": token, "user": {"user_id": user["user_id"], "name": user["name"], "email": user["email"], "is_admin": user.get("is_admin", False), "avatar_url": user.get("avatar_url", "")}}
+
+
+@app.post("/auth/login")
+async def auth_login(
+    email:    str = Form(...),
+    password: str = Form(...),
+):
+    user = await get_user_by_email(email)
+    if not user or not verify_password(password, user["password_hash"]):
+        raise HTTPException(401, "Invalid email or password")
+    token = create_token(user["user_id"], user["email"])
+    return {"token": token, "user": {"user_id": user["user_id"], "name": user["name"], "email": user["email"], "is_admin": user.get("is_admin", False), "avatar_url": user.get("avatar_url", "")}}
+
+
+@app.get("/auth/me")
+async def auth_me(current_user: dict = Depends(get_current_user)):
+    return {
+        "user_id":    current_user["user_id"],
+        "name":       current_user["name"],
+        "email":      current_user["email"],
+        "is_admin":   current_user.get("is_admin", False),
+        "avatar_url": current_user.get("avatar_url", ""),
+    }
+
+
+@app.post("/auth/google")
+async def auth_google(credential: str = Form(...)):
+    """Verify a Google ID token, create/find user, return JWT."""
+    loop = asyncio.get_event_loop()
+    info = await loop.run_in_executor(None, verify_google_token, credential)
+    if not info:
+        raise HTTPException(401, "Invalid Google token")
+    email      = info.get("email", "")
+    name       = info.get("name", email.split("@")[0])
+    avatar_url = info.get("picture", "")
+    if not email:
+        raise HTTPException(400, "Google account has no email")
+    user  = await create_or_get_google_user(email=email, name=name, avatar_url=avatar_url)
+    token = create_token(user["user_id"], user["email"])
+    return {
+        "token": token,
+        "user": {
+            "user_id":   user["user_id"],
+            "name":      user["name"],
+            "email":     user["email"],
+            "is_admin":  user.get("is_admin", False),
+            "avatar_url": user.get("avatar_url", ""),
+        },
+    }
+
+
+@app.patch("/auth/profile")
+async def auth_update_profile(
+    name:       str = Form(""),
+    avatar_url: str = Form(""),
+    current_user: dict = Depends(get_current_user),
+):
+    """Update the logged-in user's name and/or avatar (base64 data URL)."""
+    if len(avatar_url) > 500_000:
+        raise HTTPException(400, "Avatar image too large (max ~375 KB)")
+    updated = await update_profile(current_user["user_id"], name=name, avatar_url=avatar_url)
+    if not updated:
+        raise HTTPException(404, "User not found")
+    return {
+        "user_id":    updated["user_id"],
+        "name":       updated["name"],
+        "email":      updated["email"],
+        "is_admin":   updated.get("is_admin", False),
+        "avatar_url": updated.get("avatar_url", ""),
+    }
+
+
+# ── Contact endpoint ──────────────────────────────────────────────────────────
+
+@app.post("/contact")
+async def contact_submit(
+    name:    str = Form(...),
+    email:   str = Form(...),
+    message: str = Form(...),
+):
+    if not name.strip() or not message.strip():
+        raise HTTPException(400, "Name and message are required")
+    if len(message) > 1000:
+        raise HTTPException(400, "Message too long")
+    await save_contact(name.strip(), email.strip(), message.strip())
+    return {"ok": True}
+
+
+# ── Admin endpoints ───────────────────────────────────────────────────────────
+
+@app.get("/admin/stats")
+async def admin_stats(_admin: dict = Depends(get_admin_user)):
+    return await get_admin_stats()
+
+
+@app.get("/admin/users")
+async def admin_list_users(_admin: dict = Depends(get_admin_user)):
+    users = await list_users()
+    # Serialize datetime fields
+    for u in users:
+        if "created_at" in u and hasattr(u["created_at"], "isoformat"):
+            u["created_at"] = u["created_at"].isoformat()
+    return users
+
+
+@app.delete("/admin/users/{user_id}")
+async def admin_delete_user(user_id: str, admin: dict = Depends(get_admin_user)):
+    if user_id == admin["user_id"]:
+        raise HTTPException(400, "Cannot delete your own account")
+    deleted = await delete_user(user_id)
+    if not deleted:
+        raise HTTPException(404, "User not found")
+    return {"ok": True}
+
+
+@app.patch("/admin/users/{user_id}/ban")
+async def admin_ban_user(
+    user_id: str,
+    reason: str = Form(""),
+    admin: dict = Depends(get_admin_user),
+):
+    if user_id == admin["user_id"]:
+        raise HTTPException(400, "Cannot ban your own account")
+    ok = await ban_user(user_id, reason)
+    if not ok:
+        raise HTTPException(404, "User not found")
+    return {"ok": True}
+
+
+@app.patch("/admin/users/{user_id}/unban")
+async def admin_unban_user(user_id: str, _admin: dict = Depends(get_admin_user)):
+    ok = await unban_user(user_id)
+    if not ok:
+        raise HTTPException(404, "User not found")
+    return {"ok": True}
+
+
+@app.get("/admin/contacts")
+async def admin_list_contacts(_admin: dict = Depends(get_admin_user)):
+    contacts = await list_contacts()
+    for c in contacts:
+        if "created_at" in c and hasattr(c["created_at"], "isoformat"):
+            c["created_at"] = c["created_at"].isoformat()
+        if "replied_at" in c and hasattr(c["replied_at"], "isoformat"):
+            c["replied_at"] = c["replied_at"].isoformat()
+    return contacts
+
+
+@app.post("/admin/contacts/{contact_id}/reply")
+async def admin_reply_contact(
+    contact_id: str,
+    reply_text: str = Form(...),
+    _admin: dict = Depends(get_admin_user),
+):
+    if not reply_text.strip():
+        raise HTTPException(400, "Reply text cannot be empty")
+    ok = await save_contact_reply(contact_id, reply_text)
+    if not ok:
+        raise HTTPException(404, "Message not found")
+    return {"ok": True}
 
 
 @app.on_event("shutdown")
@@ -169,6 +428,7 @@ async def generate_stream(
     use_pdf_images: bool = Form(True),
     use_batch_mode: bool = Form(True),
     namespace: str = Form("generate_presentation"),
+    current_user: dict = Depends(get_optional_user),
 ):
     async def _stream():
         session_id = str(uuid.uuid4())
@@ -206,23 +466,45 @@ async def generate_stream(
                         if p.is_file():
                             files_data.append((p.name, p.read_bytes()))
 
-            # 2. Compute hash from content (BEFORE writing to disk)
-            file_hash = _files_hash_from_content(files_data) if files_data else "empty"
-            cached = _index_cache.get(file_hash)
+            # 2. Compute hash; derive per-user persistent index path
+            file_hash      = _files_hash_from_content(files_data) if files_data else "empty"
+            user_id        = current_user["user_id"]
+            cache_key      = f"{user_id}:{file_hash}"
+            isolated_index = _user_index_path(user_id, file_hash)
+            cached         = _index_cache.get(cache_key)
 
             if cached:
-                print(f"♻️ CACHE HIT: Using cached index (hash: {file_hash[:12]}...)", flush=True)
-                chunks = cached["chunks"]
-                isolated_index = Path(cached["index_path"])
-                pdf_images = cached.get("pdf_images", {})
+                print(f"♻️ CACHE HIT (RAM): {cache_key[:24]}...", flush=True)
+                chunks              = cached["chunks"]
+                pdf_images          = cached.get("pdf_images", {})
                 available_image_ids = cached.get("available_image_ids", [])
-                image_contexts = cached.get("image_contexts", {})
-                image_captions = cached.get("image_captions", {})
-                figure_ref_map = cached.get("figure_ref_map", {})
-                img_page_map = cached.get("img_page_map", {})
+                image_contexts      = cached.get("image_contexts", {})
+                image_captions      = cached.get("image_captions", {})
+                figure_ref_map      = cached.get("figure_ref_map", {})
+                img_page_map        = cached.get("img_page_map", {})
                 yield _emit("status", {"step": "indexing", "message": "Using cached index…"})
+
+            elif (_load_index_meta(isolated_index.parent) is not None
+                  and isolated_index.with_suffix(".index").exists()):
+                # Disk cache hit — restore without re-processing documents
+                print(f"♻️ CACHE HIT (disk): {cache_key[:24]}...", flush=True)
+                disk_meta = _load_index_meta(isolated_index.parent)
+                from modules.ingestion.text_processing import TextChunk as _TC
+                with open(isolated_index.with_suffix(".json"), encoding="utf-8") as _f:
+                    chunks = [_TC(**d) for d in json.load(_f)]
+                pdf_images          = disk_meta["pdf_images"]
+                available_image_ids = disk_meta["available_image_ids"]
+                image_contexts      = disk_meta["image_contexts"]
+                image_captions      = disk_meta["image_captions"]
+                figure_ref_map      = disk_meta["figure_ref_map"]
+                img_page_map        = disk_meta["img_page_map"]
+                _index_cache[cache_key] = {
+                    "index_path": str(isolated_index), "chunks": chunks, **disk_meta,
+                }
+                yield _emit("status", {"step": "indexing", "message": "Using saved index…"})
+
             else:
-                print(f"🆕 CACHE MISS: Building new index (hash: {file_hash[:12]}...)", flush=True)
+                print(f"🆕 CACHE MISS: Building new index ({cache_key[:24]}...)", flush=True)
                 
                 # Write files to disk ONLY on cache miss
                 for filename, content in files_data:
@@ -261,20 +543,20 @@ async def generate_stream(
                 else:
                     pdf_images, available_image_ids, image_contexts, image_captions, figure_ref_map, img_page_map = {}, [], {}, {}, {}, {}
                 
-                isolated_index = tmp_dir / "faiss"
                 build_vector_db(chunks, index_path=isolated_index)
-                
-                _index_cache[file_hash] = {
-                    "index_path": str(isolated_index),
-                    "chunks": chunks,
-                    "pdf_images": pdf_images,
+                entry = {
+                    "index_path":          str(isolated_index),
+                    "chunks":              chunks,
+                    "pdf_images":          pdf_images,
                     "available_image_ids": available_image_ids,
-                    "image_contexts": image_contexts,
-                    "image_captions": image_captions,
-                    "figure_ref_map": figure_ref_map,
-                    "img_page_map": img_page_map,
+                    "image_contexts":      image_contexts,
+                    "image_captions":      image_captions,
+                    "figure_ref_map":      figure_ref_map,
+                    "img_page_map":        img_page_map,
                 }
-                print(f"💾 Cached index for future requests", flush=True)
+                _index_cache[cache_key] = entry
+                _save_index_meta(isolated_index.parent, entry)
+                print(f"💾 Index persisted to disk: {isolated_index.parent}", flush=True)
                 yield _emit("status", {"step": "indexing", "message": "Index built successfully…"})
 
             # 3. Retrieve
@@ -1087,6 +1369,7 @@ async def debate_chat(
     history: str = Form("[]"),
     conversation_id: str = Form(""),
     language: str = Form("en"),
+    current_user: dict = Depends(get_optional_user),
 ):
     from modules.ai_debate_partner import DebateEngine
     import json as _json
@@ -1100,6 +1383,7 @@ async def debate_chat(
         history=history_list if not conversation_id else None,
         conversation_id=conversation_id,
         language=language,
+        user_id=current_user["user_id"],
     )
     return {"reply": reply, "mode": mode}
 
@@ -1112,6 +1396,7 @@ async def debate_chat_stream(
     history: str = Form("[]"),
     conversation_id: str = Form(""),
     language: str = Form("en"),
+    current_user: dict = Depends(get_optional_user),
 ):
     from modules.ai_debate_partner import DebateEngine
     from fastapi.responses import StreamingResponse
@@ -1127,6 +1412,7 @@ async def debate_chat_stream(
             history=history_list if not conversation_id else None,
             conversation_id=conversation_id,
             language=language,
+            user_id=current_user["user_id"],
         ):
             yield f"data: {_json.dumps({'chunk': chunk})}\n\n"
         yield "data: [DONE]\n\n"
@@ -1134,12 +1420,10 @@ async def debate_chat_stream(
 
 
 @app.get("/debate/conversations")
-async def debate_list_conversations():
-    """List all saved conversations."""
+async def debate_list_conversations(current_user: dict = Depends(get_optional_user)):
     from modules.ai_debate_partner.memory_store import MemoryStore
     store = MemoryStore()
-    convos = store.list_conversations()
-    # Convert datetime to string for JSON serialization
+    convos = await store.list_conversations(user_id=current_user["user_id"])
     for c in convos:
         for k in ("updated_at", "created_at"):
             if k in c and hasattr(c[k], "isoformat"):
@@ -1149,35 +1433,24 @@ async def debate_list_conversations():
 
 @app.get("/debate/conversations/{conversation_id}")
 async def debate_get_conversation(conversation_id: str):
-    """Get full history of a conversation."""
     from modules.ai_debate_partner.memory_store import MemoryStore
     store = MemoryStore()
-    history = store.get_history(conversation_id)
+    history = await store.get_history(conversation_id)
     return {"conversation_id": conversation_id, "history": history}
 
 
 @app.delete("/debate/conversations/{conversation_id}")
 async def debate_delete_conversation(conversation_id: str):
     from modules.ai_debate_partner.memory_store import MemoryStore
-    MemoryStore().delete_conversation(conversation_id)
+    await MemoryStore().delete_conversation(conversation_id)
     return {"status": "deleted"}
 
 
 @app.delete("/debate/conversations")
-async def debate_clear_all_conversations():
-    """Delete all conversations from MongoDB."""
+async def debate_clear_all_conversations(current_user: dict = Depends(get_optional_user)):
     from modules.ai_debate_partner.memory_store import MemoryStore
-    from modules.ai_debate_partner.rag_retriever import DEBATE_INDEX_DIR
-    import shutil
-    store = MemoryStore()
-    convos = store.list_conversations()
-    for c in convos:
-        store.delete_conversation(c["conversation_id"])
-    # Also wipe all debate indexes
-    if DEBATE_INDEX_DIR.exists():
-        shutil.rmtree(DEBATE_INDEX_DIR)
-        DEBATE_INDEX_DIR.mkdir(parents=True, exist_ok=True)
-    return {"status": "cleared", "deleted": len(convos)}
+    await MemoryStore().delete_all_conversations(user_id=current_user["user_id"])
+    return {"status": "cleared"}
 
 
 @app.get("/debate/profile")

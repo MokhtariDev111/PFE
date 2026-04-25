@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv311/Scripts/pip show *)"
+    ]
+  }
+}

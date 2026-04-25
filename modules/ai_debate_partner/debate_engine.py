@@ -88,7 +88,7 @@ class DebateEngine:
 
         # Load history from DB if conversation_id given and no history passed
         if conversation_id and not history:
-            history = self.memory.get_history(conversation_id)
+            history = await self.memory.get_history(conversation_id)
         history = history or []
 
         # Build memory context from profile if not provided
@@ -195,11 +195,8 @@ class DebateEngine:
         rag_context: str = "",
         web_context: str = "",
         language: str = "en",       # "en" | "fr"
+        user_id: str = "anonymous",
     ) -> str:
-        """
-        Generate a single (non-streaming) response.
-        If conversation_id is provided, loads history from MongoDB and saves the exchange.
-        """
         mode, full_prompt = await self._prepare_prompt(
             message, mode, source, history, conversation_id,
             memory_context, rag_context, web_context, language,
@@ -210,10 +207,9 @@ class DebateEngine:
 
         reply = (await self._call_llm_plain(full_prompt)).strip()
 
-        # Persist to MongoDB
         if conversation_id:
-            self.memory.append_message(conversation_id, role="user",      content=message, mode=mode)
-            self.memory.append_message(conversation_id, role="assistant",  content=reply,   mode=mode)
+            await self.memory.append_message(conversation_id, role="user",      content=message, mode=mode, user_id=user_id)
+            await self.memory.append_message(conversation_id, role="assistant",  content=reply,   mode=mode, user_id=user_id)
 
         return reply
 
@@ -221,18 +217,15 @@ class DebateEngine:
         self,
         message: str,
         mode: str = "auto",
-        source: str = "mix",        # "web" | "doc" | "mix"
+        source: str = "mix",
         history: list[dict] = None,
         conversation_id: str = "",
         memory_context: str = "",
         rag_context: str = "",
         web_context: str = "",
-        language: str = "en",       # "en" | "fr"
+        language: str = "en",
+        user_id: str = "anonymous",
     ) -> AsyncGenerator[str, None]:
-        """
-        Stream the response token-by-token.
-        Persists the full reply to MongoDB after the stream completes.
-        """
         mode, full_prompt = await self._prepare_prompt(
             message, mode, source, history, conversation_id,
             memory_context, rag_context, web_context, language,
@@ -242,18 +235,15 @@ class DebateEngine:
             yield "Use the /animation command from the Aria chat interface to generate a Manim animation."
             return
 
-        streamer = self._stream_groq(full_prompt)
-
         buffer: list[str] = []
-        async for token in streamer:
+        async for token in self._stream_groq(full_prompt):
             buffer.append(token)
             yield token
 
-        # Persist full assembled reply after stream ends
         if conversation_id and buffer:
             reply = "".join(buffer).strip()
-            self.memory.append_message(conversation_id, role="user",      content=message, mode=mode)
-            self.memory.append_message(conversation_id, role="assistant",  content=reply,   mode=mode)
+            await self.memory.append_message(conversation_id, role="user",      content=message, mode=mode, user_id=user_id)
+            await self.memory.append_message(conversation_id, role="assistant",  content=reply,   mode=mode, user_id=user_id)
 
     def _build_prompt(self, system_prompt: str, history: list[dict], new_message: str) -> str:
         """

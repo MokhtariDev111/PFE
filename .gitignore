@@ -42,3 +42,19 @@ models/
 
 # ── Environment variables ────────────────────────────────────
 .env
+.env.*
+!.env.example
+frontend/.env*
+!frontend/.env.example
+
+# ── OAuth / API secrets ──────────────────────────────────────
+client_secret_*.json
+*service_account*.json
+*.pem
+*.p12
+*.pfx
+
+# ── Secrets & credentials ────────────────────────────────────
+secrets/
+credentials/
+*.key

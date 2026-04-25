@@ -1,4 +1,4 @@
-import { useEffect, useState, lazy, Suspense } from "react";
+import { useState, lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import WelcomeSplash from "./components/WelcomeSplash";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
@@ -7,7 +7,13 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Navbar } from "./components/Navbar";
 import { ThemeProvider } from "./components/ThemeProvider";
+import { AuthProvider } from "./context/AuthContext";
+import { ProtectedRoute, AdminRoute } from "./components/ProtectedRoute";
+import { LoginWelcome } from "./components/LoginWelcome";
 import LandingPage from "./pages/LandingPage";
+
+const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
+const ProfilePage    = lazy(() => import("./pages/ProfilePage"));
 
 const CreationHub        = lazy(() => import("./pages/CreationHub"));
 const Dashboard          = lazy(() => import("./pages/Dashboard"));
@@ -33,23 +39,29 @@ function AppShell() {
   const showNav = !LANDING_PATHS.has(location.pathname);
   return (
     <>
+      <LoginWelcome />
       {showNav && <Navbar />}
       <Suspense fallback={<div className="min-h-screen bg-background" />}>
         <Routes>
+          {/* Public routes */}
           <Route path="/" element={<LandingPage />} />
           <Route path="/about" element={<AboutUs />} />
           <Route path="/contact" element={<ContactUs />} />
           <Route path="/login" element={<Login />} />
-          <Route path="/dashboard" element={<CreationHub />} />
-          <Route path="/stats" element={<Dashboard />} />
-          <Route path="/generate/presentations" element={<PresentationsHub />} />
-          <Route path="/generate_from_doc" element={<GeneratePage />} />
-          <Route path="/generate/prompt" element={<PromptPage />} />
-          <Route path="/generate/quiz" element={<div className="dark"><QuizPage /></div>} />
-          <Route path="/aria" element={<div className="dark"><DebatePage /></div>} />
-          <Route path="/exam" element={<ExamSimulatorPage />} />
-          <Route path="/exam/prompt" element={<ExamPromptConfig />} />
-          <Route path="/history" element={<HistoryPage />} />
+
+          {/* Protected routes */}
+          <Route path="/dashboard"              element={<ProtectedRoute><CreationHub /></ProtectedRoute>} />
+          <Route path="/stats"                  element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/generate/presentations" element={<ProtectedRoute><PresentationsHub /></ProtectedRoute>} />
+          <Route path="/generate_from_doc"      element={<ProtectedRoute><GeneratePage /></ProtectedRoute>} />
+          <Route path="/generate/prompt"        element={<ProtectedRoute><PromptPage /></ProtectedRoute>} />
+          <Route path="/generate/quiz"          element={<ProtectedRoute><div className="dark"><QuizPage /></div></ProtectedRoute>} />
+          <Route path="/aria"                   element={<ProtectedRoute><div className="dark"><DebatePage /></div></ProtectedRoute>} />
+          <Route path="/exam"                   element={<ProtectedRoute><ExamSimulatorPage /></ProtectedRoute>} />
+          <Route path="/exam/prompt"            element={<ProtectedRoute><ExamPromptConfig /></ProtectedRoute>} />
+          <Route path="/history"                element={<ProtectedRoute><HistoryPage /></ProtectedRoute>} />
+          <Route path="/admin"                  element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+          <Route path="/profile"               element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Suspense>
@@ -58,29 +70,22 @@ function AppShell() {
 }
 
 const App = () => {
-  const [splashDone, setSplashDone] = useState(false);
-
-  useEffect(() => {
-    const navEntries = performance.getEntriesByType("navigation");
-    if (navEntries.length > 0 && (navEntries[0] as PerformanceNavigationTiming).type === "reload") {
-      if (window.location.pathname !== "/") {
-        window.location.replace("/");
-      }
-    }
-  }, []);
+  const [splashDone, setSplashDone] = useState(true);
 
   return (
     <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
-      {!splashDone && <WelcomeSplash onDone={() => setSplashDone(true)} />}
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <AppShell />
-          </BrowserRouter>
-        </TooltipProvider>
-      </QueryClientProvider>
+      <AuthProvider>
+        {!splashDone && <WelcomeSplash onDone={() => setSplashDone(true)} />}
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <AppShell />
+            </BrowserRouter>
+          </TooltipProvider>
+        </QueryClientProvider>
+      </AuthProvider>
     </ThemeProvider>
   );
 };

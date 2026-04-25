@@ -36,10 +36,21 @@ const ContactUs = () => {
       return;
     }
     setSubmitting(true);
-    await new Promise((r) => setTimeout(r, 700));
-    setSubmitting(false);
-    toast({ title: "Message sent", description: "Thanks! We'll get back to you within 24 hours." });
-    (e.target as HTMLFormElement).reset();
+    try {
+      const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? `${window.location.protocol}//${window.location.hostname}:8000`;
+      const form = new FormData();
+      form.append("name", data.name);
+      form.append("email", data.email);
+      form.append("message", data.message);
+      const res = await fetch(`${BASE_URL}/contact`, { method: "POST", body: form });
+      if (!res.ok) throw new Error("Failed to send");
+      toast({ title: "Message sent", description: "Thanks! We'll get back to you within 24 hours." });
+      (e.target as HTMLFormElement).reset();
+    } catch {
+      toast({ title: "Failed to send", description: "Please try again later.", variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
