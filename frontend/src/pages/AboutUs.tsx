@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles } from "lucide-react";
+import { Linkedin, Mail, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Navbar } from "@/components/landing/Navbar";
 import { Footer } from "@/components/landing/Footer";
@@ -85,6 +85,42 @@ const AboutUs = () => {
           </motion.div>
         </section>
       </main>
+
+      {/* Contact strip */}
+      <section className="border-t border-border/50 bg-muted/30 py-16">
+        <div className="container max-w-3xl text-center">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+          >
+            <h2 className="text-2xl font-semibold tracking-tight">Contact</h2>
+            <p className="mt-2 text-sm text-muted-foreground">Reach out — we'd love to hear from you.</p>
+
+            <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
+              <div className="flex items-center gap-2.5 rounded-2xl border border-border/70 bg-card px-6 py-4 text-sm font-medium shadow-sm">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-violet/10">
+                  <Mail className="h-4 w-4 text-brand-violet" />
+                </span>
+                eduai.nextgen.assistant@gmail.com
+              </div>
+
+              <a
+                href="https://www.linkedin.com/in/mohamed-aziz-mokhtari-469777365"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2.5 rounded-2xl border border-border/70 bg-card px-6 py-4 text-sm font-medium shadow-sm transition-all hover:border-[#0A66C2]/50 hover:shadow-md hover:shadow-[#0A66C2]/10"
+              >
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#0A66C2]/10">
+                  <Linkedin className="h-4 w-4 text-[#0A66C2]" />
+                </span>
+                Mohamed Aziz Mokhtari
+              </a>
+            </div>
+          </motion.div>
+        </div>
+      </section>
 
       <Footer />
     </div>

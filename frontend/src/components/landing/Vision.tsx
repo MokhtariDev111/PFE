@@ -17,27 +17,45 @@ function useUserCount() {
 function AnimatedStat({ stat, delay }: { stat: typeof stats[0]; delay: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const numRef = useRef<HTMLSpanElement>(null);
+  const hasAnimated = useRef(false);
+
+  const runAnimation = () => {
+    if (!numRef.current || stat.value === 0) return;
+    const el = numRef.current;
+    const controls = animate(0, stat.value, {
+      duration: 2,
+      ease: "easeOut",
+      delay,
+      onUpdate: (v) => {
+        if (stat.value >= 1000) {
+          el.textContent = Math.round(v).toLocaleString() + "+";
+        } else if (stat.suffix === "%") {
+          el.textContent = Math.round(v) + "%";
+        } else {
+          el.textContent = String(Math.round(v));
+        }
+      },
+    });
+    return controls.stop;
+  };
+
+  // Re-run animation whenever the value arrives (e.g. after API fetch)
+  useEffect(() => {
+    if (stat.value === 0) return;
+    hasAnimated.current = true;
+    const stop = runAnimation();
+    return () => stop?.();
+  }, [stat.value]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(([entry]) => {
-      if (!entry.isIntersecting || !numRef.current) return;
-      const el = numRef.current;
-      const controls = animate(0, stat.value, {
-        duration: 2,
-        ease: "easeOut",
-        delay,
-        onUpdate: (v) => {
-          if (stat.value >= 1000) {
-            el.textContent = Math.round(v).toLocaleString() + "+";
-          } else if (stat.suffix === "%") {
-            el.textContent = Math.round(v) + "%";
-          } else {
-            el.textContent = String(Math.round(v));
-          }
-        },
-      });
-      observer.disconnect();
-      return controls.stop;
+      if (!entry.isIntersecting) return;
+      if (!hasAnimated.current) {
+        const stop = runAnimation();
+        if (stop) observer.disconnect();
+      } else {
+        observer.disconnect();
+      }
     }, { threshold: 0.5 });
     if (ref.current) observer.observe(ref.current);
     return () => observer.disconnect();

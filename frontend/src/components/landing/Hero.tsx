@@ -116,7 +116,7 @@ export const Hero = () => {
   const rotateY = useSpring(useTransform(mouseX, [-400, 400], [-2, 2]), { stiffness: 80, damping: 30 });
 
   const statItems = [
-    { value: formatCount(userCount), label: "Students" },
+    { value: formatCount(userCount), label: "Users" },
     { value: "4", label: "AI Tools" },
     { value: "99%", label: "Satisfaction" },
   ];

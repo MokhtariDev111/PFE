@@ -51,7 +51,8 @@ def record_presentation(
     theme_name: str,
     model: str,
     slides: list = None,
-    session_id: str = None
+    session_id: str = None,
+    user_id: str = "anonymous",
 ):
     """Append a presentation record to the history file."""
     p = Path(html_path) if html_path else None
@@ -65,6 +66,7 @@ def record_presentation(
         "model":      model,
         "html_path":  str(p) if p else "",
         "slides":     slides or [],
+        "user_id":    user_id,
     }
     with _history_lock:
         records = _load()
@@ -74,10 +76,13 @@ def record_presentation(
     return entry
 
 
-def load_history() -> list[dict]:
-    """Return all past presentation records, newest first."""
+def load_history(user_id: str | None = None) -> list[dict]:
+    """Return presentation records newest first, optionally filtered by user_id."""
     with _history_lock:
-        return _load()
+        records = _load()
+    if user_id:
+        records = [r for r in records if r.get("user_id", "anonymous") == user_id]
+    return records
 
 
 def clear_history():

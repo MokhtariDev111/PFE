@@ -966,7 +966,7 @@ async def generate_stream(
                 "theme": theme,
                 "section_outline": final_outline,
             }
-            record_presentation(html_path, prompt, prompt[:50], len(slides_obj), theme, model or llm.backend, session_id=session_id)
+            record_presentation(html_path, prompt, prompt[:50], len(slides_obj), theme, model or llm.backend, session_id=session_id, user_id=user_id)
 
             elapsed = time.time() - start_time
             print(f"\n✨ DONE in {elapsed:.1f}s ({len(slides_obj)} slides, {len(diag_map)} diagrams, {len(render_images)} images)\n", flush=True)
@@ -984,6 +984,7 @@ async def generate_stream(
         except Exception as e:
             log.exception("Pipeline error: %s", e)
             yield _emit("error", {"detail": str(e)})
+            yield _emit("done", {})
 
     return StreamingResponse(_stream(), media_type="text/event-stream")
 
@@ -1032,8 +1033,8 @@ async def reorder_presentation(session_id: str, body: dict):
 
 
 @app.get("/history")
-async def get_history():
-    data = load_history()
+async def get_history(current_user: dict = Depends(get_optional_user)):
+    data = load_history(user_id=current_user["user_id"])
     for item in data:
         if "id" in item and "html_url" not in item:
             item["html_url"] = f"/view/{item['id']}"
@@ -1114,8 +1115,14 @@ def _write_stats(data: dict):
 
 @app.get("/stats")
 async def get_stats():
-    """Return platform statistics."""
-    return _read_stats()
+    """Return platform statistics with live user count from MongoDB."""
+    from modules.core.users_store import get_db
+    try:
+        db = get_db()
+        user_count = await db.users.count_documents({})
+    except Exception:
+        user_count = _read_stats().get("user_count", 0)
+    return {"user_count": user_count}
 
 @app.post("/stats/register-user")
 async def register_user():
@@ -1143,16 +1150,19 @@ async def quiz_concepts(
 
 
 @app.get("/quiz/history")
-async def quiz_history():
-    """Return list of saved quiz JSON files from outputs/quiz_exports/."""
+async def quiz_history(current_user: dict = Depends(get_optional_user)):
+    """Return list of saved quiz JSON files for the current user."""
     exports_dir = ROOT_DIR / "outputs" / "quiz_exports"
     if not exports_dir.exists():
         return {"quizzes": []}
+    uid = current_user["user_id"]
     quizzes = []
     for f in sorted(exports_dir.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
         try:
             with open(f, encoding="utf-8") as fp:
                 data = json.load(fp)
+            if data.get("user_id", "anonymous") != uid:
+                continue
             quizzes.append({
                 "filename": f.name,
                 "topic": data.get("topic", f.stem),
@@ -1172,6 +1182,7 @@ async def quiz_generate(
     image_questions_count: int = Form(0),
     language: str = Form("English"),
     seed: str = Form(""),
+    current_user: dict = Depends(get_optional_user),
 ):
     """Step 3 — Generate quiz questions."""
     from modules.quiz_generation import QuizGenerator
@@ -1189,11 +1200,16 @@ async def quiz_generate(
         language=language,
         seed=seed,
     )
-    # Auto-save to quiz_exports for history
+    # Auto-save to quiz_exports for history (tagged with user_id)
     if questions:
         try:
             from modules.quiz_generation import QuizExporter
-            QuizExporter().to_json(questions, topic=topic)
+            saved_path = QuizExporter().to_json(questions, topic=topic)
+            with open(saved_path, encoding="utf-8") as fp:
+                saved_data = _json.load(fp)
+            saved_data["user_id"] = current_user["user_id"]
+            with open(saved_path, "w", encoding="utf-8") as fp:
+                _json.dump(saved_data, fp, indent=2, ensure_ascii=False)
         except Exception:
             pass
     return {"questions": questions}

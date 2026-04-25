@@ -59,25 +59,18 @@ export const CtaBanner = () => {
             Ready to learn differently?
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-base text-muted-foreground sm:text-lg">
-            Upload your first document and see the magic. Free forever, no credit card required.
+            Upload your first document and see the magic.
           </p>
 
-          <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
+          <div className="mt-8 flex items-center justify-center">
             <Button
               size="lg"
               onClick={() => navigate("/dashboard")}
               className="group h-12 rounded-full bg-gradient-aurora px-7 text-base font-medium text-white shadow-lg shadow-brand-violet/30 [background-size:200%_200%] hover:[background-position:100%_50%] hover:shadow-xl"
             >
-              Get Started Free
+              Get Started
               <ArrowRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-1" />
             </Button>
-            <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-emerald opacity-75" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-brand-emerald" />
-              </span>
-              No credit card required
-            </span>
           </div>
         </div>
       </motion.div>

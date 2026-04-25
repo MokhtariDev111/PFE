@@ -178,7 +178,11 @@ class LLMEngine:
             self._rate_limiter.reset()  # Success — reset rate limiter
 
             data = response.json()
-            result = data["choices"][0]["message"]["content"].strip()
+            choices = data.get("choices") or []
+            if not choices or not isinstance(choices[0].get("message"), dict):
+                log.error(f"Groq unexpected response shape: {str(data)[:200]}")
+                raise ValueError("Groq response missing choices/message")
+            result = choices[0]["message"].get("content", "").strip()
 
             # Cache successful response
             set_cached(prompt, current_model, result, namespace=self.namespace)
@@ -239,7 +243,15 @@ class LLMEngine:
                 log.error(f"Gemini error {response.status_code}: {response.text[:300]}")
                 response.raise_for_status()
             data = response.json()
-            result = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            candidates = data.get("candidates") or []
+            if not candidates:
+                log.error(f"Gemini unexpected response shape: {str(data)[:200]}")
+                break
+            parts = (candidates[0].get("content") or {}).get("parts") or []
+            if not parts:
+                log.error(f"Gemini response missing parts: {str(data)[:200]}")
+                break
+            result = parts[0].get("text", "").strip()
 
             if "```" in result:
                 start = result.find("```")

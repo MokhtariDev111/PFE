@@ -178,13 +178,18 @@ function renderLineWithLinks(line: string) {
   let match;
   while ((match = urlRegex.exec(line)) !== null) {
     if (match.index > last) parts.push(line.slice(last, match.index));
+    // Strip trailing punctuation that the LLM appended after the URL
+    const raw = match[0];
+    const url = raw.replace(/[.,;:!?)'"\]>]+$/, "");
+    const trailing = raw.slice(url.length);
     parts.push(
-      <a key={match.index} href={match[0]} target="_blank" rel="noopener noreferrer"
+      <a key={match.index} href={url} target="_blank" rel="noopener noreferrer"
         className="text-primary underline hover:text-primary/80 break-all">
-        {match[0]}
+        {url}
       </a>
     );
-    last = match.index + match[0].length;
+    if (trailing) parts.push(trailing);
+    last = match.index + raw.length;
   }
   if (last < line.length) parts.push(line.slice(last));
   return parts.length > 0 ? parts : line;

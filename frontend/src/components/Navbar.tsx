@@ -1,7 +1,8 @@
 import { motion } from "framer-motion";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Sparkles, ChevronLeft, ChevronRight, LogOut, ShieldCheck } from "lucide-react";
+import { ChevronLeft, ChevronRight, LogOut, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { Logo3D } from "@/components/Logo3D";
 
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -51,19 +52,9 @@ export function Navbar() {
         </button>
 
         {/* Logo */}
-        <motion.div
-          onClick={() => navigate("/")}
-          className="flex items-center gap-2 cursor-pointer group"
-          whileHover={{ scale: 1.04 }}
-        >
-          <div className="p-1.5 rounded-lg bg-gradient-to-br from-primary to-accent group-hover:shadow-lg group-hover:shadow-primary/40 transition-shadow">
-            <Sparkles className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <h1 className="font-bold text-base gradient-text leading-none">EduAI</h1>
-            <p className="text-[10px] text-muted-foreground leading-none mt-0.5">Learning Assistant</p>
-          </div>
-        </motion.div>
+        <div onClick={() => navigate("/")}>
+          <Logo3D height={38} />
+        </div>
 
         {/* Spacer */}
         <div className="flex-1" />

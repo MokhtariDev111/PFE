@@ -106,7 +106,7 @@ const ContactUs = () => {
                   <Mail className="h-5 w-5 text-brand-violet" />
                 </span>
                 <h3 className="mt-4 font-semibold">Email</h3>
-                <p className="mt-1 text-sm text-muted-foreground">hello@eduai.app</p>
+                <p className="mt-1 text-sm text-muted-foreground">eduai.nextgen.assistant@gmail.com</p>
               </div>
               <div className="rounded-2xl border border-border/70 bg-card p-6">
                 <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand-emerald/10">

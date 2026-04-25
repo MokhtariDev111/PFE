@@ -97,10 +97,19 @@ class Retriever:
             log.warning(f"Vector DB not found at {self.index_path.parent}. Run embeddings first.")
             return
 
-        self.index = faiss.read_index(str(faiss_file))
+        try:
+            self.index = faiss.read_index(str(faiss_file))
+        except Exception as e:
+            log.error(f"FAISS index file corrupt or unreadable ({e}) — retrieval disabled. Delete {faiss_file} and re-index.")
+            return
 
-        with open(json_file, "r", encoding="utf-8") as f:
-            self.chunks_store = [TextChunk(**d) for d in json.load(f)]
+        try:
+            with open(json_file, "r", encoding="utf-8") as f:
+                self.chunks_store = [TextChunk(**d) for d in json.load(f)]
+        except Exception as e:
+            log.error(f"Chunk JSON load failed ({e}) — index exists but chunks unreadable. Delete {json_file} and re-index.")
+            self.index = None
+            return
 
         log.info(f"Loaded FAISS index: {self.index.ntotal} vectors.")
 
@@ -155,6 +164,8 @@ class Retriever:
         if self.bm25 is None:
             return {}
         tokens = query.lower().split()
+        if not tokens:
+            return {}
         scores = self.bm25.get_scores(tokens)
         top_indices = np.argsort(scores)[::-1][:top_n]
         return {int(i): float(scores[i]) for i in top_indices if scores[i] > 0}

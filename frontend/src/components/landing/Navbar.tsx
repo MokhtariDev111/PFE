@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { GraduationCap, Sparkles, Menu, X, LogOut, LayoutDashboard, ShieldCheck } from "lucide-react";
+import { Menu, X, LogOut, LayoutDashboard, ShieldCheck } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { useAuth } from "@/context/AuthContext";
+import { Logo3D } from "@/components/Logo3D";
 
 const NAV_LINKS = [
-  { label: "About",   href: "/about" },
-  { label: "Contact", href: "/contact" },
+  { label: "About Us", href: "/about" },
+  { label: "Contact",  href: "/contact" },
 ];
 
 function getInitials(name: string): string {
@@ -45,16 +46,8 @@ export const Navbar = () => {
       >
         <div className="container flex h-16 items-center justify-between">
           {/* Logo */}
-          <Link to="/" className="group flex items-center gap-2.5">
-            <motion.span
-              className="relative grid h-9 w-9 place-items-center rounded-xl bg-gradient-aurora shadow-lg shadow-brand-violet/30"
-              whileHover={{ scale: 1.08, rotate: 5 }}
-              transition={{ type: "spring", stiffness: 300 }}
-            >
-              <GraduationCap className="h-4 w-4 text-white" strokeWidth={2.5} />
-              <Sparkles className="absolute -right-1 -top-1 h-3.5 w-3.5 text-brand-cyan drop-shadow" />
-            </motion.span>
-            <span className="text-base font-semibold tracking-tight">EduAI</span>
+          <Link to="/" className="flex items-center">
+            <Logo3D height={42} />
           </Link>
 
           {/* Desktop nav */}

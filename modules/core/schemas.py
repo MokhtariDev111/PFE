@@ -187,14 +187,21 @@ def validate_and_fix_slide(raw_data: dict) -> dict:
     
     # Ensure each bullet has text
     fixed_bullets = []
+    dropped = 0
     for b in bullets:
         if isinstance(b, str):
             if len(b.strip()) >= 10:
                 fixed_bullets.append({"text": b.strip(), "source_id": None})
+            else:
+                dropped += 1
         elif isinstance(b, dict) and b.get("text"):
             text = str(b["text"]).strip()
             if len(text) >= 10:
                 fixed_bullets.append({"text": text, "source_id": b.get("source_id")})
+            else:
+                dropped += 1
+    if dropped:
+        log.warning(f"validate_and_fix_slide: dropped {dropped} bullet(s) shorter than 10 chars in slide '{raw_data.get('title','?')}'.")
     
     # Ensure at least one bullet (allow empty for title/paragraph slides)
     if not fixed_bullets and not raw_data.get("paragraph"):

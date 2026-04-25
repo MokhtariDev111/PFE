@@ -666,6 +666,10 @@ class PedagogicalEngine:
 
         raw_results = await asyncio.gather(*tasks, return_exceptions=True)
 
+        failed = sum(1 for r in raw_results if isinstance(r, Exception) or r is None)
+        if failed:
+            log.warning(f"Parallel generation: {failed}/{len(tasks)} tasks failed")
+
         slides      = []
         seen_fps    = set()
         seen_titles = set()
@@ -683,6 +687,10 @@ class PedagogicalEngine:
                 seen_titles.add(title)
             slides.append(result)
             prior_hints.append((result.get("visual_hint") or "none").lower())
+
+        if not slides:
+            log.error("Parallel generation produced 0 slides — all LLM tasks failed")
+            raise RuntimeError("Slide generation failed: all parallel LLM calls returned no output. Check LLM backend connectivity.")
 
         log.info(f"Parallel done: {len(slides)}/{num_slides} unique slides.")
         return {"topic": topic, "slides": slides}

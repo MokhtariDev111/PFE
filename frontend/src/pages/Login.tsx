@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
-import { GraduationCap, Lock, Mail, Sparkles, User } from "lucide-react";
+import { Lock, Mail, User } from "lucide-react";
+import { Logo3D } from "@/components/Logo3D";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { z } from "zod";
@@ -76,30 +77,35 @@ const LoginInner = () => {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-background" >
-      <div className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute -left-24 -top-24 h-96 w-96 rounded-full bg-brand-violet/20 blur-3xl" />
-        <div className="absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-brand-rose/20 blur-3xl" />
-      </div>
+    <div className="relative min-h-screen overflow-hidden">
+      {/* Video background */}
+      <video
+        autoPlay
+        muted
+        loop
+        playsInline
+        className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+        style={{ zIndex: -2 }}
+      >
+        <source src="/login-bg.mp4" type="video/mp4" />
+      </video>
+      {/* Dark overlay for readability */}
+      <div className="pointer-events-none absolute inset-0 bg-black/55" style={{ zIndex: -1 }} />
 
       <header className="container flex h-16 items-center justify-between">
-        <Link to="/" className="group flex items-center gap-2.5">
-          <span className="relative grid h-9 w-9 place-items-center rounded-xl bg-gradient-aurora shadow-lg shadow-brand-violet/30">
-            <GraduationCap className="h-4 w-4 text-white" strokeWidth={2.5} />
-            <Sparkles className="absolute -right-1 -top-1 h-3.5 w-3.5 text-brand-cyan drop-shadow" />
-          </span>
-          <span className="text-base font-semibold tracking-tight">EduAI</span>
+        <Link to="/" className="flex items-center">
+          <Logo3D height={44} />
         </Link>
         <ThemeToggle />
       </header>
 
       <main className="container flex min-h-[calc(100vh-4rem)] items-center justify-center py-12">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: "easeOut" }}
-          className="w-full max-w-md rounded-3xl border border-border/70 bg-card/80 p-8 shadow-2xl shadow-brand-violet/10 backdrop-blur-xl sm:p-10">
+          className="w-full max-w-md rounded-3xl border border-white/10 bg-background/80 p-8 shadow-2xl shadow-black/40 backdrop-blur-2xl sm:p-10">
           <Tabs defaultValue="login" className="w-full">
-            <div className="text-center">
-              <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Welcome to EduAI</h1>
-              <p className="mt-2 text-sm text-muted-foreground">Log in or create an account to get started.</p>
+            <div className="flex flex-col items-center text-center">
+              <Logo3D height={90} className="mb-3" />
+              <p className="mt-1 text-sm text-muted-foreground">Log in or create an account to get started.</p>
             </div>
             <TabsList className="mt-6 grid w-full grid-cols-2">
               <TabsTrigger value="login">Log in</TabsTrigger>

@@ -2,8 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FileText, Brain, MessageSquare, Zap, Clock, TrendingUp, Book } from "lucide-react";
 import { motion } from "framer-motion";
+import { authHeaders } from "@/lib/auth";
 
-const API = "http://127.0.0.1:8000";
+const API = (import.meta.env.VITE_API_URL as string | undefined) ?? `${window.location.protocol}//${window.location.hostname}:8000`;
 
 const item = {
   hidden: { opacity: 0, y: 16 },
@@ -33,7 +34,7 @@ export default function Dashboard() {
   const { data: presentations = [] } = useQuery({
     queryKey: ["history"],
     queryFn: async () => {
-      try { const r = await fetch(`${API}/history`); return r.ok ? r.json() : []; }
+      try { const r = await fetch(`${API}/history`, { headers: authHeaders() }); return r.ok ? r.json() : []; }
       catch { return []; }
     },
     staleTime: 30000,
@@ -42,7 +43,7 @@ export default function Dashboard() {
   const { data: quizData } = useQuery({
     queryKey: ["quiz-history"],
     queryFn: async () => {
-      try { const r = await fetch(`${API}/quiz/history`); return r.ok ? r.json() : { quizzes: [] }; }
+      try { const r = await fetch(`${API}/quiz/history`, { headers: authHeaders() }); return r.ok ? r.json() : { quizzes: [] }; }
       catch { return { quizzes: [] }; }
     },
   });
@@ -50,7 +51,7 @@ export default function Dashboard() {
   const { data: debateData } = useQuery({
     queryKey: ["debate-history"],
     queryFn: async () => {
-      try { const r = await fetch(`${API}/debate/conversations`); return r.ok ? r.json() : { conversations: [] }; }
+      try { const r = await fetch(`${API}/debate/conversations`, { headers: authHeaders() }); return r.ok ? r.json() : { conversations: [] }; }
       catch { return { conversations: [] }; }
     },
   });

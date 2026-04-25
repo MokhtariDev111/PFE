@@ -309,14 +309,17 @@ Do NOT add any explanation outside the JSON.
         raw = await self.llm.generate_async("", [], prompt_override=prompt)
         reviewed = _parse_json(raw)
 
-        # Fall back to draft if reviewer breaks the structure
+        # Fall back to draft if reviewer returns unparseable output
         if not reviewed or "questions" not in reviewed:
-            log.warning("[Reviewer] Could not parse reviewed JSON, keeping draft")
+            log.warning("[Reviewer] LLM returned unparseable JSON — review failed, using original draft")
             return draft
 
-        # Sanity check: reviewer must not drop questions
+        # Fall back to draft if reviewer drops questions
         if len(reviewed.get("questions", [])) < len(draft.get("questions", [])):
-            log.warning("[Reviewer] Reviewer dropped questions, keeping draft")
+            log.warning(
+                "[Reviewer] Reviewed exam has fewer questions (%d) than draft (%d) — keeping draft",
+                len(reviewed.get("questions", [])), len(draft.get("questions", [])),
+            )
             return draft
 
         return reviewed

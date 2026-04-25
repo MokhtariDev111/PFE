@@ -25,14 +25,14 @@ export const Footer = () => {
           </p>
           <div className="flex flex-col gap-3 md:items-end">
             <a
-              href="mailto:hello@eduai.app"
+              href="mailto:eduai.nextgen.assistant@gmail.com"
               className="group inline-flex items-center gap-2 text-sm text-foreground/80 transition-colors hover:text-foreground"
             >
               <Mail className="h-4 w-4 text-brand-violet" />
-              hello@eduai.app
+              eduai.nextgen.assistant@gmail.com
             </a>
             <a
-              href="https://www.linkedin.com"
+              href="https://www.linkedin.com/in/mohamed-aziz-mokhtari-469777365"
               target="_blank"
               rel="noreferrer noopener"
               className="group inline-flex items-center gap-2 text-sm text-foreground/80 transition-colors hover:text-foreground"

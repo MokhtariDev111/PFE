@@ -33,7 +33,7 @@ const features: Feature[] = [
     tag: "Instant",
   },
   {
-    title: "Aria — AI Debate Partner",
+    title: "Adam — AI Debate Partner",
     description: "Learn through Socratic debate and personalized coaching with an AI tutor.",
     route: "/aria",
     icon: MessagesSquare,
@@ -115,7 +115,7 @@ function TiltCard({ feature, index }: { feature: Feature; index: number }) {
 
 export const FeatureCards = () => {
   return (
-    <section id="features" className="relative py-24 sm:py-32">
+    <section id="features" className="relative pt-24 pb-2 sm:pt-32 sm:pb-4">
       <div className="container">
         <motion.div
           initial={{ opacity: 0, y: 20 }}

@@ -67,6 +67,7 @@ class MemoryStore:
         col = _get_col()
         doc = await col.find_one({"conversation_id": conversation_id}, {"_id": 0})
         if not doc:
+            log.warning(f"get_history: conversation '{conversation_id}' not found — returning empty history")
             return []
         return [{"role": m["role"], "content": m["content"]} for m in doc.get("messages", [])]
 

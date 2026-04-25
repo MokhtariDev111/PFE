@@ -108,7 +108,11 @@ def load_docx(path: Path) -> list[DocumentPage]:
         log.error("python-docx is not installed. Please pip install python-docx")
         return []
 
-    doc = docx.Document(path)
+    try:
+        doc = docx.Document(path)
+    except Exception as e:
+        log.error(f"Cannot open '{path.name}': {e} — skipping file.")
+        return []
     pages = []
     
     current_h1 = ""

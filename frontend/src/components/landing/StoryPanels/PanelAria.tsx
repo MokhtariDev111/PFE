@@ -70,7 +70,7 @@ export const PanelAria = () => {
               <Sparkles className="h-4 w-4" />
             </div>
             <div>
-              <p className="text-sm font-semibold leading-tight">Aria</p>
+              <p className="text-sm font-semibold leading-tight">Adam</p>
               <p className="text-[10px] text-brand-emerald">● Online</p>
             </div>
           </div>
@@ -98,12 +98,12 @@ export const PanelAria = () => {
 
   return (
     <StoryPanel
-      eyebrow="Module 02 — Aria"
+      eyebrow="Module 02 — Adam"
       eyebrowColorClass="text-brand-emerald"
       accentBorderClass="bg-brand-emerald"
       headline="An AI tutor that thinks with you."
-      body="Aria doesn't just answer — she debates, challenges your reasoning, and guides you to deeper understanding through Socratic dialogue. Like having a brilliant study partner available 24/7."
-      ctaLabel="Meet Aria"
+      body="Adam doesn't just answer — he debates, challenges your reasoning, and guides you to deeper understanding through Socratic dialogue. Like having a brilliant study partner available 24/7."
+      ctaLabel="Meet Adam"
       ctaRoute="/aria"
       ctaGradientClass="bg-gradient-emerald"
       tintClass="bg-tint-emerald/40 dark:bg-tint-emerald/30"

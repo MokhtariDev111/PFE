@@ -170,5 +170,5 @@ def format_wikipedia_result(result: dict) -> str:
         f"WIKIPEDIA RESULT — you MUST include the URL in your response:\n"
         f"Title: {result['title']}\n"
         f"Summary: {result['summary']}\n"
-        f"URL (include this exactly in your reply): {result['url']}"
+        f"URL (copy this exactly, on its own line, with NO trailing period or punctuation): {result['url']}\n"
     )
