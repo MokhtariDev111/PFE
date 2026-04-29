@@ -19,9 +19,11 @@ export function Navbar() {
   const pagesWithOwnNav = ["/", "/about", "/contact", "/login"];
   if (pagesWithOwnNav.includes(location.pathname)) return null;
 
-  const isQuizPage = location.pathname === "/generate/quiz";
-  const isAriaPage = location.pathname === "/aria";
-  const isImmersive = isQuizPage || isAriaPage;
+  const isQuizPage    = location.pathname === "/generate/quiz";
+  const isAriaPage    = location.pathname === "/aria";
+  const isGenPage     = location.pathname === "/generate_from_doc" || location.pathname === "/generate/presentations";
+  const isImmersive   = isQuizPage || isAriaPage;
+  const isSemiTransparent = isGenPage;
 
   return (
     <motion.div
@@ -30,10 +32,12 @@ export function Navbar() {
       className={`sticky top-0 z-50 backdrop-blur-xl border-b transition-colors duration-300 ${
         isImmersive
           ? "bg-transparent border-transparent"
+          : isSemiTransparent
+          ? "bg-background/20 border-white/10"
           : "bg-background/80 border-border/50"
       }`}
     >
-      <div className="max-w-7xl mx-auto px-6 py-3 flex items-center gap-3">
+      <div className="max-w-7xl mx-auto px-6 py-3 flex items-center gap-3 w-full">
 
         {/* Back / Forward arrows */}
         <button
@@ -61,7 +65,7 @@ export function Navbar() {
 
         {/* User badge + admin link + logout */}
         {user && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 ml-auto pr-2">
             {user.is_admin && (
               <button
                 onClick={() => navigate("/admin")}

@@ -1809,7 +1809,7 @@ def render(
   <!-- Intro Overlay -->
   <div id="intro-overlay">
     <div id="intro-overlay-inner">
-      <div id="intro-logo">TEKUP AI</div>
+      <div id="intro-logo">EduAI</div>
       <div id="intro-divider"></div>
       <div id="intro-ready">Your presentation is ready</div>
       <div id="intro-topic">{title_esc}</div>

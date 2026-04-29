@@ -1102,7 +1102,7 @@ export default function DebatePage() {
                     className="fixed bottom-20 right-8 w-48 rounded-xl border border-border bg-popover shadow-xl z-[210] py-1 overflow-hidden"
                     onClick={e => e.stopPropagation()}
                   >
-                    {(Object.entries(MODE_META) as [Mode, typeof MODE_META[Mode]][]).map(([m, meta]) => (
+                    {(Object.entries(MODE_META) as [Mode, typeof MODE_META[Mode]][]).filter(([m]) => m !== "virtual").map(([m, meta]) => (
                       <button
                         key={m}
                         onClick={() => { setMode(m); setModeOpen(false); }}

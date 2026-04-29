@@ -70,7 +70,7 @@ function AppShell() {
 }
 
 const App = () => {
-  const [splashDone, setSplashDone] = useState(true);
+  const [splashDone, setSplashDone] = useState(false);
 
   return (
     <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">

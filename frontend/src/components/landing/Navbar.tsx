@@ -45,21 +45,23 @@ export const Navbar = () => {
         className="fixed inset-x-0 top-0 z-50 transition-all duration-300 border-b border-border/60 bg-background/95 backdrop-blur-xl shadow-sm"
       >
         <div className="container flex h-16 items-center justify-between">
-          {/* Logo */}
-          <Link to="/" className="flex items-center">
-            <Logo3D height={42} />
-          </Link>
+          {/* Logo + nav links together on the left */}
+          <div className="flex items-center gap-1">
+            <Link to="/" className="flex items-center mr-3">
+              <Logo3D height={42} />
+            </Link>
 
-          {/* Desktop nav */}
-          <nav className="hidden items-center gap-1 md:flex">
-            {NAV_LINKS.map((link) => (
-              <Link key={link.label} to={link.href}
-                className="group relative rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-                {link.label}
-                <span className="absolute inset-x-3 bottom-1 h-px scale-x-0 bg-brand-violet/60 transition-transform group-hover:scale-x-100" />
-              </Link>
-            ))}
-          </nav>
+            {/* Desktop nav */}
+            <nav className="hidden items-center gap-1 md:flex">
+              {NAV_LINKS.map((link) => (
+                <Link key={link.label} to={link.href}
+                  className="group relative rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+                  {link.label}
+                  <span className="absolute inset-x-3 bottom-1 h-px scale-x-0 bg-brand-violet/60 transition-transform group-hover:scale-x-100" />
+                </Link>
+              ))}
+            </nav>
+          </div>
 
           <div className="flex items-center gap-2">
             <ThemeToggle />

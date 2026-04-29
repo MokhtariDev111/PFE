@@ -1,19 +1,19 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import LiquidEther from "@/components/reactbits/LiquidEther";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Upload, Zap, Eye, X, Check, ArrowRight, Settings, GripVertical, Lock } from "lucide-react";
+import { Upload, Zap, Eye, X, Check, ArrowRight, Settings, GripVertical, Lock, Paperclip } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import BookLoader from "@/components/BookLoader";
+
+const BG_PHOTOS = [
+  "/dom-fou-YRMWVcdyhmI-unsplash.jpg",
+  "/ken-theimer-PoE6Q48B-5k-unsplash.jpg",
+  "/spencer-russell-7f55okwq6iE-unsplash.jpg",
+  "/ruijia-wang-BS9w1QCkJys-unsplash.jpg",
+];
 
 interface Slide {
   index: number;
@@ -22,51 +22,69 @@ interface Slide {
   slideType: string;
 }
 
-interface GenerationStatus {
-  step: string;
-  message: string;
-}
+interface GenerationStatus { step: string; message: string; }
 
 export default function GeneratePage() {
   const { toast } = useToast();
-  const [isSettingsOpen, setIsSettingsOpen] = useState(true);
 
-  // Form state
+  // Input state
   const [prompt, setPrompt] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [theme, setTheme] = useState("Dark Navy");
   const [maxSlides, setMaxSlides] = useState(20);
   const [language, setLanguage] = useState("English");
+  const [themes, setThemes] = useState<string[]>([]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Generation state
+  const [phase, setPhase] = useState<"input" | "video" | "generating" | "preview">("input");
+  const [backendDone, setBackendDone] = useState(false);
+  const [videoDone, setVideoDone] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [slides, setSlides] = useState<Slide[]>([]);
+  const [orderedSlides, setOrderedSlides] = useState<Slide[]>([]);
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus | null>(null);
-  const [themes, setThemes] = useState<string[]>([]);
+  const [progress, setProgress] = useState(0);
   const [sessionId, setSessionId] = useState("");
+  const [isReordering, setIsReordering] = useState(false);
+  const [currentStep, setCurrentStep] = useState("default");
+
+  // Background cycling
+  const [bgIndex, setBgIndex] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setBgIndex(i => (i + 1) % BG_PHOTOS.length), 5000);
+    return () => clearInterval(t);
+  }, []);
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [progress, setProgress] = useState(0);
-
-  // Reorder state
-  const [orderedSlides, setOrderedSlides] = useState<Slide[]>([]);
-  const [isReordering, setIsReordering] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const dragIdx = useRef<number | null>(null);
 
-  // Sync orderedSlides when slides change
   useEffect(() => { setOrderedSlides(slides); }, [slides]);
 
-  const isLocked = (slide: Slide) =>
-    slide.slideType === "title" || slide.slideType === "intro" || slide.slideType === "summary";
+  // Transition to preview only when BOTH backend and video are done
+  useEffect(() => {
+    if (backendDone && videoDone) {
+      setPhase("preview");
+    }
+  }, [backendDone, videoDone]);
+
+  useEffect(() => {
+    fetch("http://127.0.0.1:8000/themes")
+      .then(r => r.json()).then(setThemes)
+      .catch(() => setThemes(["Dark Navy", "Modern", "Minimalist"]));
+  }, []);
+
+  const isLocked = (s: Slide) =>
+    s.slideType === "title" || s.slideType === "intro" || s.slideType === "summary";
 
   const handleDragStart = (i: number) => { dragIdx.current = i; };
   const handleDragOver = (e: React.DragEvent, i: number) => {
     e.preventDefault();
     const from = dragIdx.current;
-    if (from === null || from === i) return;
-    // Don't allow dragging over locked slides
-    if (isLocked(orderedSlides[i])) return;
+    if (from === null || from === i || isLocked(orderedSlides[i])) return;
     const next = [...orderedSlides];
     const [moved] = next.splice(from, 1);
     next.splice(i, 0, moved);
@@ -77,547 +95,392 @@ export default function GeneratePage() {
   const handleConfirmOrder = useCallback(async () => {
     if (!sessionId) return;
     setIsReordering(true);
-    // Map orderedSlides back to original indices (handles deletions too)
     const order = orderedSlides.map(s => slides.indexOf(s)).filter(i => i !== -1);
     try {
       const res = await fetch(`http://127.0.0.1:8000/reorder/${sessionId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ order }),
       });
       if (!res.ok) throw new Error("Reorder failed");
       window.open(`http://127.0.0.1:8000/view/${sessionId}`, "_blank");
     } catch {
       toast({ title: "Error", description: "Could not apply changes", variant: "destructive" });
-    } finally {
-      setIsReordering(false);
-    }
+    } finally { setIsReordering(false); }
   }, [sessionId, orderedSlides, slides, toast]);
-
-  // Fetch available themes
-  useEffect(() => {
-    fetch("http://127.0.0.1:8000/themes")
-      .then((r) => r.json())
-      .then(setThemes)
-      .catch(() => setThemes(["Dark Navy", "Modern", "Minimalist"]));
-  }, []);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      setFiles(Array.from(e.target.files));
-    }
-  };
-
-  const removeFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
-  };
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
-      toast({
-        title: "Error",
-        description: "Please enter a topic",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Please enter a topic", variant: "destructive" });
       return;
     }
-
+    setPhase("video");
+    setBackendDone(false);
+    setVideoDone(false);
     setIsLoading(true);
-    setSlides([]);
-    setOrderedSlides([]);
-    setProgress(0);
-    setSessionId("");
+    setSlides([]); setOrderedSlides([]); setProgress(0); setSessionId("");
 
     const formData = new FormData();
     formData.append("prompt", prompt);
     formData.append("theme", theme);
     formData.append("max_slides", maxSlides.toString());
     formData.append("language", language);
-
-    files.forEach((file) => formData.append("files", file));
+    files.forEach(f => formData.append("files", f));
 
     try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/generate-stream",
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
-
+      const response = await fetch("http://127.0.0.1:8000/generate-stream", { method: "POST", body: formData });
       if (!response.body) throw new Error("No response body");
-
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-
       let buffer = "";
-
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
         buffer += decoder.decode(value, { stream: true });
-
         let boundary = buffer.indexOf("\n\n");
         while (boundary !== -1) {
           const message = buffer.slice(0, boundary);
           buffer = buffer.slice(boundary + 2);
-
           const lines = message.split("\n");
-          let eventType = "message";
-          let dataStr = "";
-
+          let eventType = "message", dataStr = "";
           for (const line of lines) {
-            if (line.startsWith("event: ")) {
-              eventType = line.slice(7).trim();
-            } else if (line.startsWith("data: ")) {
-              dataStr += line.slice(6);
-            }
+            if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+            else if (line.startsWith("data: ")) dataStr += line.slice(6);
           }
-
           if (dataStr) {
             try {
               const data = JSON.parse(dataStr);
               if (eventType === "status") {
                 setGenerationStatus(data);
-                const stepProgress: { [key: string]: number } = {
-                  ingesting: 15,
-                  indexing: 30,
-                  retrieving: 50,
-                  generating: 70,
-                  rendering: 95,
-                };
-                setProgress(stepProgress[data.step] || 0);
+                setCurrentStep(data.step || "default");
+                const sp: Record<string, number> = { ingesting:15, indexing:30, retrieving:50, generating:70, rendering:95 };
+                setProgress(sp[data.step] || 0);
               } else if (eventType === "slide") {
-                setSlides((prev) => [...prev, data]);
+                setSlides(prev => [...prev, data]);
               } else if (eventType === "done") {
                 setSessionId(data.session_id);
                 setProgress(100);
-                toast({
-                  title: "Success! 🎉",
-                  description: `Presentation ready with ${data.num_slides} slides`,
-                });
+                setBackendDone(true);
+                toast({ title: "Success! 🎉", description: `Presentation ready with ${data.num_slides} slides` });
               } else if (eventType === "error") {
-                toast({
-                  title: "Generation Error",
-                  description: data.detail || "Unknown error occurred",
-                  variant: "destructive",
-                });
+                toast({ title: "Generation Error", description: data.detail || "Unknown error", variant: "destructive" });
+                setPhase("input");
               }
-            } catch (e) {
-              console.error("Error parsing event:", eventType, e);
-            }
+            } catch {}
           }
-
           boundary = buffer.indexOf("\n\n");
         }
       }
     } catch (err) {
-      toast({
-        title: "Error",
-        description: err instanceof Error ? err.message : "Generation failed",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
+      toast({ title: "Error", description: err instanceof Error ? err.message : "Generation failed", variant: "destructive" });
+      setPhase("input");
+      setBackendDone(false);
+      setVideoDone(false);
+    } finally { setIsLoading(false); }
   };
 
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: { staggerChildren: 0.1, delayChildren: 0.2 },
-    },
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleGenerate(); }
   };
 
-  const itemVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.5 } },
-  };
-
-  return (
-    <div className="h-[calc(100vh-65px)] bg-background relative flex overflow-hidden">
-      {/* Background Effect */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <LiquidEther
-          mouseForce={20}
-          cursorSize={100}
-          autoDemo={true}
-          colors={['#5227FF', '#FF9FFC', '#B19EEF']}
-        />
-        <div className="absolute inset-0 bg-background/60 backdrop-blur-[2px]" />
-      </div>
-
-      {/* Settings Sidebar */}
+  // ── VIDEO PHASE ────────────────────────────────────────────────────────────
+  if (phase === "video") {
+    return (
       <motion.div
-        initial={false}
-        animate={{
-          width: isSettingsOpen ? 320 : 0,
-          opacity: isSettingsOpen ? 1 : 0
-        }}
-        className="h-full shrink-0 bg-card/80 backdrop-blur-xl border-r border-border/50 overflow-y-auto relative z-20 flex flex-col"
+        className="fixed inset-0 z-[9999] bg-black flex items-center justify-center"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.4 }}
       >
-        <div className="p-6 lg:pt-12 min-w-[320px]">
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="text-xl font-bold flex items-center gap-2">
-              <Settings className="w-5 h-5 text-primary" /> Settings
-            </h2>
-            <Button variant="ghost" size="icon" onClick={() => setIsSettingsOpen(false)}>
-              <X className="w-5 h-5" />
-            </Button>
-          </div>
+        <video
+          ref={videoRef}
+          src="/raganimation.mp4"
+          autoPlay
+          playsInline
+          className="w-full h-full object-cover"
+          onEnded={() => {
+            if (backendDone) {
+              // Both done — go to preview
+              setVideoDone(true);
+            } else {
+              // Backend still running — loop
+              if (videoRef.current) {
+                videoRef.current.currentTime = 0;
+                videoRef.current.play();
+              }
+            }
+          }}
+        />
 
-          <div className="space-y-6">
-            {/* Theme */}
-            <div>
-              <label className="text-sm font-medium block mb-2">Theme</label>
-              <Select value={theme} onValueChange={setTheme} disabled={isLoading}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {themes.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {t}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Max Slides */}
-            <div>
-              <label className="text-sm font-medium block mb-2">
-                Max slides: <span className="text-primary font-bold">{maxSlides}</span>
-              </label>
-              <Slider
-                value={[maxSlides]}
-                onValueChange={(v) => setMaxSlides(v[0])}
-                min={5}
-                max={20}
-                step={1}
-                disabled={isLoading}
-              />
-              <p className="text-xs text-muted-foreground mt-2">
-                AI picks the best count — won't exceed this
-              </p>
-            </div>
-
-            {/* Language */}
-            <div>
-              <label className="text-sm font-medium block mb-2">Language</label>
-              <Select value={language} onValueChange={setLanguage} disabled={isLoading}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="English">🇬🇧 English</SelectItem>
-                  <SelectItem value="French">🇫🇷 French</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Main Content Area */}
-      <div className="flex-1 h-full overflow-y-auto relative z-10 transition-all">
-        {/* Settings Toggle */}
+        {/* Skip button — only shown when backend is done */}
         <AnimatePresence>
-          {!isSettingsOpen && (
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="absolute left-6 top-10 z-30"
+          {backendDone && (
+            <motion.button
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              onClick={() => { setVideoDone(true); setPhase("preview"); }}
+              className="absolute bottom-10 right-10 flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/20 backdrop-blur border border-white/30 text-white text-sm font-medium hover:bg-white/30 transition-all"
             >
-              <Button variant="secondary" size="icon" className="shadow-lg border border-border" onClick={() => setIsSettingsOpen(true)}>
-                <Settings className="w-5 h-5 text-primary" />
-              </Button>
-            </motion.div>
+              Skip <ArrowRight className="w-4 h-4" />
+            </motion.button>
           )}
         </AnimatePresence>
 
-        <motion.div
-          initial="hidden"
-          animate="visible"
-          variants={containerVariants}
-          className={`grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-7xl mx-auto py-6 lg:py-12 px-6 lg:px-12 transition-all ${!isSettingsOpen && "pl-20"}`}
-        >
-          {/* Left Panel: Input */}
-          <motion.div variants={itemVariants} className="space-y-6 flex flex-col">
-            <div>
-              <h1 className="text-4xl font-bold mb-2 gradient-text">
-                Generate Presentation
-              </h1>
-              <p className="text-muted-foreground">
-                Create stunning presentations from documents or topics
-              </p>
-            </div>
+        {/* Progress indicator — bottom left */}
+        <div className="absolute bottom-8 left-10 flex flex-col gap-2 w-64">
+          {/* Status message */}
+          <p className="text-white/50 text-xs">
+            {backendDone ? "Ready — finishing animation…" : generationStatus?.message || "Generating…"}
+          </p>
 
-            {/* Topic Input */}
-            <Card className="glass-card">
-              <CardHeader>
-                <CardTitle className="text-lg">📝 Topic</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Textarea
-                  placeholder="e.g., Machine Learning fundamentals, Ancient Rome history, Climate change..."
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  disabled={isLoading}
-                  className="min-h-24 resize-none"
-                />
-                <p className="text-xs text-muted-foreground">
-                  {prompt.length}/200 characters
-                </p>
-              </CardContent>
-            </Card>
-
-            {/* File Upload */}
-            <Card className="glass-card">
-              <CardHeader>
-                <CardTitle className="text-lg">📎 Documents (Optional)</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div
-                  onClick={() => !isLoading && fileInputRef.current?.click()}
-                  className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition ${isLoading
-                    ? "opacity-50 cursor-not-allowed"
-                    : "hover:bg-secondary/50 border-primary/30 hover:border-primary/60"
-                    }`}
-                >
-                  <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-                  <p className="text-sm font-medium">Click to upload</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    PDF, DOCX, TXT (up to 100MB)
-                  </p>
-                </div>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  onChange={handleFileChange}
-                  disabled={isLoading}
-                  className="hidden"
-                  accept=".pdf,.doc,.docx,.txt"
-                />
-
-                {/* File List */}
-                {files.length > 0 && (
-                  <div className="space-y-2">
-                    {files.map((file, i) => (
-                      <motion.div
-                        key={i}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Check className="w-4 h-4 text-green-500 shrink-0" />
-                          <span className="text-sm truncate">{file.name}</span>
-                        </div>
-                        <button
-                          onClick={() => removeFile(i)}
-                          disabled={isLoading}
-                          className="ml-2 p-1 hover:bg-secondary rounded disabled:opacity-50"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </motion.div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <div className="flex-1" /> {/* Flex spacer to push button down */}
-
-            {/* Generate Button */}
-            <Button
-              onClick={handleGenerate}
-              disabled={isLoading || !prompt.trim()}
-              className="launch-button w-full"
-              size="lg"
-            >
-              <Zap className="w-5 h-5" />
-              {isLoading ? "Generating..." : "Generate Presentation"}
-              <ArrowRight className="w-5 h-5" />
-            </Button>
-          </motion.div>
-
-          {/* Right Panel: Preview & Status */}
-          <motion.div variants={itemVariants} className="space-y-6 flex flex-col h-full">
-            <div>
-              <h2 className="text-3xl font-bold mb-2">Preview</h2>
-              <p className="text-muted-foreground">
-                Your slides will appear here as they're generated
-              </p>
-            </div>
-
-            {/* Status Section */}
-            {isLoading && (
+          {/* Progress bar + percentage */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-[3px] rounded-full bg-white/10 overflow-hidden">
               <motion.div
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="space-y-4"
+                className="h-full rounded-full bg-white/70"
+                initial={{ width: 0 }}
+                animate={{ width: `${progress}%` }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
+              />
+            </div>
+            <span className="text-white/70 text-xs font-semibold tabular-nums w-9 text-right">
+              {progress}%
+            </span>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
+  // ── INPUT PHASE ────────────────────────────────────────────────────────────
+  if (phase === "input") {    return (
+      <div className="relative h-[calc(100vh-56px)] overflow-hidden">
+        {/* Cycling background photos */}
+        {BG_PHOTOS.map((src, i) => (
+          <motion.div
+            key={src}
+            className="absolute inset-0 bg-cover bg-center"
+            style={{ backgroundImage: `url(${src})` }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: i === bgIndex ? 1 : 0 }}
+            transition={{ duration: 1.2 }}
+          />
+        ))}
+        {/* Dark overlay */}
+        <div className="absolute inset-0 bg-black/55" />
+
+        {/* Centered content */}
+        <div className="relative z-10 h-full flex flex-col items-center justify-center px-6">
+          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="w-full max-w-2xl">
+            <h1 className="text-4xl md:text-5xl font-bold text-white text-center mb-3 tracking-tight">
+              Generate a Presentation
+            </h1>
+            <p className="text-white/60 text-center mb-8 text-base">
+              Enter a topic and optionally upload a document
+            </p>
+
+            {/* Single-row input bar */}
+            <div className="flex items-center gap-0 bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl overflow-visible shadow-2xl relative">
+              {/* Topic input */}
+              <input
+                ref={inputRef}
+                type="text"
+                value={prompt}
+                onChange={e => setPrompt(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="e.g. Machine Learning, Ancient Rome, Climate Change…"
+                className="flex-1 bg-transparent text-white placeholder:text-white/40 text-base px-5 py-4 focus:outline-none min-w-0"
+                autoFocus
+              />
+
+              {/* Divider */}
+              <div className="w-px h-8 bg-white/20 shrink-0" />
+
+              {/* PDF upload button */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-2 px-4 py-4 text-white/60 hover:text-white transition-colors shrink-0 text-sm"
+                title="Upload PDF"
               >
-                {/* Progress Bar */}
-                <Card className="glass-card">
-                  <CardContent className="pt-6">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm font-medium">
-                        {generationStatus?.message || "Initializing..."}
-                      </span>
-                      <span className="text-xs text-muted-foreground">{progress}%</span>
+                <Paperclip className="w-4 h-4" />
+                {files.length > 0 ? (
+                  <span className="text-emerald-400 text-xs font-medium">{files.length} file{files.length > 1 ? "s" : ""}</span>
+                ) : (
+                  <span className="hidden sm:inline text-xs">Upload PDF</span>
+                )}
+              </button>
+              <input ref={fileInputRef} type="file" multiple accept=".pdf,.doc,.docx,.txt" className="hidden"
+                onChange={e => { if (e.target.files) setFiles(Array.from(e.target.files)); }} />
+
+              {/* Divider */}
+              <div className="w-px h-8 bg-white/20 shrink-0" />
+
+              {/* Settings gear */}
+              <button
+                onClick={() => setSettingsOpen(o => !o)}
+                className={`px-4 py-4 transition-colors shrink-0 ${settingsOpen ? "text-primary" : "text-white/60 hover:text-white"}`}
+                title="Settings"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+
+              {/* Generate button */}
+              <button
+                onClick={handleGenerate}
+                disabled={!prompt.trim()}
+                className="flex items-center gap-2 px-5 py-4 bg-primary text-white font-semibold text-sm rounded-r-2xl hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0"
+              >
+                <Zap className="w-4 h-4" />
+                <span className="hidden sm:inline">Generate</span>
+              </button>
+
+              {/* Settings dropdown */}
+              <AnimatePresence>
+                {settingsOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 8 }}
+                    className="absolute top-full right-0 mt-2 w-72 bg-card/95 backdrop-blur-xl border border-border rounded-2xl shadow-2xl p-5 space-y-5 z-50"
+                  >
+                    <div>
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-2">Theme</label>
+                      <Select value={theme} onValueChange={setTheme}>
+                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                        <SelectContent>{themes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                      </Select>
                     </div>
-                    <div className="progress-track">
-                      <motion.div
-                        className="progress-fill"
-                        initial={{ width: 0 }}
-                        animate={{ width: `${progress}%` }}
-                        transition={{ duration: 0.5 }}
-                      />
+                    <div>
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-2">
+                        Max slides: <span className="text-primary">{maxSlides}</span>
+                      </label>
+                      <Slider value={[maxSlides]} onValueChange={v => setMaxSlides(v[0])} min={5} max={20} step={1} />
                     </div>
-                  </CardContent>
-                </Card>
+                    <div>
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-2">Language</label>
+                      <Select value={language} onValueChange={setLanguage}>
+                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="English">🇬🇧 English</SelectItem>
+                          <SelectItem value="French">🇫🇷 French</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
 
-                {/* Generation Steps */}
-                <Card className="glass-card">
-                  <CardHeader>
-                    <CardTitle className="text-sm">Generation Progress</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {[
-                      { step: "ingesting", label: "📄 Analyzing documents" },
-                      { step: "indexing", label: "🗂️ Building index" },
-                      { step: "retrieving", label: "🔍 Retrieving context" },
-                      { step: "generating", label: "✨ Generating slides" },
-                      { step: "rendering", label: "🎨 Rendering HTML" },
-                    ].map((item) => {
-                      const isDone = progress >= {
-                        ingesting: 15,
-                        indexing: 30,
-                        retrieving: 50,
-                        generating: 70,
-                        rendering: 95,
-                      }[item.step] || 0;
-
-                      return (
-                        <div
-                          key={item.step}
-                          className={`flex items-center gap-3 p-2 rounded transition ${isDone ? "text-primary" : "text-muted-foreground"
-                            }`}
-                        >
-                          {isDone ? (
-                            <Check className="w-5 h-5 text-green-500" />
-                          ) : (
-                            <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-                          )}
-                          <span className="text-sm">{item.label}</span>
-                        </div>
-                      );
-                    })}
-                  </CardContent>
-                </Card>
-              </motion.div>
-            )}
-
-            {/* Slide Reorder / Preview */}
-            {orderedSlides.length > 0 && (
-              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">
-                      {orderedSlides.length} slides generated
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Drag to reorder · locked slides can't be moved
-                    </p>
+            {/* Selected files */}
+            {files.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {files.map((f, i) => (
+                  <div key={i} className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 border border-white/20 text-white text-xs">
+                    <Check className="w-3 h-3 text-emerald-400" />
+                    <span className="truncate max-w-[160px]">{f.name}</span>
+                    <button onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} className="hover:text-red-400 transition-colors ml-1">
+                      <X className="w-3 h-3" />
+                    </button>
                   </div>
-                </div>
-
-                <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
-                  {orderedSlides.map((slide, i) => {
-                    const locked = isLocked(slide);
-                    return (
-                      <div
-                        key={`${slide.title}-${i}`}
-                        draggable={!locked}
-                        onDragStart={() => !locked && handleDragStart(i)}
-                        onDragOver={(e) => !locked && handleDragOver(e, i)}
-                        className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
-                          locked
-                            ? "bg-muted/40 border-border/30 opacity-70 cursor-not-allowed"
-                            : "bg-card border-border hover:border-primary/40 cursor-grab active:cursor-grabbing hover:shadow-sm"
-                        }`}
-                      >
-                        <div className="flex-shrink-0 text-muted-foreground">
-                          {locked
-                            ? <Lock className="w-4 h-4" />
-                            : <GripVertical className="w-4 h-4" />}
-                        </div>
-                        <div className="flex-shrink-0 w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold flex items-center justify-center">
-                          {i + 1}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{slide.title || "Untitled"}</p>
-                          <p className="text-xs text-muted-foreground capitalize">{slide.slideType}</p>
-                        </div>
-                        {locked && (
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-                            LOCKED
-                          </span>
-                        )}
-                        {!locked && (
-                          <button
-                            onClick={() => setOrderedSlides(prev => prev.filter((_, idx) => idx !== i))}
-                            className="p-1 rounded-md hover:bg-destructive/10 hover:text-destructive text-muted-foreground transition-colors"
-                            title="Remove slide"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <Button
-                  className="launch-button w-full"
-                  size="lg"
-                  onClick={handleConfirmOrder}
-                  disabled={isReordering || !sessionId}
-                >
-                  <Eye className="w-5 h-5" />
-                  {isReordering ? "Rendering..." : "Confirm Order & View"}
-                  <ArrowRight className="w-5 h-5" />
-                </Button>
-              </motion.div>
+                ))}
+              </div>
             )}
 
-            {/* Empty State */}
-            {!isLoading && slides.length === 0 && (
-              <Card className="glass-card flex-1 flex items-center justify-center min-h-[400px]">
-                <div className="text-center space-y-4">
-                  <Eye className="w-16 h-16 mx-auto text-muted-foreground/30" />
-                  <div>
-                    <p className="text-lg font-medium text-muted-foreground">
-                      No slides yet
-                    </p>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      Fill in the form and click generate to create your presentation
-                    </p>
-                  </div>
-                </div>
-              </Card>
-            )}
+            <p className="text-white/30 text-xs text-center mt-4">Press Enter to generate</p>
           </motion.div>
-        </motion.div>
+        </div>
       </div>
-    </div>
+    );
+  }
+
+  // ── PREVIEW PHASE (full-screen) ────────────────────────────────────────────
+  return (
+    <motion.div
+      className="fixed inset-0 z-[100] bg-background flex flex-col"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.4 }}
+    >
+      {/* ── Top bar ── */}
+      <div className="shrink-0 flex items-center justify-between px-8 py-4 border-b border-border/50 bg-background/80 backdrop-blur-xl">
+        <div>
+          <h1 className="text-xl font-bold gradient-text leading-none">Presentation Ready</h1>
+          <p className="text-muted-foreground text-xs mt-1 truncate max-w-sm">{prompt}</p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {/* Settings chips */}
+          <div className="hidden sm:flex items-center gap-2 text-xs">
+            <span className="px-2.5 py-1 rounded-full bg-secondary text-muted-foreground border border-border">{theme}</span>
+            <span className="px-2.5 py-1 rounded-full bg-secondary text-muted-foreground border border-border">{language}</span>
+            <span className="px-2.5 py-1 rounded-full bg-secondary text-muted-foreground border border-border">{orderedSlides.length} slides</span>
+            {files.length > 0 && <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">{files.length} file{files.length > 1 ? "s" : ""}</span>}
+          </div>
+          <Button variant="outline" size="sm" onClick={() => { setPhase("input"); setSlides([]); setOrderedSlides([]); }}>
+            ← New
+          </Button>
+        </div>
+      </div>
+
+      {/* ── Slide list (scrollable) ── */}
+      <div className="flex-1 overflow-y-auto px-8 py-6">
+        <p className="text-muted-foreground text-sm mb-4">
+          {orderedSlides.length > 0 ? `${orderedSlides.length} slides · drag to reorder` : "No slides"}
+        </p>
+
+        <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-3">
+          {orderedSlides.map((slide, i) => {
+            const locked = isLocked(slide);
+            return (
+              <motion.div
+                key={`${slide.title}-${i}`}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.03 }}
+                draggable={!locked}
+                onDragStart={() => !locked && handleDragStart(i)}
+                onDragOver={e => !locked && handleDragOver(e, i)}
+                className={`break-inside-avoid mb-3 flex items-center gap-3 p-3 rounded-xl border transition-all ${
+                  locked
+                    ? "bg-muted/40 border-border/30 opacity-70 cursor-not-allowed"
+                    : "bg-card border-border hover:border-primary/40 cursor-grab active:cursor-grabbing hover:shadow-md"
+                }`}
+              >
+                <div className="flex-shrink-0 text-muted-foreground">
+                  {locked ? <Lock className="w-4 h-4" /> : <GripVertical className="w-4 h-4" />}
+                </div>
+                <div className="flex-shrink-0 w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold flex items-center justify-center">{i + 1}</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{slide.title || "Untitled"}</p>
+                  <p className="text-xs text-muted-foreground capitalize">{slide.slideType}</p>
+                </div>
+                {locked && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">LOCKED</span>}
+                {!locked && (
+                  <button onClick={() => setOrderedSlides(prev => prev.filter((_, idx) => idx !== i))}
+                    className="p-1 rounded-md hover:bg-destructive/10 hover:text-destructive text-muted-foreground transition-colors">
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Bottom action bar ── */}
+      <div className="shrink-0 px-8 py-4 border-t border-border/50 bg-background/80 backdrop-blur-xl">
+        <Button
+          className="launch-button w-full h-12 text-base"
+          size="lg"
+          onClick={handleConfirmOrder}
+          disabled={isReordering || !sessionId}
+        >
+          <Eye className="w-5 h-5" />
+          {isReordering ? "Rendering..." : "Confirm Order & View"}
+          <ArrowRight className="w-5 h-5" />
+        </Button>
+      </div>
+    </motion.div>
   );
 }
