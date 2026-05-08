@@ -1,12 +1,13 @@
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { FileText, MessageSquare, Brain, GitBranch, Sparkles, History, BarChart3 } from "lucide-react";
+import { FileText, MessageSquare, Brain, GitBranch, Sparkles, History, BarChart3, Camera, ClipboardList } from "lucide-react";
 import LiquidEther from "@/components/reactbits/LiquidEther";
 import SplitText from "@/components/reactbits/SplitText";
 import { useTheme } from "@/components/ThemeProvider";
+import { useAuth } from "@/context/AuthContext";
 
-const cards = [
+const ALL_CARDS = [
   {
     lucide: FileText,
     title: "Exam Simulator",
@@ -15,15 +16,17 @@ const cards = [
     route: "/exam",
     image: "/exam.jpg",
     available: true,
+    roles: ["teacher", "admin"],
   },
   {
     lucide: FileText,
-    title: "Generate Presentations",
-    desc: "Upload a PDF or text file and let AI build your presentation.",
+    title: "From Book to Presentation",
+    desc: "Transform any course material, textbook, or document into a structured AI-powered presentation.",
     badge: null,
     route: "/generate/presentations",
     image: "/presentations.webp",
     available: true,
+    roles: ["teacher", "admin", "student"],
   },
   {
     lucide: Brain,
@@ -33,6 +36,7 @@ const cards = [
     route: "/generate/quiz",
     image: "/quiz.jpg",
     available: true,
+    roles: ["teacher", "admin"],
   },
   {
     lucide: GitBranch,
@@ -42,28 +46,54 @@ const cards = [
     route: "/aria",
     image: "/chatbot.png",
     available: true,
+    roles: ["student", "admin"],
+  },
+  {
+    lucide: Camera,
+    title: "Mark Attendance",
+    desc: "Start a live face-recognition attendance session for your class.",
+    badge: null,
+    route: "/attendance",
+    image: "/blog-33-Importance-of-Student-Attendance-in-Education.jpg",
+    available: true,
+    roles: ["teacher", "admin"],
+  },
+  {
+    lucide: ClipboardList,
+    title: "Join Quiz",
+    desc: "Enter a room code to take a live quiz shared by your teacher.",
+    badge: null,
+    route: "/quiz/session",
+    image: "/quiz.jpg",
+    available: true,
+    roles: ["student"],
   },
   {
     lucide: MessageSquare,
-    title: "Tek-Up Navigator 3D",
+    title: "University Navigator",
     desc: "Create a presentation from a simple text description in seconds.",
     badge: "NOT AVAILABLE",
     route: "/generate/prompt",
     image: "/navigator.webp",
     available: false,
+    roles: ["admin", "student"],
   },
 ];
 
 type ExpandingCard = {
   rect: DOMRect;
-  card: typeof cards[0];
+  card: typeof ALL_CARDS[0];
 };
 
 export default function CreationHub() {
   const navigate = useNavigate();
   const { isDark } = useTheme();
+  const { user } = useAuth();
   const [animationKey, setAnimationKey] = useState(0);
   const [expanding, setExpanding] = useState<ExpandingCard | null>(null);
+
+  const role = user?.role ?? "student";
+  const cards = ALL_CARDS.filter(c => c.roles.includes(role));
 
   useEffect(() => {
     const interval = setInterval(() => setAnimationKey(p => p + 1), 10000);

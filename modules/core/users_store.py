@@ -5,7 +5,7 @@ import os
 import uuid
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional, Literal
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -13,6 +13,8 @@ log = logging.getLogger("users")
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 DB_NAME   = "pfe"
+
+Role = Literal["student", "teacher", "admin"]
 
 def _admin_email() -> str:
     """Read ADMIN_EMAIL at call time so .env is always loaded first."""
@@ -28,17 +30,48 @@ def get_db():
     return _client[DB_NAME]
 
 
+async def is_teacher_email(email: str) -> bool:
+    """Return True if the email appears in the timetable collection."""
+    db = get_db()
+    doc = await db.timetable.find_one({"teacher_email": email.lower().strip()})
+    return doc is not None
+
+
+async def resolve_role(email: str) -> Role:
+    """Determine the correct role for a new user based on their email."""
+    email = email.lower().strip()
+    if email == _admin_email():
+        return "admin"
+    if await is_teacher_email(email):
+        return "teacher"
+    return "student"
+
+
 async def ensure_indexes():
     db = get_db()
     await db.users.create_index("email", unique=True)
     await db.conversations.create_index([("user_id", 1), ("updated_at", -1)])
     await db.contacts.create_index("created_at")
-    # Promote ADMIN_EMAIL user to admin if not already
+    await db.timetable.create_index("teacher_email")
+    await db.timetable.create_index("class_id", unique=True, sparse=True)
+    await db.quiz_sessions.create_index("room_code", unique=True, sparse=True)
+    await db.attendance_sessions.create_index([("teacher_id", 1), ("date", -1)])
+
+    # Migrate legacy is_admin boolean → role field
+    await db.users.update_many(
+        {"is_admin": True, "role": {"$exists": False}},
+        {"$set": {"role": "admin"}, "$unset": {"is_admin": ""}},
+    )
+    await db.users.update_many(
+        {"role": {"$exists": False}},
+        {"$set": {"role": "student"}},
+    )
+    # Ensure ADMIN_EMAIL user always has role="admin"
     admin_email = _admin_email()
     if admin_email:
         await db.users.update_one(
-            {"email": admin_email, "is_admin": {"$ne": True}},
-            {"$set": {"is_admin": True}},
+            {"email": admin_email},
+            {"$set": {"role": "admin"}, "$unset": {"is_admin": ""}},
         )
 
 
@@ -47,6 +80,7 @@ async def create_user(
     email: str,
     password_hash: str,
     auth_provider: str = "email",
+    role: Role = "student",
 ) -> dict:
     db  = get_db()
     now = datetime.now(timezone.utc)
@@ -57,11 +91,11 @@ async def create_user(
         "email":         email,
         "password_hash": password_hash,
         "auth_provider": auth_provider,
-        "is_admin":      email == _admin_email(),
+        "role":          role,
         "created_at":    now,
     }
     await db.users.insert_one(doc)
-    log.info(f"User created: {email}")
+    log.info(f"User created: {email} (role={role})")
     return doc
 
 
@@ -239,3 +273,9 @@ async def list_contacts(limit: int = 100) -> list[dict]:
     db = get_db()
     cursor = db.contacts.find({}, {"_id": 0}).sort("created_at", -1).limit(limit)
     return await cursor.to_list(length=limit)
+
+
+async def delete_contact(contact_id: str) -> bool:
+    db = get_db()
+    result = await db.contacts.delete_one({"contact_id": contact_id})
+    return result.deleted_count > 0

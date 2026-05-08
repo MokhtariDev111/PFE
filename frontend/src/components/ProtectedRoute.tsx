@@ -9,8 +9,15 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
 }
 
 export function AdminRoute({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  if (!user.is_admin) return <Navigate to="/dashboard" replace />;
+  if (!isAdmin) return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
+
+export function TeacherRoute({ children }: { children: ReactNode }) {
+  const { user, isTeacher } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  if (!isTeacher) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }

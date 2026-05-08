@@ -34,7 +34,7 @@ from modules.doc_generation.image_pipeline import _build_image_registry, _extrac
 ROOT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT_DIR))
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Depends
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Depends, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -46,7 +46,7 @@ from modules.core.users_store import (
     create_user, get_user_by_email, get_user_by_id, ensure_indexes,
     create_or_get_google_user, list_users, delete_user,
     ban_user, unban_user, get_admin_stats, save_contact, list_contacts,
-    save_contact_reply, update_profile,
+    save_contact_reply, update_profile, resolve_role, delete_contact,
 )
 
 _bearer = HTTPBearer(auto_error=False)
@@ -78,9 +78,26 @@ async def get_optional_user(creds: HTTPAuthorizationCredentials = Depends(_beare
 async def get_admin_user(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> dict:
     """Require a valid JWT from an admin user."""
     user = await get_current_user(creds)
-    if not user.get("is_admin"):
+    if user.get("role") != "admin":
         raise HTTPException(403, "Admin access required")
     return user
+
+async def get_teacher_user(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> dict:
+    """Require a valid JWT from a teacher or admin user."""
+    user = await get_current_user(creds)
+    if user.get("role") not in ("teacher", "admin"):
+        raise HTTPException(403, "Teacher access required")
+    return user
+
+def _user_response(user: dict) -> dict:
+    """Serialize a user document for API responses."""
+    return {
+        "user_id":    user["user_id"],
+        "name":       user["name"],
+        "email":      user["email"],
+        "role":       user.get("role", "student"),
+        "avatar_url": user.get("avatar_url", ""),
+    }
 
 from modules.core.config_loader import CONFIG, get_paths, get_index_path
 from modules.ingestion.ingestion import ingest_directory
@@ -92,8 +109,6 @@ from modules.doc_generation.slide_generator import SlideData
 from modules.core.history_store import record_presentation, load_history, clear_history
 from modules.doc_generation.html_renderer import render as render_html
 from modules.retrieval.context_manager import prepare_context_for_slides, extract_section_outline
-from modules.core.llm_cache import clear_cache, cache_stats
-from modules.retrieval.evaluation import RAGEvaluator
 from modules.core.health import full_health_check, quick_status
 import time
 
@@ -165,6 +180,10 @@ def _files_hash_from_content(files_data: list[tuple[str, bytes]]) -> str:
 _PRES_INDEX_DIR = ROOT_DIR / "data" / "generate_presentation" / "indexes"
 _PRES_INDEX_DIR.mkdir(parents=True, exist_ok=True)
 
+# ── Student face images (admin-uploaded photos) ───────────────────────────────
+STUDENT_FACES_DIR = ROOT_DIR / "data" / "student_faces"
+STUDENT_FACES_DIR.mkdir(parents=True, exist_ok=True)
+
 def _user_index_path(user_id: str, file_hash: str) -> Path:
     """Stable on-disk FAISS path, isolated per user and content hash."""
     p = _PRES_INDEX_DIR / user_id / file_hash
@@ -200,8 +219,14 @@ def _load_index_meta(index_dir: Path) -> dict | None:
 
 
 # ── Startup ──────────────────────────────────────────────────────────────────
+
+# Captured event loop — used to bridge sync AttendanceEngine callbacks → async DB/WS
+_event_loop: asyncio.AbstractEventLoop | None = None
+
 @app.on_event("startup")
 async def startup_event():
+    global _event_loop
+    _event_loop = asyncio.get_running_loop()
     log.info("Pre-warming engines...")
     warm_ocr_engine()
     from modules.retrieval.embeddings import VectorDB
@@ -209,6 +234,18 @@ async def startup_event():
     if CONFIG.get("retrieval", {}).get("use_reranker", False):
         _load_reranker(CONFIG["retrieval"]["reranker_model"])
     await ensure_indexes()
+
+    # Close any attendance sessions that were left "active" from a previous server run.
+    # On startup, no engines are running, so all "active" DB sessions are stale.
+    from modules.core.users_store import get_db as _startup_db
+    _sdb = _startup_db()
+    stale = await _sdb.attendance_sessions.update_many(
+        {"status": "active"},
+        {"$set": {"status": "closed", "closed_at": datetime.utcnow(), "auto_closed": "server_restart"}},
+    )
+    if stale.modified_count:
+        log.info(f"Auto-closed {stale.modified_count} stale attendance session(s) from previous run")
+
     log.info("✔ System Ready")
 
 
@@ -225,9 +262,10 @@ async def auth_register(
     existing = await get_user_by_email(email)
     if existing:
         raise HTTPException(409, "An account with this email already exists")
-    user  = await create_user(name, email, hash_password(password))
-    token = create_token(user["user_id"], user["email"])
-    return {"token": token, "user": {"user_id": user["user_id"], "name": user["name"], "email": user["email"], "is_admin": user.get("is_admin", False), "avatar_url": user.get("avatar_url", "")}}
+    role  = await resolve_role(email)
+    user  = await create_user(name, email, hash_password(password), role=role)
+    token = create_token(user["user_id"], user["email"], role=role)
+    return {"token": token, "user": _user_response(user)}
 
 
 @app.post("/auth/login")
@@ -238,19 +276,13 @@ async def auth_login(
     user = await get_user_by_email(email)
     if not user or not verify_password(password, user["password_hash"]):
         raise HTTPException(401, "Invalid email or password")
-    token = create_token(user["user_id"], user["email"])
-    return {"token": token, "user": {"user_id": user["user_id"], "name": user["name"], "email": user["email"], "is_admin": user.get("is_admin", False), "avatar_url": user.get("avatar_url", "")}}
+    token = create_token(user["user_id"], user["email"], role=user.get("role", "student"))
+    return {"token": token, "user": _user_response(user)}
 
 
 @app.get("/auth/me")
 async def auth_me(current_user: dict = Depends(get_current_user)):
-    return {
-        "user_id":    current_user["user_id"],
-        "name":       current_user["name"],
-        "email":      current_user["email"],
-        "is_admin":   current_user.get("is_admin", False),
-        "avatar_url": current_user.get("avatar_url", ""),
-    }
+    return _user_response(current_user)
 
 
 @app.post("/auth/google")
@@ -266,17 +298,8 @@ async def auth_google(credential: str = Form(...)):
     if not email:
         raise HTTPException(400, "Google account has no email")
     user  = await create_or_get_google_user(email=email, name=name, avatar_url=avatar_url)
-    token = create_token(user["user_id"], user["email"])
-    return {
-        "token": token,
-        "user": {
-            "user_id":   user["user_id"],
-            "name":      user["name"],
-            "email":     user["email"],
-            "is_admin":  user.get("is_admin", False),
-            "avatar_url": user.get("avatar_url", ""),
-        },
-    }
+    token = create_token(user["user_id"], user["email"], role=user.get("role", "student"))
+    return {"token": token, "user": _user_response(user)}
 
 
 @app.patch("/auth/profile")
@@ -291,13 +314,7 @@ async def auth_update_profile(
     updated = await update_profile(current_user["user_id"], name=name, avatar_url=avatar_url)
     if not updated:
         raise HTTPException(404, "User not found")
-    return {
-        "user_id":    updated["user_id"],
-        "name":       updated["name"],
-        "email":      updated["email"],
-        "is_admin":   updated.get("is_admin", False),
-        "avatar_url": updated.get("avatar_url", ""),
-    }
+    return _user_response(updated)
 
 
 # ── Contact endpoint ──────────────────────────────────────────────────────────
@@ -390,6 +407,128 @@ async def admin_reply_contact(
     return {"ok": True}
 
 
+@app.delete("/admin/contacts/{contact_id}")
+async def admin_delete_contact(contact_id: str, _admin: dict = Depends(get_admin_user)):
+    ok = await delete_contact(contact_id)
+    if not ok:
+        raise HTTPException(404, "Message not found")
+    return {"ok": True}
+
+
+# ── Timetable endpoints ───────────────────────────────────────────────────────
+
+@app.get("/admin/timetable")
+async def admin_list_timetable(_admin: dict = Depends(get_admin_user)):
+    from modules.core.timetable_store import list_timetable
+    return await list_timetable()
+
+
+@app.post("/admin/timetable")
+async def admin_add_class(
+    teacher_name:  str = Form(...),
+    teacher_email: str = Form(...),
+    subject:       str = Form(...),
+    day:           str = Form(...),
+    start_time:    str = Form(...),
+    end_time:      str = Form(...),
+    classroom:     str = Form(""),
+    year:          str = Form(""),
+    _admin: dict = Depends(get_admin_user),
+):
+    from modules.core.timetable_store import upsert_class
+    doc = await upsert_class(teacher_name, teacher_email, subject, day, start_time, end_time, classroom=classroom, year=year)
+    return doc
+
+
+@app.put("/admin/timetable/{class_id}")
+async def admin_update_class(
+    class_id:      str,
+    teacher_name:  str = Form(...),
+    teacher_email: str = Form(...),
+    subject:       str = Form(...),
+    day:           str = Form(...),
+    start_time:    str = Form(...),
+    end_time:      str = Form(...),
+    classroom:     str = Form(""),
+    year:          str = Form(""),
+    _admin: dict = Depends(get_admin_user),
+):
+    from modules.core.timetable_store import upsert_class
+    doc = await upsert_class(teacher_name, teacher_email, subject, day, start_time, end_time, classroom=classroom, year=year, class_id=class_id)
+    return doc
+
+
+@app.delete("/admin/timetable/{class_id}")
+async def admin_delete_class(class_id: str, _admin: dict = Depends(get_admin_user)):
+    from modules.core.timetable_store import delete_class
+    ok = await delete_class(class_id)
+    if not ok:
+        raise HTTPException(404, "Class not found")
+    return {"ok": True}
+
+
+@app.post("/admin/timetable/upload")
+async def admin_upload_timetable(
+    file: UploadFile = File(...),
+    _admin: dict = Depends(get_admin_user),
+):
+    """Upload a CSV file to bulk-import timetable entries.
+    Required columns: teacher_name, teacher_email, subject, day, start_time, end_time
+    """
+    from modules.core.timetable_store import import_csv
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(400, "Only CSV files are accepted")
+    content = await file.read()
+    try:
+        csv_text = content.decode("utf-8-sig")  # handles BOM from Excel
+    except UnicodeDecodeError:
+        csv_text = content.decode("latin-1")
+    result = await import_csv(csv_text)
+    return result
+
+
+@app.post("/admin/timetable/{class_id}/enroll")
+async def enroll_student_in_class(
+    class_id: str,
+    user_id: str = Form(...),
+    _admin: dict = Depends(get_admin_user),
+):
+    """Enroll a student in a class."""
+    from modules.core.timetable_store import enroll_student
+    from modules.core.users_store import get_user_by_id
+    user = await get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    ok = await enroll_student(class_id, user["user_id"], user["name"], user["email"])
+    return {"ok": ok}
+
+
+@app.delete("/admin/timetable/{class_id}/enroll/{user_id}")
+async def unenroll_student_from_class(
+    class_id: str,
+    user_id: str,
+    _admin: dict = Depends(get_admin_user),
+):
+    """Remove a student from a class."""
+    from modules.core.timetable_store import unenroll_student
+    ok = await unenroll_student(class_id, user_id)
+    return {"ok": ok}
+
+
+@app.get("/admin/timetable/{class_id}/students")
+async def get_class_students(class_id: str, _admin: dict = Depends(get_admin_user)):
+    """List all students enrolled in a class."""
+    from modules.core.timetable_store import get_enrolled_students
+    return await get_enrolled_students(class_id)
+
+
+@app.get("/student/my-classes")
+async def student_my_classes(current_user: dict = Depends(get_current_user)):
+    """Student fetches the classes they are enrolled in."""
+    from modules.core.timetable_store import get_student_classes
+    return await get_student_classes(current_user["email"])
+
+
 @app.on_event("shutdown")
 async def shutdown_event():
     for engine in _llm_engines.values():
@@ -409,10 +548,6 @@ async def get_themes():
     return list(_PPTX_TO_HTML_THEME.keys())
 
 
-@app.post("/transcribe")
-async def transcribe_audio(file: UploadFile = File(...)):
-    return {"text": ""}
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # OPTIMIZED GENERATION ENDPOINT
@@ -421,7 +556,7 @@ async def transcribe_audio(file: UploadFile = File(...)):
 async def generate_stream(
     prompt: str = Form(...),
     theme: str = Form("Dark Navy"),
-    max_slides: int = Form(20),
+    max_slides: int = Form(30),
     model: str = Form(""),
     language: str = Form("English"),
     files: list[UploadFile] = File(default=[]),
@@ -582,13 +717,13 @@ async def generate_stream(
                 section_chunk_bank[section] = strict
 
             # 3. Assign slides proportionally to content volume
-            # Sections with more chunks get more slides (up to 3 per section)
+            # Sections with more chunks get more slides (up to 5 per section)
             # Sections with very few chunks (≤2) get 1 slide
-            CHUNKS_PER_SLIDE = 4   # ~4 chunks worth of content per slide
+            CHUNKS_PER_SLIDE = 2   # ~2 chunks worth of content per slide
             expanded_outline = []  # final list of (section, slide_count) pairs
             for section in section_outline:
                 chunk_count = len(section_chunk_bank.get(section, []))
-                slides_for_section = max(1, min(3, round(chunk_count / CHUNKS_PER_SLIDE)))
+                slides_for_section = max(1, min(5, round(chunk_count / CHUNKS_PER_SLIDE)))
                 expanded_outline.append((section, slides_for_section))
 
             total_content_slides = sum(c for _, c in expanded_outline)
@@ -1046,41 +1181,6 @@ async def delete_history():
     clear_history()
     return {"status": "cleared"}
 
-@app.get("/cache/stats")
-async def get_cache_stats():
-    """Get LLM cache statistics."""
-    return cache_stats()
-
-@app.post("/evaluate")
-async def evaluate_query(
-    query: str = Form(...),
-    top_k: int = Form(5),
-):
-    """Evaluate RAG pipeline quality for a query."""
-    from modules.retrieval.retrieval import Retriever
-    
-    retriever = Retriever()
-    evaluator = RAGEvaluator()
-    
-    chunks = retriever.search_expanded(query, top_k=top_k)
-    
-    if not chunks:
-        return {"error": "No chunks retrieved", "query": query}
-    
-    metrics = evaluator.evaluate_retrieval(query, chunks)
-    
-    return {
-        "query": query,
-        "metrics": metrics.to_dict(),
-        "summary": metrics.summary(),
-    }
-
-@app.delete("/cache")
-async def clear_llm_cache():
-    """Clear all cached LLM responses across all namespaces."""
-    count = clear_cache()
-    return {"status": "cleared", "entries_removed": count}
-
 @app.get("/health")
 async def health_check():
     """Comprehensive system health check."""
@@ -1108,10 +1208,6 @@ def _read_stats() -> dict:
         pass
     return {"user_count": 0}
 
-def _write_stats(data: dict):
-    _STATS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(_STATS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
 
 @app.get("/stats")
 async def get_stats():
@@ -1124,14 +1220,6 @@ async def get_stats():
         user_count = _read_stats().get("user_count", 0)
     return {"user_count": user_count}
 
-@app.post("/stats/register-user")
-async def register_user():
-    """Increment user count. Call this when a new user signs up."""
-    data = _read_stats()
-    data["user_count"] = data.get("user_count", 0) + 1
-    _write_stats(data)
-    return data
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # QUIZ GENERATION ENDPOINTS
@@ -1141,8 +1229,9 @@ async def register_user():
 async def quiz_concepts(
     topic: str = Form(...),
     language: str = Form("English"),
+    _teacher: dict = Depends(get_teacher_user),
 ):
-    """Step 1 — Extract concept tree for a topic."""
+    """Step 1 — Extract concept tree for a topic. Teacher/Admin only."""
     from modules.quiz_generation import QuizGenerator
     gen = QuizGenerator(namespace="quiz")
     result = await gen.extract_concepts(topic, language=language)
@@ -1182,9 +1271,9 @@ async def quiz_generate(
     image_questions_count: int = Form(0),
     language: str = Form("English"),
     seed: str = Form(""),
-    current_user: dict = Depends(get_optional_user),
+    current_user: dict = Depends(get_teacher_user),
 ):
-    """Step 3 — Generate quiz questions."""
+    """Step 3 — Generate quiz questions. Teacher/Admin only."""
     from modules.quiz_generation import QuizGenerator
     import json as _json
     gen = QuizGenerator(namespace="quiz")
@@ -1221,17 +1310,522 @@ async def quiz_image(
     concept: str = Form(""),
     filename: str = Form(""),
 ):
-    """Generate an SVG diagram for an image-type question."""
+    """Generate a diagram (Mermaid or Recharts) for an image-type question."""
     from modules.quiz_generation import QuizImageGenerator
     img_gen = QuizImageGenerator(namespace="quiz")
-    svg = await img_gen.generate_image(
+    diagram = await img_gen.generate_image(
         image_prompt=image_prompt,
         concept=concept,
     )
-    if not svg:
-        raise HTTPException(status_code=500, detail="SVG generation failed")
-    from fastapi.responses import Response
-    return Response(content=svg, media_type="image/svg+xml")
+    if not diagram:
+        raise HTTPException(status_code=500, detail="Diagram generation failed")
+    return diagram
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LIVE QUIZ SESSION ENDPOINTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+# In-memory WebSocket connection registry: session_id → set of WebSocket objects
+_quiz_ws_connections: dict[str, set] = {}
+
+
+@app.post("/quiz/sessions")
+async def quiz_create_session(
+    request: Request,
+    teacher: dict = Depends(get_teacher_user),
+):
+    """Teacher creates a live quiz session. Returns room_code."""
+    from modules.quiz_generation.session_store import create_session
+    body      = await request.json()
+    questions = body.get("questions", [])
+    if not questions:
+        raise HTTPException(400, "No questions provided")
+    session = await create_session(
+        teacher_id=teacher["user_id"],
+        teacher_name=teacher["name"],
+        questions=questions,
+    )
+    return {
+        "session_id": session["session_id"],
+        "room_code":  session["room_code"],
+        "status":     session["status"],
+    }
+
+
+@app.get("/quiz/sessions/{room_code}")
+async def quiz_get_session(room_code: str, current_user: dict = Depends(get_current_user)):
+    """Student/Teacher fetches session info + public questions."""
+    from modules.quiz_generation.session_store import get_session_by_code
+    session = await get_session_by_code(room_code.upper())
+    if not session:
+        raise HTTPException(404, "Session not found or already closed")
+    is_teacher = current_user["user_id"] == session["teacher_id"]
+    return {
+        "session_id":  session["session_id"],
+        "room_code":   session["room_code"],
+        "status":      session["status"],
+        "teacher_name": session["teacher_name"],
+        "questions":   session["questions"] if is_teacher else session["public_questions"],
+        "participant_count": len(session.get("participants", [])),
+    }
+
+
+@app.post("/quiz/sessions/{room_code}/join")
+async def quiz_join_session(room_code: str, current_user: dict = Depends(get_current_user)):
+    """Student joins a session by room code."""
+    from modules.quiz_generation.session_store import get_session_by_code, add_participant, get_leaderboard
+    session = await get_session_by_code(room_code.upper())
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if session["status"] == "closed":
+        raise HTTPException(410, "Session has ended")
+    await add_participant(session["session_id"], current_user["user_id"], current_user["name"])
+    # Notify teacher's WebSocket
+    await _broadcast_session(session["session_id"], {
+        "event": "participant_joined",
+        "name":  current_user["name"],
+        "leaderboard": await get_leaderboard(session["session_id"]),
+    })
+    return {"session_id": session["session_id"], "questions": session["public_questions"]}
+
+
+@app.post("/quiz/sessions/{session_id}/submit")
+async def quiz_submit_answers(
+    session_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    """Student submits answers. Returns score."""
+    from modules.quiz_generation.session_store import submit_answers, get_leaderboard
+    body    = await request.json()
+    answers = body.get("answers", {})  # {question_index: selected_answer}
+    result  = await submit_answers(session_id, current_user["user_id"], answers)
+    # Broadcast updated leaderboard to teacher
+    await _broadcast_session(session_id, {
+        "event":       "answer_submitted",
+        "name":        current_user["name"],
+        "score":       result["score"],
+        "leaderboard": await get_leaderboard(session_id),
+    })
+    return result
+
+
+@app.get("/quiz/sessions/{session_id}/results")
+async def quiz_session_results(session_id: str, teacher: dict = Depends(get_teacher_user)):
+    """Teacher fetches full results."""
+    from modules.quiz_generation.session_store import get_session_by_id, get_leaderboard
+    session = await get_session_by_id(session_id)
+    if not session or session["teacher_id"] != teacher["user_id"]:
+        raise HTTPException(404, "Session not found")
+    return {"leaderboard": await get_leaderboard(session_id), "status": session["status"]}
+
+
+@app.patch("/quiz/sessions/{session_id}/close")
+async def quiz_close_session(session_id: str, teacher: dict = Depends(get_teacher_user)):
+    """Teacher closes the session."""
+    from modules.quiz_generation.session_store import get_session_by_id, set_status
+    session = await get_session_by_id(session_id)
+    if not session or session["teacher_id"] != teacher["user_id"]:
+        raise HTTPException(404, "Session not found")
+    await set_status(session_id, "closed")
+    await _broadcast_session(session_id, {"event": "session_closed"})
+    _quiz_ws_connections.pop(session_id, None)
+    return {"ok": True}
+
+
+@app.websocket("/quiz/sessions/{session_id}/ws")
+async def quiz_session_ws(websocket: WebSocket, session_id: str):
+    """WebSocket for live session updates (teacher dashboard)."""
+    await websocket.accept()
+    if session_id not in _quiz_ws_connections:
+        _quiz_ws_connections[session_id] = set()
+    _quiz_ws_connections[session_id].add(websocket)
+    try:
+        while True:
+            await websocket.receive_text()  # keep-alive ping
+    except WebSocketDisconnect:
+        _quiz_ws_connections.get(session_id, set()).discard(websocket)
+
+
+async def _broadcast_session(session_id: str, data: dict):
+    """Send JSON to all WebSocket listeners of a session."""
+    conns = _quiz_ws_connections.get(session_id, set())
+    dead  = set()
+    for ws in conns:
+        try:
+            await ws.send_json(data)
+        except Exception:
+            dead.add(ws)
+    conns -= dead
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ATTENDANCE ENDPOINTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+# In-memory registry: session_id → (engine, ws_connections_set)
+_attendance_engines: dict[str, object]  = {}
+_attendance_ws:      dict[str, set]     = {}
+
+
+# ── Student face registration ─────────────────────────────────────────────────
+
+@app.get("/student/face/status")
+async def student_face_status(user: dict = Depends(get_current_user)):
+    """Return whether the current student has a registered face encoding and when it was registered."""
+    from modules.core.users_store import get_db as _gdb
+    db = _gdb()
+    doc = await db.users.find_one({"user_id": user["user_id"]}, {"face_encoding": 1, "face_registered_at": 1})
+    registered = bool(doc and doc.get("face_encoding") and len(doc["face_encoding"]) == 128)
+    registered_at = None
+    if registered and doc.get("face_registered_at"):
+        ra = doc["face_registered_at"]
+        registered_at = ra.isoformat() if hasattr(ra, "isoformat") else str(ra)
+        if registered_at and not registered_at.endswith("Z") and "+" not in registered_at:
+            registered_at += "Z"
+    return {"registered": registered, "face_registered_at": registered_at}
+
+
+@app.post("/student/face/detect")
+async def student_face_detect(request: Request, user: dict = Depends(get_current_user)):
+    """Detect face in a base64 JPEG frame and return head-pose angle."""
+    try:
+        import cv2 as _cv2
+        import face_recognition as _fr
+        import numpy as _np
+    except ImportError:
+        raise HTTPException(503, "Face recognition not installed on server")
+
+    import base64
+    body      = await request.json()
+    frame_b64 = body.get("frame", "")
+
+    try:
+        img_bytes = base64.b64decode(frame_b64)
+        arr = _np.frombuffer(img_bytes, _np.uint8)
+        img = _cv2.imdecode(arr, _cv2.IMREAD_COLOR)
+    except Exception:
+        return {"detected": False, "reason": "decode_error"}
+
+    if img is None:
+        return {"detected": False, "reason": "invalid_image"}
+
+    rgb  = _cv2.cvtColor(img, _cv2.COLOR_BGR2RGB)
+    locs = _fr.face_locations(rgb, model="hog")
+
+    if not locs:
+        return {"detected": False, "reason": "no_face"}
+    if len(locs) > 1:
+        return {"detected": False, "reason": "multiple_faces"}
+
+    top, right, bottom, left = locs[0]
+    gray  = _cv2.cvtColor(img, _cv2.COLOR_BGR2GRAY)
+    crop  = gray[top:bottom, left:right]
+
+    if (right - left) < 80:
+        return {"detected": False, "reason": "too_small"}
+    if _cv2.Laplacian(crop, _cv2.CV_64F).var() < 50:
+        return {"detected": False, "reason": "blurry"}
+    bright = float(crop.mean())
+    if bright < 40 or bright > 230:
+        return {"detected": False, "reason": "bad_lighting"}
+
+    lm_list = _fr.face_landmarks(rgb, [locs[0]])
+    if not lm_list:
+        return {"detected": True, "angle": "center", "quality": "good"}
+    lm = lm_list[0]
+
+    le  = _np.mean(lm.get("left_eye",  [[0, 0]]), axis=0)
+    re  = _np.mean(lm.get("right_eye", [[0, 0]]), axis=0)
+    nt  = _np.mean(lm.get("nose_tip",  [[0, 0]]), axis=0)
+
+    eye_mid    = (le + re) / 2
+    inter_eye  = max(float(_np.linalg.norm(le - re)), 1.0)
+
+    h_off = (nt[0] - eye_mid[0]) / inter_eye   # + = image-right, - = image-left
+    v_off = (nt[1] - eye_mid[1]) / inter_eye   # vertical distance nose-to-eyes (nose below = larger)
+
+    H      = 0.15
+    V_UP   = 0.70   # nose unusually close to eyes vertically → looking up
+    V_DOWN = 1.25   # nose unusually far from eyes → looking down
+
+    if abs(h_off) > H:
+        angle = "left" if h_off > 0 else "right"
+    elif v_off < V_UP:
+        angle = "up"
+    elif v_off > V_DOWN:
+        angle = "down"
+    else:
+        angle = "center"
+
+    return {"detected": True, "angle": angle, "quality": "good"}
+
+
+@app.post("/student/face/register")
+async def student_face_register(request: Request, user: dict = Depends(get_current_user)):
+    """Process captured frames and store the averaged face encoding in MongoDB."""
+    try:
+        import cv2 as _cv2
+        import face_recognition as _fr
+        import numpy as _np
+    except ImportError:
+        raise HTTPException(503, "Face recognition not installed on server")
+
+    import base64
+    body       = await request.json()
+    frames_b64 = body.get("frames", [])
+
+    encodings = []
+    for fb64 in frames_b64:
+        try:
+            arr = _np.frombuffer(base64.b64decode(fb64), _np.uint8)
+            img = _cv2.imdecode(arr, _cv2.IMREAD_COLOR)
+            if img is None:
+                continue
+            rgb  = _cv2.cvtColor(img, _cv2.COLOR_BGR2RGB)
+            locs = _fr.face_locations(rgb, model="hog")
+            if not locs:
+                continue
+            encs = _fr.face_encodings(rgb, locs[:1])
+            if encs:
+                encodings.append(encs[0].tolist())
+        except Exception:
+            continue
+
+    if len(encodings) < 3:
+        raise HTTPException(400, "Not enough valid face frames — please try again in better lighting")
+
+    avg_enc = _np.mean(encodings, axis=0).tolist()
+
+    from modules.core.users_store import get_db as _gdb
+    from datetime import timezone as _tz
+    db = _gdb()
+    await db.users.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {"face_encoding": avg_enc, "face_registered_at": datetime.now(_tz.utc)}},
+    )
+    return {"ok": True, "frames_used": len(encodings)}
+
+
+@app.post("/admin/students/{user_id}/face")
+async def upload_student_face(
+    user_id: str,
+    file: UploadFile = File(...),
+    admin: dict = Depends(get_admin_user),
+):
+    """Admin uploads a face photo for a student. Stored as data/student_faces/{name}.jpg."""
+    from modules.core.users_store import get_user_by_id
+    user = await get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(400, "File must be an image")
+    safe_name = re.sub(r"[^A-Za-z0-9_\- ]", "", user["name"]).strip().replace(" ", "_")
+    dest = STUDENT_FACES_DIR / f"{safe_name}.jpg"
+    data = await file.read()
+    dest.write_bytes(data)
+    return {"ok": True, "name": safe_name, "path": str(dest)}
+
+
+@app.get("/timetable/my-classes")
+async def timetable_my_classes(teacher: dict = Depends(get_teacher_user)):
+    """Teacher fetches their own timetable entries."""
+    from modules.core.timetable_store import list_timetable
+    all_entries = await list_timetable()
+    email = teacher.get("email", "").lower()
+    return [e for e in all_entries if e.get("teacher_email", "").lower() == email]
+
+
+@app.post("/attendance/sessions")
+async def attendance_start_session(
+    request: Request,
+    teacher: dict = Depends(get_teacher_user),
+):
+    """Teacher starts an attendance session. Spins up AttendanceEngine in background thread."""
+    from modules.attendance.store import create_session, mark_student
+    from modules.attendance.core import AttendanceEngine
+
+    body       = await request.json()
+    class_id   = body.get("class_id", "")
+    subject    = body.get("subject", "Unknown Subject")
+    camera     = int(body.get("camera_index", 0))
+    local_date = body.get("local_date") or None   # YYYY-MM-DD sent by client (local timezone)
+
+    from modules.core.users_store import get_db as _get_db
+    _db   = _get_db()
+    today = local_date or datetime.utcnow().strftime("%Y-%m-%d")
+
+    already_open = await _db.attendance_sessions.find_one(
+        {"teacher_id": teacher["user_id"], "class_id": class_id, "date": today, "status": "active"}
+    )
+    if already_open:
+        sid_existing = already_open["session_id"]
+        if sid_existing in _attendance_engines:
+            # Engine is genuinely running — don't allow a second session
+            raise HTTPException(400, "An attendance session is already active for this class.")
+        # Engine is gone (server restart / tab closed) — auto-close the stale record and proceed
+        log.info(f"Auto-closing stale session {sid_existing} (no engine running)")
+        await _db.attendance_sessions.update_one(
+            {"session_id": sid_existing},
+            {"$set": {"status": "closed", "closed_at": datetime.utcnow(), "auto_closed": "stale"}},
+        )
+        _attendance_ws.pop(sid_existing, None)
+
+    session = await create_session(
+        teacher_id=teacher["user_id"],
+        class_id=class_id,
+        subject=subject,
+        local_date=local_date,
+    )
+    sid = session["session_id"]
+    _attendance_ws[sid] = set()
+
+    def on_mark(name: str, confidence: float):
+        """Called from background thread — schedule async work on the event loop."""
+        if _event_loop is None:
+            return
+        async def _persist_and_broadcast():
+            await mark_student(sid, name, confidence)
+            event = {"event": "student_marked", "name": name, "confidence": round(confidence, 1)}
+            dead = set()
+            for ws in _attendance_ws.get(sid, set()):
+                try:
+                    await ws.send_json(event)
+                except Exception:
+                    dead.add(ws)
+            _attendance_ws.get(sid, set()).difference_update(dead)
+        asyncio.run_coroutine_threadsafe(_persist_and_broadcast(), _event_loop)
+
+    # Load face encodings for enrolled students from MongoDB
+    from modules.core.timetable_store import get_enrolled_students
+    enrolled = await get_enrolled_students(class_id)
+    enrolled_ids = [s["user_id"] for s in enrolled]
+
+    _db2  = _get_db()
+    cursor = _db2.users.find(
+        {"user_id": {"$in": enrolled_ids}, "face_encoding": {"$exists": True}},
+        {"_id": 0, "name": 1, "face_encoding": 1},
+    )
+    students_with_faces = await cursor.to_list(length=500)
+
+    engine = AttendanceEngine(on_mark_callback=on_mark)
+    engine.load_known_faces_from_list(students_with_faces)
+    engine.start(camera_index=camera)
+    _attendance_engines[sid] = engine
+
+    return {"session_id": sid, "subject": subject, "status": "active"}
+
+
+@app.get("/attendance/sessions/{session_id}/stream")
+async def attendance_stream(session_id: str):
+    """MJPEG stream of the live camera feed for a running attendance session."""
+    engine = _attendance_engines.get(session_id)
+    if not engine:
+        raise HTTPException(404, "No active session with that ID")
+
+    BOUNDARY = b"--frame"
+
+    async def generate():
+        while session_id in _attendance_engines:
+            frame = engine.get_frame()
+            if frame:
+                yield BOUNDARY + b"\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
+            await asyncio.sleep(0.04)   # ~25 fps
+
+    return StreamingResponse(
+        generate(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+    )
+
+
+@app.get("/attendance/sessions/{session_id}")
+async def attendance_get_session(
+    session_id: str,
+    teacher: dict = Depends(get_teacher_user),
+):
+    from modules.attendance.store import get_session
+    session = await get_session(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if session["teacher_id"] != teacher["user_id"] and teacher.get("role") != "admin":
+        raise HTTPException(403, "Not your session")
+    return session
+
+
+@app.post("/attendance/sessions/{session_id}/close")
+async def attendance_close_session(
+    session_id: str,
+    teacher: dict = Depends(get_teacher_user),
+):
+    from modules.attendance.store import get_session, close_session
+    session = await get_session(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if session["teacher_id"] != teacher["user_id"] and teacher.get("role") != "admin":
+        raise HTTPException(403, "Not your session")
+
+    engine = _attendance_engines.pop(session_id, None)
+    if engine:
+        await asyncio.to_thread(engine.stop)
+
+    # Compute absent students from enrolled list
+    from modules.core.timetable_store import get_class as _get_class
+    class_entry = await _get_class(session.get("class_id", ""))
+    enrolled = class_entry.get("enrolled_students", []) if class_entry else []
+    present_names = {r["name"].lower() for r in session.get("records", [])}
+    absent_records = [
+        {"name": s["name"], "email": s.get("email", ""), "user_id": s.get("user_id", "")}
+        for s in enrolled
+        if s["name"].lower() not in present_names
+    ]
+
+    await close_session(session_id, absent_records=absent_records)
+
+    # Notify WS clients
+    for ws in _attendance_ws.pop(session_id, set()):
+        try:
+            await ws.send_json({"event": "session_closed"})
+        except Exception:
+            pass
+    return {"ok": True, "present": len(session.get("records", [])), "absent": len(absent_records)}
+
+
+@app.get("/attendance/history")
+async def attendance_history(teacher: dict = Depends(get_teacher_user)):
+    from modules.attendance.store import list_sessions_by_teacher
+    return await list_sessions_by_teacher(teacher["user_id"])
+
+
+@app.get("/attendance/all")
+async def attendance_all(admin: dict = Depends(get_admin_user)):
+    """Admin: list all attendance sessions across all teachers."""
+    from modules.attendance.store import list_all_sessions
+    return await list_all_sessions()
+
+
+@app.delete("/attendance/all")
+async def attendance_clear_all(admin: dict = Depends(get_admin_user)):
+    """Admin: delete all attendance sessions (testing utility)."""
+    from modules.core.users_store import get_db as _get_db
+    db = _get_db()
+    result = await db.attendance_sessions.delete_many({})
+    return {"deleted": result.deleted_count}
+
+
+
+@app.websocket("/attendance/sessions/{session_id}/live")
+async def attendance_live_ws(websocket: WebSocket, session_id: str):
+    """WebSocket: streams student_marked events to the teacher's attendance page."""
+    await websocket.accept()
+    if session_id not in _attendance_ws:
+        _attendance_ws[session_id] = set()
+    _attendance_ws[session_id].add(websocket)
+    try:
+        while True:
+            await websocket.receive_text()  # keep-alive ping
+    except WebSocketDisconnect:
+        _attendance_ws.get(session_id, set()).discard(websocket)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1518,8 +2112,8 @@ async def exam_focus_suggestions(topic: str = "", q: str = ""):
 
 
 @app.post("/exam/generate")
-async def exam_generate(request: Request):
-    """Generate a complete exam from a prompt configuration."""
+async def exam_generate(request: Request, _teacher: dict = Depends(get_teacher_user)):
+    """Generate a complete exam from a prompt configuration. Teacher/Admin only."""
     body = await request.json()
     topic      = body.get("topic", "").strip()
     focus      = body.get("focus", "").strip()
@@ -1623,8 +2217,8 @@ async def exam_code_suggestions(request: Request):
 
 
 @app.post("/exam/generate-pdf")
-async def exam_generate_pdf(request: Request):
-    """Generate exam sheet + answer key PDFs in TEK-UP format.
+async def exam_generate_pdf(request: Request, _teacher: dict = Depends(get_teacher_user)):
+    """Generate exam sheet + answer key PDFs in TEK-UP format. Teacher/Admin only.
     Accepts either pre-built ordered_questions list (slot-based UI)
     or the legacy topic/mix params (generates questions from scratch).
     """

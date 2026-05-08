@@ -20,9 +20,12 @@ interface AuthState {
   user: AuthUser | null;
   token: string | null;
   showWelcome: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  signup: (name: string, email: string, password: string) => Promise<void>;
-  googleLogin: (credential: string) => Promise<void>;
+  isAdmin: boolean;
+  isTeacher: boolean;
+  isStudent: boolean;
+  login: (email: string, password: string) => Promise<AuthUser>;
+  signup: (name: string, email: string, password: string) => Promise<AuthUser>;
+  googleLogin: (credential: string) => Promise<AuthUser>;
   updateProfile: (name: string, avatarUrl: string) => Promise<void>;
   logout: () => void;
   dismissWelcome: () => void;
@@ -35,7 +38,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken]             = useState<string | null>(getToken);
   const [showWelcome, setShowWelcome] = useState(false);
 
-  // Refresh user from server on startup so is_admin / avatar_url are always current
+  const isAdmin   = user?.role === "admin";
+  const isTeacher = user?.role === "teacher" || user?.role === "admin";
+  const isStudent = user?.role === "student";
+
+  // Refresh user from server on startup so role / avatar_url are always current
   useEffect(() => {
     const storedToken = getToken();
     if (!storedToken) return;
@@ -57,16 +64,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setShowWelcome(true);
   }
 
-  async function login(email: string, password: string) {
-    _applySession(await loginApi(email, password));
+  async function login(email: string, password: string): Promise<AuthUser> {
+    const data = await loginApi(email, password);
+    _applySession(data);
+    return data.user;
   }
 
-  async function signup(name: string, email: string, password: string) {
-    _applySession(await registerApi(name, email, password), true);
+  async function signup(name: string, email: string, password: string): Promise<AuthUser> {
+    const data = await registerApi(name, email, password);
+    _applySession(data, true);
+    return data.user;
   }
 
-  async function googleLogin(credential: string) {
-    _applySession(await googleAuthApi(credential));
+  async function googleLogin(credential: string): Promise<AuthUser> {
+    const data = await googleAuthApi(credential);
+    _applySession(data);
+    return data.user;
   }
 
   async function updateProfile(name: string, avatarUrl: string) {
@@ -90,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={{
       user, token, showWelcome,
+      isAdmin, isTeacher, isStudent,
       login, signup, googleLogin, updateProfile,
       logout, dismissWelcome,
     }}>

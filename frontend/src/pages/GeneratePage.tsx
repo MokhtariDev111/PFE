@@ -274,10 +274,10 @@ export default function GeneratePage() {
         <div className="relative z-10 h-full flex flex-col items-center justify-center px-6">
           <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="w-full max-w-2xl">
             <h1 className="text-4xl md:text-5xl font-bold text-white text-center mb-3 tracking-tight">
-              Generate a Presentation
+              From Book to Presentation
             </h1>
             <p className="text-white/60 text-center mb-8 text-base">
-              Enter a topic and optionally upload a document
+              Upload your course material and enter a topic to generate a presentation
             </p>
 
             {/* Single-row input bar */}
@@ -307,7 +307,7 @@ export default function GeneratePage() {
                 {files.length > 0 ? (
                   <span className="text-emerald-400 text-xs font-medium">{files.length} file{files.length > 1 ? "s" : ""}</span>
                 ) : (
-                  <span className="hidden sm:inline text-xs">Upload PDF</span>
+                  <span className="hidden sm:inline text-xs">Add Course Material</span>
                 )}
               </button>
               <input ref={fileInputRef} type="file" multiple accept=".pdf,.doc,.docx,.txt" className="hidden"
@@ -355,7 +355,7 @@ export default function GeneratePage() {
                       <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-2">
                         Max slides: <span className="text-primary">{maxSlides}</span>
                       </label>
-                      <Slider value={[maxSlides]} onValueChange={v => setMaxSlides(v[0])} min={5} max={20} step={1} />
+                      <Slider value={[maxSlides]} onValueChange={v => setMaxSlides(v[0])} min={5} max={40} step={1} />
                     </div>
                     <div>
                       <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-2">Language</label>

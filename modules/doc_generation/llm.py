@@ -426,81 +426,75 @@ Language: {language}"""
             lines = []
             for j, entry in enumerate(section_outline):
                 if isinstance(entry, dict):
-                    # Idea-level entry: {section, focus}
                     lines.append(f"  {j+1}. {entry['section']} — FOCUS: {entry['focus']}")
                 else:
                     lines.append(f"  {j+1}. {entry}")
             outline_lines = "\n".join(lines)
             outline_block = f"""
-DOCUMENT STRUCTURE (sections and their specific focus for each slide):
+DOCUMENT STRUCTURE — one slide per entry below:
 {outline_lines}
-
-CRITICAL RULES FOR THE OUTLINE ABOVE:
-- Create EXACTLY one slide per entry. The outline has {len(section_outline)} content entries → you generate {len(section_outline) + 2} slides total (slide 1 = title, slides 2 to {len(section_outline) + 1} = content from outline, last slide = summary).
-- Each entry's FOCUS is a HARD CONSTRAINT. Write ONLY about that focus. Do not bleed content from one entry into another.
-- For the title field: do NOT copy the section label verbatim. Write a short, descriptive title (5-10 words) that tells the student exactly what concept this slide explains.
-- If two entries share the same section name, they MUST cover completely different sub-topics as specified by their FOCUS. Treat them as entirely separate slides with zero content overlap.
-- BEFORE writing each slide, mentally check: "Did I already explain this concept in a previous slide?" If yes, skip it and find something new from the context.
 """
 
-        # NEW: Extract figure references from context and tell LLM to include them
-        figure_refs = re.findall(r'(?:see |shown in |refer to )?(?:Figure|Fig\.|Table)\s+([\d]+[-\.][\d]+)', context_text, re.IGNORECASE)
-        figure_block = ""
+        # Extract figure references present in the context so the LLM can
+        # naturally reference them in paragraphs — the image_matcher then
+        # assigns the actual image via regex on the generated text.
+        figure_refs = re.findall(
+            r'(?:Figure|Fig\.|Table)\s+([\d]+(?:[-\.][\d]+)*)',
+            context_text, re.IGNORECASE
+        )
+        figure_hint = ""
         if figure_refs:
-            unique_figs = list(dict.fromkeys(figure_refs))  # Remove duplicates, preserve order
-            figure_block = f"""
-FIGURES MENTIONED IN SOURCE:
-The context mentions these figures: {', '.join(unique_figs)}
-You MUST include these figure references in your paragraphs where relevant. Copy them exactly as "Figure X-Y" or "Table X-Y".
-"""
+            unique_figs = list(dict.fromkeys(figure_refs))[:8]
+            figure_hint = f"\nFIGURES IN SOURCE: {', '.join(unique_figs)} — mention the relevant ones naturally in your paragraphs.\n"
+
+        # Detect multiple source files from chunk metadata already in context_text
+        source_files = list(dict.fromkeys(re.findall(r'\[Source:\s*([^,\]]+\.(?:pdf|docx|txt))', context_text, re.IGNORECASE)))
+        multi_source_rule = ""
+        if len(source_files) > 1:
+            src_list = ", ".join(source_files[:4])
+            log.info(f"Multi-source context detected: {src_list}")
+            multi_source_rule = (
+                f"\n7. MULTIPLE SOURCES: This context contains content from: {src_list}. "
+                f"When two sources explain the same concept differently or complementarily, "
+                f"briefly note the distinction in the paragraph "
+                f"(e.g., 'While {source_files[0]} defines X as..., {source_files[1]} emphasizes Y...'). "
+                f"Only do this when there is a genuine difference worth noting — do not force attribution on every slide."
+            )
 
         prompt = f"""You are an expert AI teaching assistant creating an educational presentation.
 
 Generate exactly {num_slides} slides about: {query}
-
 Language: {language}
 
 CONTEXT FROM DOCUMENTS:
 {context_text}
-
+{figure_hint}
 {outline_block}
-{figure_block}
-
-OUTPUT FORMAT - Return a JSON object with this exact structure:
+OUTPUT FORMAT — return a JSON object with this exact structure:
 {{
   "slides": [
     {{
       "slide_type": "title|intro|concept|example|comparison|summary",
-      "title": "Section title from the document",
-      "paragraph": "A clear, well-written paragraph of 250-450 words that explains the section content in simple teaching language. This is the MAIN content of the slide. Write it as if explaining to a student — use the document's facts, terms, examples, and mechanisms. Go into depth: explain WHY things work, not just WHAT they are.",
+      "title": "Specific descriptive title (5-10 words)",
+      "paragraph": "200-350 words explaining the concept in teaching language",
       "key_points": [
-        {{"text": "One key highlight from this section", "source_id": "Page X"}},
-        {{"text": "Another key highlight", "source_id": "Page Y"}}
+        {{"text": "Key highlight from this section (10-25 words)", "source_id": "Page X"}}
       ],
-      "page_range": "Page X" or "Pages X–Y",
+      "page_range": "Page X or Pages X-Y",
       "visual_hint": "none",
       "image_id": null,
-      "speaker_notes": "Brief note for presenter"
+      "speaker_notes": "One sentence for the presenter"
     }}
   ]
 }}
 
 RULES:
-1. Slide 1: type "title", empty paragraph "", empty key_points [].
-2. Slide 2: type "intro". Write a SHORT, non-technical overview (2-3 sentences max, 40-60 words). Just answer: what is this topic and why does it matter? Do NOT include formulas, figures, or technical details in the intro slide.
-3. PARAGRAPH is mandatory for all content slides (slides 3 to last-1). Write 250-450 words per paragraph. Be thorough — explain mechanisms, give examples, mention tradeoffs. A student should be able to understand the concept deeply from this paragraph alone. AVOID generic statements like "X is widely used" or "X is important" — instead explain HOW it works and WHY it behaves that way.
-4. KEY POINTS: 3-5 short highlights (10-30 words each) that complement the paragraph. These are the most important facts from the section.
-5. PAGE RANGE: Track which pages the content comes from. If one page: "Page 84". If multiple: "Pages 84–86".
-6. Each slide covers ONE section from the document outline. Use the section as a TOPIC HINT only — write a clear, descriptive title that captures what the slide is actually about (not the raw section label). Good titles are specific: "How Decision Trees Split Data" not "Decision Trees". If a FOCUS is specified, the title must reflect that focus.
-7. STRICT NO REPETITION: Each slide must introduce NEW information. If a FOCUS is given, it defines exactly what is new. Never write about the same concept as a previous slide even if the section title is the same.
-8. CRITICAL: When the context mentions a figure (e.g. "see Figure 2-22" or "shown in Figure 2-11"), you MUST include that EXACT figure reference in your paragraph. Copy the figure reference verbatim from the source. ONLY reference figures that appear in the context chunks provided for this slide. Do NOT reference figures from other sections or slides — if Figure 2-31 is not in this slide's context, do not mention it.
-9. Slide types: title → intro → concept/example/comparison (based on content) → summary.
-10. All content must be in {language}.
-11. Stay faithful to the source — every claim must be grounded in the provided context.
-12. Each slide covers a DIFFERENT aspect of the topic. If two sections seem similar, focus on what makes each one UNIQUE. Never repeat the same example, dataset name, or concept across two slides.
-13. For slides sharing the same section title: explicitly label what sub-topic each covers. Slide 1 of a section = theory/definition. Slide 2 = implementation/code/parameters. Slide 3 = limitations/comparison/examples. Never repeat the same sub-topic.
-14. A figure reference (e.g. Figure 2-18) must appear in AT MOST ONE slide across the entire presentation. If you already used Figure 2-18 in a previous slide, do not reference it again in any subsequent slide. This is a HARD rule — violating it is not allowed under any circumstances.
-15. SUMMARY SLIDE (last slide): Do NOT repeat what was already said in other slides. Instead write 2-3 sentences on the BIG PICTURE — what is the takeaway, what problem does this topic solve, and what should the student remember most. Keep it under 80 words. No technical details, no bullet repetition.
+1. SLIDE STRUCTURE: Slide 1 = type "title" (empty paragraph, empty key_points). Slide 2 = type "intro" (2-3 sentences, 40-60 words, no formulas or figures). Slides 3 to {num_slides - 1} = content slides. Last slide = type "summary" — paragraph must be a synthesis of what was covered: name 3-4 specific concepts from the content slides (not the intro), state their significance, and end with a forward-looking sentence. FORBIDDEN in summary: do not copy or paraphrase the intro slide. Do not use the phrases "this presentation covered" or "we explored". Under 80 words.
+2. CONTENT PARAGRAPHS: Every content slide (slides 3 to {num_slides - 1}) needs a paragraph of 200-350 words. Explain HOW things work and WHY, not just WHAT they are. Use specific terms, mechanisms, and examples from the source.
+3. KEY POINTS: 3-5 highlights per content slide, each 10-25 words. Each key point must add a specific fact NOT already stated in the opening sentence of the paragraph — a threshold, a mechanism, a named algorithm step, a specific comparison, or a concrete example. FORBIDDEN: do not restate the paragraph's first sentence in shorter form.
+4. TITLES: Write a specific, descriptive title that reflects the actual concept covered — not the raw section label. If a FOCUS is specified in the outline, the title must reflect that focus.
+5. NO REPETITION: Each slide introduces new information. If two entries share a section name, their FOCUS fields define what makes them different — treat them as completely separate slides covering different sub-topics.
+6. FAITHFULNESS: All content in {language}. Every claim must be grounded in the provided context above. Do not invent facts.{multi_source_rule}
 
 Generate the {num_slides} slides now as valid JSON:"""
 

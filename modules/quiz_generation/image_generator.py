@@ -1,39 +1,34 @@
 """
-image_generator.py — SVG-based educational diagram generator
-=============================================================
-Workflow:
-  1. Receive image_prompt (description of the diagram needed)
-  2. Ask LLM to generate a complete, self-contained SVG string
-  3. Validate the SVG (must start with <svg, must have content)
-  4. On failure: retry once with error feedback
-  5. Return the SVG string directly (no subprocess, no file I/O needed)
+image_generator.py — Educational diagram generator (Mermaid + Recharts)
+=======================================================================
+Strategy:
+  - Structural diagrams (flowcharts, ER diagrams, trees, pipelines) → Mermaid syntax
+  - Data visualizations (line/bar/scatter/area charts) → Recharts JSON spec
+  LLM picks the right renderer and outputs structured data — no raw SVG authoring.
 
-Why SVG instead of matplotlib:
-  - No subprocess execution — no runtime errors, no missing imports
-  - Renders perfectly in the browser at any resolution
-  - LLMs are good at generating SVG for educational diagrams
-  - Instant — no disk I/O, no Python execution overhead
-  - Crisp, clean output that looks like a real textbook diagram
+Output format:
+  {"render_type": "mermaid",   "code": "<mermaid syntax>"}
+  {"render_type": "recharts",  "spec": { chart_type, title, x_axis, y_axis, series, data }}
 """
 
 import asyncio
 import json
 import logging
 import re
-from pathlib import Path
 
 from modules.doc_generation.llm import LLMEngine
 
 log = logging.getLogger("quiz.image_generator")
 
+
 # ─────────────────────────────────────────────────────────────────────────────
-# PROMPTS
+# PROMPT
 # ─────────────────────────────────────────────────────────────────────────────
 
-_SVG_PROMPT = """\
-You are an expert SVG diagram creator for educational content.
-
-Create a clean, accurate, self-contained SVG diagram for this educational concept.
+_DIAGRAM_PROMPT = """\
+You are an expert educational diagram creator. Your job is to generate a precise,
+accurate diagram for a quiz question. Choose the renderer that gives the most
+accurate result for the concept.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DIAGRAM REQUEST
@@ -41,60 +36,103 @@ DIAGRAM REQUEST
   Description : {image_prompt}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-SVG CANVAS — fixed dimensions, everything MUST fit inside:
-  width="800" height="480" viewBox="0 0 800 480"
-  Safe drawing area: x=60 to x=720, y=50 to y=400
-  Title zone: y=30 (centered at x=400)
-  Legend zone: x=60 to x=720, y=415 to y=470 (BOTTOM, horizontal)
+CHOOSE ONE RENDERER:
 
-STRICT LAYOUT RULES — no exceptions:
-  1.  <svg width="800" height="480" viewBox="0 0 800 480" xmlns="http://www.w3.org/2000/svg">
-  2.  First child: <rect width="800" height="480" fill="white"/>
-  3.  Title: <text x="400" y="30" text-anchor="middle" font-size="18" font-weight="bold" font-family="Arial,sans-serif" fill="#222">
-  4.  ALL content (lines, shapes, text) must stay within x=60–720, y=45–405
-  5.  LEGEND must be at the BOTTOM inside y=415–465, laid out HORIZONTALLY
-      Example: colored rect at (60,420) + label, next item at (180,420), etc.
-  6.  Axis labels: x-axis label centered at (390, 430), y-axis label rotated at (15, 225)
-  7.  NO text may exceed x=720 or y=470 — shorten labels if needed
-  8.  Font sizes: title=18, axis-labels=12, tick-labels=11, legend=12 — never larger
-  9.  Colors: #2196F3 blue, #F44336 red, #4CAF50 green, #FF9800 orange, #9C27B0 purple
-  10. Grid lines: stroke="#e0e0e0" stroke-dasharray="4,4" — only inside drawing area
-  11. Axes: stroke="#555" stroke-width="1.5"
-  12. For charts with data: use explicit pixel coordinates calculated from your data range
-      Map data values to pixel positions — do NOT place elements at approximate positions
-  13. Inline styles only — no <style> blocks, no CSS classes
-  14. NO external resources, NO JavaScript
+━━ OPTION A — "recharts" — for DATA VISUALIZATIONS ━━
+Use when the concept requires a chart with actual data values:
+  • line  → loss curves, ROC curve, learning rate schedule, activation functions
+             (sigmoid/ReLU/tanh), gradient descent convergence
+  • bar   → feature importance, accuracy comparison, histogram, class distribution
+  • area  → probability distributions, confidence intervals
+  • scatter → clustering results (K-Means, DBSCAN), decision boundaries
 
-COORDINATE MAPPING GUIDE (for charts):
-  Drawing area: x: 60→720 (width=660), y: 50→400 (height=350)
-  For x-axis with N points: x_pixel = 60 + (i / (N-1)) * 660
-  For y-axis with range [ymin, ymax]: y_pixel = 400 - ((value - ymin) / (ymax - ymin)) * 350
+━━ OPTION B — "mermaid" — for STRUCTURAL DIAGRAMS ━━
+Use when the concept is about structure, flow, or relationships:
+  • flowchart TD/LR → neural network layers, CNN architecture, training pipeline,
+                      backpropagation, data preprocessing, transformer blocks
+  • erDiagram       → SQL table schemas, ER diagrams, database relationships
+  • graph TD/LR     → decision trees, binary trees, dependency graphs
+  • sequenceDiagram → client-server, API request-response, HTTP flow
+  • classDiagram    → UML class diagrams, OOP inheritance, design patterns
 
-Return ONLY a JSON object — no markdown, no explanation:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FOR recharts — return EXACTLY this JSON:
 {{
-  "svg": "<complete SVG string here>"
-}}"""
+  "render_type": "recharts",
+  "spec": {{
+    "chart_type": "line",
+    "title": "Training vs Validation Loss",
+    "x_axis": {{ "dataKey": "epoch", "label": "Epochs" }},
+    "y_axis": {{ "label": "Loss" }},
+    "series": [
+      {{ "dataKey": "train_loss", "name": "Training Loss", "color": "#2196F3" }},
+      {{ "dataKey": "val_loss",   "name": "Validation Loss", "color": "#F44336" }}
+    ],
+    "data": [
+      {{ "epoch": 0,  "train_loss": 0.95, "val_loss": 0.92 }},
+      {{ "epoch": 2,  "train_loss": 0.80, "val_loss": 0.79 }},
+      {{ "epoch": 4,  "train_loss": 0.65, "val_loss": 0.66 }},
+      {{ "epoch": 6,  "train_loss": 0.52, "val_loss": 0.56 }},
+      {{ "epoch": 8,  "train_loss": 0.42, "val_loss": 0.50 }},
+      {{ "epoch": 10, "train_loss": 0.35, "val_loss": 0.48 }},
+      {{ "epoch": 12, "train_loss": 0.30, "val_loss": 0.51 }},
+      {{ "epoch": 14, "train_loss": 0.27, "val_loss": 0.57 }},
+      {{ "epoch": 16, "train_loss": 0.25, "val_loss": 0.64 }},
+      {{ "epoch": 18, "train_loss": 0.23, "val_loss": 0.72 }}
+    ]
+  }}
+}}
 
-_SVG_RETRY_PROMPT = """\
-You are an expert SVG diagram creator. Your previous SVG had this issue: {error}
+recharts RULES:
+- Use 8–15 data points for line/area, 4–10 bars for bar charts
+- Use REALISTIC, ACCURATE values — not random or approximate
+- dataKey names: simple alphanumeric + underscore only (e.g. "train_loss", "epoch")
+- Colors: #2196F3 blue, #F44336 red, #4CAF50 green, #FF9800 orange, #9C27B0 purple
+- For scatter charts: each series object may include its own "data" array of {{x, y}} pairs
 
-Fix it and regenerate the diagram.
+FOR mermaid — return EXACTLY this JSON:
+{{
+  "render_type": "mermaid",
+  "code": "flowchart LR\\n  A[Input Layer] --> B[Hidden Layer]\\n  B --> C[Output Layer]"
+}}
 
+mermaid RULES:
+- Valid Mermaid v11 syntax — will be rendered directly by mermaid.js
+- flowchart direction: TD for trees/hierarchies, LR for left-to-right pipelines
+- Max ~20 nodes — keep it focused and readable
+- Use descriptive labels: A[Descriptive Label] not just A
+- For erDiagram: use proper ||--o{{ or }}|--|| relationship notation
+- For SQL JOIN diagrams: use flowchart with clear table names and join conditions
+- Escape double quotes inside labels with single quotes or backslash
+- Use \\n for newlines inside the JSON string
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Return ONLY the JSON object — no markdown fences, no explanation.
+"""
+
+_RETRY_PROMPT = """\
+Your previous diagram had this error: {error}
+
+Regenerate the diagram for:
   Concept     : {concept}
   Description : {image_prompt}
 
-CRITICAL FIXES REQUIRED:
-  - Canvas: width="800" height="480" viewBox="0 0 800 480"
-  - White background rect covering full canvas
-  - ALL elements must stay within x=60–720, y=45–405
-  - Legend MUST be at the bottom (y=415–465), horizontal layout
-  - NO text or shapes outside the viewBox
-  - Axis labels inside bounds: x-label at y=430, y-label rotated at x=15
+Fix the error and return ONLY a valid JSON object in one of these two formats:
 
-Return ONLY a JSON object:
-{{
-  "svg": "<complete corrected SVG string>"
-}}"""
+For data charts:
+{{"render_type": "recharts", "spec": {{"chart_type": "line|bar|area|scatter", "title": "...",
+  "x_axis": {{"dataKey": "...", "label": "..."}}, "y_axis": {{"label": "..."}},
+  "series": [{{"dataKey": "...", "name": "...", "color": "#..."}}],
+  "data": [{{...}}]}}}}
+
+For structural diagrams:
+{{"render_type": "mermaid", "code": "flowchart TD\\n  A --> B"}}
+
+Return ONLY the JSON — no markdown, no explanation.
+"""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -103,16 +141,10 @@ Return ONLY a JSON object:
 
 class QuizImageGenerator:
     """
-    Generates educational diagram SVGs using the LLM.
-    Returns SVG strings directly — no subprocess, no file I/O.
-
-    Usage:
-        gen = QuizImageGenerator()
-        svg = await gen.generate_image(
-            image_prompt="line chart showing training vs validation loss illustrating overfitting",
-            concept="Overfitting"
-        )
-        # svg → "<svg width='800' height='500'>...</svg>"
+    Generates educational diagrams using Mermaid or Recharts.
+    Returns a dict: {"render_type": "mermaid", "code": "..."} or
+                    {"render_type": "recharts", "spec": {...}}
+    Returns {} on failure.
     """
 
     def __init__(self, llm_engine: LLMEngine = None, namespace: str = "quiz"):
@@ -122,46 +154,45 @@ class QuizImageGenerator:
         self,
         image_prompt: str,
         concept: str = "",
-        output_filename: str = None,  # kept for API compatibility, unused
-    ) -> str:
-        """
-        Generate an educational SVG diagram.
-        Returns the SVG string, or "" on failure.
-        """
-        # ── Attempt 1 ─────────────────────────────────────────────────────────
-        prompt = _SVG_PROMPT.format(image_prompt=image_prompt, concept=concept)
+        output_filename: str = None,  # kept for API compatibility
+    ) -> dict:
+        """Generate diagram data. Returns dict or {} on failure."""
+        # ── Attempt 1 ──────────────────────────────────────────────────────
+        prompt = _DIAGRAM_PROMPT.format(image_prompt=image_prompt, concept=concept)
         raw    = await self.llm.generate_async("", [], prompt_override=prompt)
-        svg    = _extract_svg(raw)
+        data   = _parse_diagram(raw)
+        error  = _validate_diagram(data)
 
-        if svg and _validate_svg(svg):
-            log.info(f"SVG generated for concept: '{concept}'")
-            return svg
+        if data and not error:
+            log.info(f"Diagram ({data.get('render_type')}) generated for: '{concept}'")
+            return data
 
-        error = "SVG is missing, empty, or malformed" if not svg else _validate_svg_error(svg)
+        err_msg = error or "empty or unparseable response"
 
-        # ── Attempt 2: retry with error feedback ──────────────────────────────
-        log.warning(f"SVG attempt 1 failed ({error}) — retrying")
-        retry_prompt = _SVG_RETRY_PROMPT.format(
+        # ── Attempt 2: retry with error feedback ───────────────────────────
+        log.warning(f"Diagram attempt 1 failed ({err_msg}) — retrying for '{concept}'")
+        retry = _RETRY_PROMPT.format(
             image_prompt=image_prompt,
             concept=concept,
-            error=error,
+            error=err_msg,
         )
-        raw2 = await self.llm.generate_async("", [], prompt_override=retry_prompt)
-        svg2 = _extract_svg(raw2)
+        raw2  = await self.llm.generate_async("", [], prompt_override=retry)
+        data2 = _parse_diagram(raw2)
+        err2  = _validate_diagram(data2)
 
-        if svg2 and _validate_svg(svg2):
-            log.info(f"SVG generated (attempt 2) for concept: '{concept}'")
-            return svg2
+        if data2 and not err2:
+            log.info(f"Diagram ({data2.get('render_type')}) generated (attempt 2) for: '{concept}'")
+            return data2
 
-        log.error(f"SVG generation failed after 2 attempts for: '{concept}'")
-        return ""
+        log.error(f"Diagram generation failed after 2 attempts for: '{concept}'")
+        return {}
 
     def generate_image_sync(
         self,
         image_prompt: str,
         concept: str = "",
         output_filename: str = None,
-    ) -> str:
+    ) -> dict:
         return asyncio.run(self.generate_image(image_prompt, concept, output_filename))
 
 
@@ -169,56 +200,71 @@ class QuizImageGenerator:
 # HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _extract_svg(raw: str) -> str:
-    """Extract SVG string from LLM response."""
+def _parse_diagram(raw: str) -> dict:
+    """Extract diagram dict from LLM response."""
     raw = raw.strip()
 
-    # Try JSON {"svg": "..."} format
+    # Direct JSON parse
     try:
         data = json.loads(raw)
-        svg = data.get("svg", "")
-        if svg and "<svg" in svg:
-            return svg.strip()
-    except (json.JSONDecodeError, AttributeError):
+        if isinstance(data, dict):
+            return data
+    except (json.JSONDecodeError, ValueError):
         pass
 
-    # Try extracting from markdown fences
-    md = re.search(r"```(?:svg|xml)?\s*([\s\S]*?)```", raw)
+    # Strip markdown fences
+    md = re.search(r"```(?:json)?\s*\n?([\s\S]*?)\n?```", raw)
     if md:
-        candidate = md.group(1).strip()
-        if "<svg" in candidate:
-            return candidate
+        try:
+            data = json.loads(md.group(1).strip())
+            if isinstance(data, dict):
+                return data
+        except (json.JSONDecodeError, ValueError):
+            pass
 
-    # Try finding raw <svg>...</svg> block
-    start = raw.find("<svg")
-    end   = raw.rfind("</svg>")
-    if start != -1 and end != -1:
-        return raw[start:end + 6]
+    # Find first {...} block
+    start = raw.find("{")
+    end   = raw.rfind("}")
+    if 0 <= start < end:
+        try:
+            data = json.loads(raw[start:end + 1])
+            if isinstance(data, dict):
+                return data
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    return {}
+
+
+def _validate_diagram(data: dict) -> str:
+    """Return error string if invalid, empty string if valid."""
+    if not data:
+        return "empty or unparseable response"
+
+    rt = data.get("render_type")
+    if rt not in ("mermaid", "recharts"):
+        return f"render_type must be 'mermaid' or 'recharts', got {rt!r}"
+
+    if rt == "mermaid":
+        code = data.get("code", "")
+        if not code or not isinstance(code, str):
+            return "mermaid 'code' field is missing or empty"
+        if len(code.strip()) < 10:
+            return f"mermaid code is too short ({len(code)} chars)"
+        return ""
+
+    if rt == "recharts":
+        spec = data.get("spec")
+        if not isinstance(spec, dict):
+            return "'spec' field is missing or not an object"
+        if spec.get("chart_type") not in ("line", "bar", "area", "scatter"):
+            return f"chart_type must be line/bar/area/scatter, got {spec.get('chart_type')!r}"
+        if not spec.get("data") and not any(
+            s.get("data") for s in (spec.get("series") or [])
+        ):
+            return "'data' array is missing or empty"
+        if not spec.get("series"):
+            return "'series' array is missing or empty"
+        return ""
 
     return ""
-
-
-def _validate_svg(svg: str) -> bool:
-    """Basic SVG validation."""
-    if not svg:
-        return False
-    if not svg.strip().startswith("<svg"):
-        return False
-    if "</svg>" not in svg:
-        return False
-    if len(svg) < 200:  # too short to be a real diagram
-        return False
-    return True
-
-
-def _validate_svg_error(svg: str) -> str:
-    """Return a human-readable error for why SVG validation failed."""
-    if not svg:
-        return "empty SVG"
-    if not svg.strip().startswith("<svg"):
-        return "SVG does not start with <svg tag"
-    if "</svg>" not in svg:
-        return "SVG is missing closing </svg> tag"
-    if len(svg) < 200:
-        return f"SVG is too short ({len(svg)} chars) — likely incomplete"
-    return "unknown SVG error"

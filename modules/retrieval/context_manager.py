@@ -156,30 +156,27 @@ def prepare_context(
 def prepare_context_for_slides(
     chunks: list,
     num_slides: int,
-    tokens_per_slide: int = 900,
+    tokens_per_slide: int = 500,
 ) -> str:
     """
     Prepare context scaled to presentation size.
 
-    Bug D fix: the old hard cap of 3500 tokens cut off large sections like
-    Decision Trees (13 pages ≈ 20 000+ chars). The new budget:
-      - Base: 2000 tokens (enough for a short topic)
-      - Per-slide addition: 600 tokens (was 400)
-      - Cap: 8000 tokens — safe for Groq llama-3.3-70b (128k context window)
-        and still well within Ollama's typical 4096-token context since the
-        context is split per-slide, not sent all at once.
+    Budget (our internal "tokens" where 1 token ≈ 4 chars):
+      - Base: 1500 tokens
+      - Per-slide: 500 tokens
+      - Hard cap: 5000 tokens (≈ 20 000 chars ≈ 5500 actual llama tokens)
 
-    The effective per-slide context (passed to _prepare_context in the engine)
-    is a 600-token window, so this cap only matters for the global retrieval
-    pool used before per-slide sub-queries.
+    Why 5000 cap: batch mode sends the full context in one Groq call.
+    Groq llama-3.3-70b has a 12 000 TPM limit. The prompt template + rules
+    + outline consume ~2500 actual tokens, leaving ~9500 for context.
+    5000 internal tokens × 4 chars × (1/3.6 llama-token/char) ≈ 5555 actual
+    tokens — safely under that headroom.
     """
-    base_tokens   = 2000
+    base_tokens   = 1500
     scaled_tokens = base_tokens + (num_slides * tokens_per_slide)
-    # Raised cap to 12000 — Groq has 128k context window, so this is safe.
-    # More chunks from a large book need more token budget to reach the LLM.
-    max_tokens    = min(scaled_tokens, 12000)
+    max_tokens    = min(scaled_tokens, 5000)
 
-    log.info(f"Context budget for {num_slides} slides: {max_tokens} tokens")
+    log.info(f"Context budget for {num_slides} slides: {max_tokens} tokens (~{max_tokens * 4} chars)")
 
     return prepare_context(chunks, max_tokens=max_tokens)
 

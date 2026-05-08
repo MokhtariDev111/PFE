@@ -461,14 +461,72 @@ def _slide_fingerprint(slide: dict) -> str:
 
 # ── Context preparation ───────────────────────────────────────────────────────
 
-def _prepare_context(chunks: list, max_chars: int = 2500) -> str:
+def _prepare_context(chunks: list, max_chars: int = 8000) -> str:
     """Prepare context using smart truncation."""
     return prepare_context(
-        chunks, 
+        chunks,
         max_chars=max_chars,
         include_metadata=True,
         deduplicate=True,
     )
+
+
+# ── Structural quality gate ───────────────────────────────────────────────────
+
+_PLACEHOLDER_BULLETS = {"content to be added.", "placeholder", "add content here."}
+_LIGHTWEIGHT_TYPES   = {"title", "intro", "summary"}
+
+
+def _structural_quality_check(slide: dict) -> tuple[bool, str]:
+    """
+    Validate a slide on measurable structure, not LLM self-scoring.
+
+    Returns (True, "") if the slide passes.
+    Returns (False, actionable_feedback) if it fails, so the retry
+    prompt knows exactly what to fix.
+    """
+    slide_type = (slide.get("slide_type") or "concept").lower()
+    title      = (slide.get("title") or "").strip()
+    bullets    = slide.get("key_points") or slide.get("bullets") or []
+
+    # Title must always be present and meaningful
+    if not title or len(title) < 4:
+        return False, "title is missing or too short — write a specific descriptive title"
+
+    # Lightweight slides (title card, intro, summary) only need a title
+    if slide_type in _LIGHTWEIGHT_TYPES:
+        return True, ""
+
+    # Content slides need a substantive paragraph
+    paragraph = (slide.get("paragraph") or "").strip()
+    if len(paragraph.split()) < 50:
+        return False, (
+            f"paragraph is too short ({len(paragraph.split())} words) — "
+            f"write 200-350 words explaining the concept in depth"
+        )
+
+    # Content slides need at least 2 bullets
+    real_bullets = [
+        b for b in bullets
+        if isinstance(b, dict) and b.get("text", "").strip().lower() not in _PLACEHOLDER_BULLETS
+        and len(b.get("text", "").split()) >= 8
+    ]
+    if len(real_bullets) < 2:
+        got = len(real_bullets)
+        return False, (
+            f"only {got} substantive bullet(s) — write at least 2 bullets of 10+ words "
+            f"with specific facts, mechanisms, or examples from the source"
+        )
+
+    # Warn if bullets are suspiciously short on average
+    avg_words = sum(len(b["text"].split()) for b in real_bullets) / len(real_bullets)
+    if avg_words < 10:
+        return False, (
+            f"bullets are too short (avg {avg_words:.0f} words) — each bullet should be "
+            f"15-25 words describing a specific concept, not a vague label"
+        )
+
+    return True, ""
 
 
 # ── Main engine ───────────────────────────────────────────────────────────────
@@ -511,7 +569,7 @@ class PedagogicalEngine:
                 ) or context_chunks
             else:
                 sub_q  = _subquery_for_slide(query, slide_type, prior_titles)
-                chunks = self.retriever.search(sub_q, top_k=5) or context_chunks
+                chunks = self.retriever.search_expanded(sub_q, top_k=5) or context_chunks
         else:
             chunks = context_chunks
 
@@ -548,14 +606,11 @@ class PedagogicalEngine:
                     last_quality_feedback = "JSON parsing failed"
                     continue
 
-                # Self-reported quality gate
-                self_score = int(slide.get("quality_score", 5))
-                if self_score < self.quality_threshold:
-                    last_quality_feedback = (
-                        slide.get("quality_feedback", "")
-                        or f"quality_score {self_score} below threshold {self.quality_threshold}"
-                    )
-                    log.info(f"  Slide {slide_index+1} self-score {self_score} too low: {last_quality_feedback[:60]}")
+                # Structural quality gate
+                passed, struct_feedback = _structural_quality_check(slide)
+                if not passed:
+                    last_quality_feedback = struct_feedback
+                    log.info(f"  Slide {slide_index+1} failed structural check: {struct_feedback[:80]}")
                     continue
 
                 # Fingerprint dedup
@@ -645,9 +700,14 @@ class PedagogicalEngine:
                 for i in range(num_slides)
             ]
 
-        # Each coroutine gets its own hint list snapshot to avoid race conditions
+        # Build a list of all planned sections upfront so each task can tell
+        # the LLM what the OTHER slides cover, reducing parallel repetition.
+        all_sections = [e.get("title_hint", "") for e in slide_plan]
+
         tasks = []
         for i, plan_entry in enumerate(slide_plan):
+            # Every other slide's section becomes a "do not repeat" hint for this task.
+            other_sections = [s for j, s in enumerate(all_sections) if j != i and s]
             tasks.append(
                 self._generate_one_slide(
                     query, context_chunks,
@@ -655,12 +715,12 @@ class PedagogicalEngine:
                     slide_type=plan_entry["slide_type"],
                     num_slides=num_slides,
                     language=lang_label,
-                    prior_titles=[],   # dedup runs post-gather
+                    prior_titles=other_sections,
                     prior_hints=[],
                     prior_fps=set(),
                     available_images=available_images,
                     image_contexts=image_contexts,
-                    pdf_section=plan_entry["title_hint"],   # Bug F fix
+                    pdf_section=plan_entry["title_hint"],
                 )
             )
 

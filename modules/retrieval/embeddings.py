@@ -11,6 +11,7 @@ Changes from v1:
 import hashlib
 import json
 import logging
+import re
 from pathlib import Path
 import numpy as np
 import sys
@@ -128,7 +129,7 @@ class VectorDB:
         # Each entry is a list of lowercase tokens from the chunk text, filtered for stop words.
         _STOPWORDS = {"the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "with", "by", "of", "is", "are", "was", "were", "be", "this", "that", "it", "as", "from", "le", "la", "les", "un", "une", "des", "et", "ou", "de", "du", "en", "pour", "dans", "sur", "avec", "par", "est", "sont"}
         bm25_corpus = [
-            [tok for tok in c.text.lower().split() if tok not in _STOPWORDS] 
+            [tok for tok in re.findall(r'\b[a-z]{2,}\b', c.text.lower()) if tok not in _STOPWORDS]
             for c in self.chunks_store
         ]
         bm25_path   = self.index_path.with_suffix(".bm25.json")

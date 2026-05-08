@@ -214,6 +214,13 @@ def _extract_headings_from_page(page_dict: dict) -> list[tuple[float, str]]:
 
             if is_heading and line_text and 3 < len(line_text) <= 80:
                 if not line_text.replace("|", "").replace(" ", "").isdigit():
+                    # Reject body-text fragments mistaken for headings:
+                    # 1. Real headings start with an uppercase letter
+                    if not line_text[0].isupper():
+                        continue
+                    # 2. Figure/table captions are not section headings
+                    if re.match(r'^(Figure|Fig\.|Table|Chart|Diagram)\s', line_text, re.IGNORECASE):
+                        continue
                     headings.append((max_size, line_text))
     return headings
 

@@ -1,4 +1,5 @@
-import { useState, Suspense, lazy } from "react";
+import { useState, Suspense, lazy, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 const Spline = lazy(() => import('@splinetool/react-spline'));
 import { motion, AnimatePresence } from "framer-motion";
 import FloatingLines from "@/components/reactbits/FloatingLines";
@@ -8,10 +9,16 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/components/ui/use-toast";
+import { authHeaders } from "@/lib/auth";
 import {
   Brain, Zap, ArrowRight, Check, ChevronDown, ChevronUp,
-  RotateCcw, Download, Loader2, Image as ImageIcon, Trophy, XCircle,
+  RotateCcw, Download, Loader2, Image as ImageIcon, Trophy, XCircle, Radio,
 } from "lucide-react";
+import {
+  LineChart, Line, BarChart, Bar, AreaChart, Area, ScatterChart, Scatter,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+} from "recharts";
+import mermaid from "mermaid";
 
 const API = "http://127.0.0.1:8000";
 
@@ -19,6 +26,28 @@ const API = "http://127.0.0.1:8000";
 
 interface Category { name: string; concepts: string[] }
 interface ConceptTree { topic: string; categories: Category[] }
+
+interface RechartsSeriesItem {
+  dataKey: string;
+  name: string;
+  color: string;
+  data?: { x: number; y: number }[];
+}
+
+interface RechartsSpec {
+  chart_type: "line" | "bar" | "area" | "scatter";
+  title?: string;
+  x_axis: { dataKey: string; label: string };
+  y_axis: { label: string };
+  series: RechartsSeriesItem[];
+  data: Record<string, number>[];
+}
+
+interface ImageData {
+  render_type: "mermaid" | "recharts";
+  code?: string;
+  spec?: RechartsSpec;
+}
 
 interface Question {
   type: "text" | "image";
@@ -30,8 +59,7 @@ interface Question {
   difficulty: "easy" | "medium" | "hard";
   explanation: string;
   image_prompt?: string;
-  image_url?: string;   // blob URL (unused now)
-  image_svg?: string;   // raw SVG string — rendered inline
+  image_data?: ImageData;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -45,6 +73,115 @@ const DIFF_COLOR: Record<string, string> = {
 const FMT_LABEL: Record<string, string> = {
   mcq: "MCQ", true_false: "True / False", short_answer: "Short Answer",
 };
+
+// ─── Diagram renderers ────────────────────────────────────────────────────────
+
+let mermaidReady = false;
+
+function MermaidDiagram({ code }: { code: string }) {
+  const ref  = useRef<HTMLDivElement>(null);
+  const idRef = useRef(`mermaid-${Math.random().toString(36).slice(2)}`);
+
+  useEffect(() => {
+    if (!mermaidReady) {
+      mermaid.initialize({ startOnLoad: false, theme: "dark", securityLevel: "loose" });
+      mermaidReady = true;
+    }
+    if (!ref.current) return;
+    const el = ref.current;
+    mermaid.render(idRef.current, code)
+      .then(({ svg }) => { el.innerHTML = svg; })
+      .catch(() => { el.innerHTML = `<p class="text-xs text-red-400 p-2">Diagram render error</p>`; });
+  }, [code]);
+
+  return (
+    <div
+      ref={ref}
+      className="w-full flex justify-center overflow-x-auto py-2 [&_svg]:max-w-full [&_svg]:h-auto"
+    />
+  );
+}
+
+function RechartsRenderer({ spec }: { spec: RechartsSpec }) {
+  const { chart_type, title, x_axis, y_axis, series, data } = spec;
+
+  const margin = { top: 10, right: 24, left: 0, bottom: 28 };
+  const axes = (
+    <>
+      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+      <XAxis
+        dataKey={x_axis.dataKey}
+        label={{ value: x_axis.label, position: "insideBottom", offset: -14, fontSize: 11, fill: "#9ca3af" }}
+        tick={{ fontSize: 10, fill: "#9ca3af" }}
+        stroke="#4b5563"
+      />
+      <YAxis
+        label={{ value: y_axis.label, angle: -90, position: "insideLeft", offset: 14, fontSize: 11, fill: "#9ca3af" }}
+        tick={{ fontSize: 10, fill: "#9ca3af" }}
+        stroke="#4b5563"
+      />
+      <Tooltip
+        contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151", borderRadius: 8, fontSize: 12 }}
+        labelStyle={{ color: "#e5e7eb" }}
+      />
+      <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
+    </>
+  );
+
+  let chart: React.ReactElement;
+  if (chart_type === "bar") {
+    chart = (
+      <BarChart data={data} margin={margin}>
+        {axes}
+        {series.map(s => <Bar key={s.dataKey} dataKey={s.dataKey} name={s.name} fill={s.color} radius={[3, 3, 0, 0]} />)}
+      </BarChart>
+    );
+  } else if (chart_type === "area") {
+    chart = (
+      <AreaChart data={data} margin={margin}>
+        {axes}
+        {series.map(s => (
+          <Area key={s.dataKey} type="monotone" dataKey={s.dataKey} name={s.name}
+            stroke={s.color} fill={s.color} fillOpacity={0.15} strokeWidth={2} dot={false} />
+        ))}
+      </AreaChart>
+    );
+  } else if (chart_type === "scatter") {
+    chart = (
+      <ScatterChart margin={margin}>
+        {axes}
+        {series.map(s => (
+          <Scatter key={s.name} name={s.name} data={s.data ?? data} fill={s.color} />
+        ))}
+      </ScatterChart>
+    );
+  } else {
+    chart = (
+      <LineChart data={data} margin={margin}>
+        {axes}
+        {series.map(s => (
+          <Line key={s.dataKey} type="monotone" dataKey={s.dataKey} name={s.name}
+            stroke={s.color} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+        ))}
+      </LineChart>
+    );
+  }
+
+  return (
+    <div className="rounded-xl bg-gray-900/80 border border-gray-700/50 p-4">
+      {title && <p className="text-center text-xs font-semibold text-gray-200 mb-3">{title}</p>}
+      <ResponsiveContainer width="100%" height={260}>{chart}</ResponsiveContainer>
+    </div>
+  );
+}
+
+function DiagramRenderer({ data }: { data: ImageData }) {
+  if (data.render_type === "mermaid" && data.code)
+    return <MermaidDiagram code={data.code} />;
+  if (data.render_type === "recharts" && data.spec)
+    return <RechartsRenderer spec={data.spec} />;
+  return null;
+}
 
 // ─── Step indicator ───────────────────────────────────────────────────────────
 
@@ -105,16 +242,10 @@ function QuestionCard({ q, index, onAnswer }: {
           <p className="font-medium leading-relaxed">{q.question}</p>
 
           {/* Image */}
-          {q.type === "image" && q.image_svg && (
-            <div
-              className="rounded-xl overflow-hidden border border-border bg-white w-full"
-              dangerouslySetInnerHTML={{ __html: q.image_svg.replace(
-                /<svg /,
-                '<svg style="width:100%;height:auto;display:block;max-height:360px;" preserveAspectRatio="xMidYMid meet" '
-              )}}
-            />
+          {q.type === "image" && q.image_data && (
+            <DiagramRenderer data={q.image_data} />
           )}
-          {q.type === "image" && !q.image_svg && (
+          {q.type === "image" && !q.image_data && (
             <div className="flex items-center gap-2 p-3 rounded-xl bg-secondary/40 text-muted-foreground text-sm">
               <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
               <span className="italic truncate">Generating diagram for: {q.concept}…</span>
@@ -200,6 +331,7 @@ function QuestionCard({ q, index, onAnswer }: {
 
 export default function QuizPage() {
   const { toast } = useToast();
+  const navigate   = useNavigate();
 
   const [topic, setTopic] = useState("");
   const [language, setLanguage] = useState("English");
@@ -215,6 +347,7 @@ export default function QuizPage() {
 
   const [loadingConcepts, setLoadingConcepts] = useState(false);
   const [loadingQuiz, setLoadingQuiz] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
   const step = questions.length > 0 ? 3 : conceptTree ? 2 : 1;
 
@@ -231,7 +364,7 @@ export default function QuizPage() {
       const fd = new FormData();
       fd.append("topic", topic);
       fd.append("language", language);
-      const res = await fetch(`${API}/quiz/concepts`, { method: "POST", body: fd });
+      const res = await fetch(`${API}/quiz/concepts`, { method: "POST", headers: authHeaders(), body: fd });
       if (!res.ok) throw new Error(await res.text());
       const data: ConceptTree = await res.json();
       setConceptTree(data);
@@ -260,14 +393,14 @@ export default function QuizPage() {
       fd.append("total_questions", String(totalQ));
       fd.append("image_questions_count", String(imageQ));
       fd.append("seed", String(seed ?? Date.now()));
-      const res = await fetch(`${API}/quiz/generate`, { method: "POST", body: fd });
+      const res = await fetch(`${API}/quiz/generate`, { method: "POST", headers: authHeaders(), body: fd });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       const qs: Question[] = data.questions ?? [];
       setQuestions(qs);
       toast({ title: `Quiz ready — ${qs.length} questions` });
 
-      // Generate images for image-type questions
+      // Generate diagrams for image-type questions
       const imageQs = qs.filter(q => q.type === "image" && q.image_prompt);
       if (imageQs.length > 0) {
         toast({ title: `Generating ${imageQs.length} diagram(s)…` });
@@ -276,24 +409,23 @@ export default function QuizPage() {
             const ifd = new FormData();
             ifd.append("image_prompt", q.image_prompt!);
             ifd.append("concept", q.concept);
-            const ires = await fetch(`${API}/quiz/image`, { method: "POST", body: ifd });
+            const ires = await fetch(`${API}/quiz/image`, { method: "POST", headers: authHeaders(), body: ifd });
             if (ires.ok) {
-              const svg = await ires.text();
-              if (svg && svg.includes("<svg")) {
+              const diagram: ImageData = await ires.json();
+              if (diagram?.render_type) {
                 setQuestions(prev => prev.map(pq =>
                   pq.question === q.question && pq.concept === q.concept
-                    ? { ...pq, image_svg: svg }
+                    ? { ...pq, image_data: diagram }
                     : pq
                 ));
               } else {
-                console.error(`Image Q${i+1}: empty or invalid SVG response`);
+                console.error(`Diagram Q${i + 1}: invalid response`, diagram);
               }
             } else {
-              const err = await ires.text();
-              console.error(`Image Q${i+1} API error ${ires.status}:`, err);
+              console.error(`Diagram Q${i + 1} API error ${ires.status}:`, await ires.text());
             }
           } catch (e) {
-            console.error(`Image Q${i+1} fetch failed:`, e);
+            console.error(`Diagram Q${i + 1} fetch failed:`, e);
           }
         }));
       }
@@ -323,6 +455,25 @@ export default function QuizPage() {
     });
     setSelected(prev => new Set([...prev, c]));
     setCustomConcept("");
+  };
+
+  const shareLive = async () => {
+    if (questions.length === 0) return;
+    setSharing(true);
+    try {
+      const res = await fetch(`${API}/quiz/sessions`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ questions }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const { session_id, room_code } = await res.json();
+      navigate("/quiz/live", { state: { session_id, room_code } });
+    } catch (e: any) {
+      toast({ title: "Failed to create session", description: e.message, variant: "destructive" });
+    } finally {
+      setSharing(false);
+    }
   };
 
   const reset = () => {
@@ -634,7 +785,18 @@ export default function QuizPage() {
                       <h2 className="text-xl font-bold">{topic}</h2>
                       <p className="text-sm text-muted-foreground">{questions.length} questions · {language}</p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
+                      <Button
+                        size="sm"
+                        onClick={shareLive}
+                        disabled={sharing}
+                        className="gap-1.5 bg-primary/90 hover:bg-primary text-primary-foreground"
+                      >
+                        {sharing
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          : <Radio className="w-3.5 h-3.5" />}
+                        {sharing ? "Starting…" : "Share Live"}
+                      </Button>
                       <Button size="sm" variant="outline" onClick={downloadJSON} className="gap-1.5">
                         <Download className="w-3.5 h-3.5" /> Export JSON
                       </Button>

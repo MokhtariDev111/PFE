@@ -1785,7 +1785,7 @@ def render(
             h, _ = _slide_intro(s, actual_i, total, theme, img, cap, display_num)
         elif actual_i == total - 1:
             h, _ = _slide_outro(s, actual_i, total, theme, img, topic, display_num)
-        elif stype == "comparison":
+        elif stype == "comparison" and len(s.get("bullets", [])) >= 2:
             h, _ = _slide_comparison(s, actual_i, total, theme, img, cap, display_num)
         elif stype == "stats" or s.get("chart_data"):
             h, _ = _slide_stats(s, actual_i, total, theme, img, cap, display_num)

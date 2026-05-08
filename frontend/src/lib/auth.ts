@@ -2,11 +2,13 @@ const BASE_URL =
   (import.meta.env.VITE_API_URL as string | undefined) ??
   `${window.location.protocol}//${window.location.hostname}:8000`;
 
+export type UserRole = "student" | "teacher" | "admin";
+
 export interface AuthUser {
   user_id: string;
   name: string;
   email: string;
-  is_admin?: boolean;
+  role: UserRole;
   avatar_url?: string;
 }
 

@@ -20,6 +20,7 @@ PRIORITY ORDER:
 
 import re
 import logging
+from pathlib import Path
 from typing import Optional
 
 log = logging.getLogger("image_matcher")
@@ -126,7 +127,10 @@ def build_figure_to_image_map(pages: list) -> dict:
                 "figure_ref": getattr(page, 'figure_ref', '') or '',
             }
     
-    log.info(f"Built figure map with {len(figure_map)} figures: {list(figure_map.keys())}")
+    log.info(f"── Figure extraction: {len(figure_map)} figures found ──")
+    for fig_num, data in figure_map.items():
+        caption_short = (data.get('caption') or '')[:60]
+        log.info(f"  Figure {fig_num} | page {data['page']} | {caption_short}")
     return figure_map
 
 
@@ -202,7 +206,15 @@ def assign_images_by_figure_reference(
             render_images[i] = f"data:image/jpeg;base64,{fig_data['b64']}"
             render_captions[i] = fig_data.get('caption', '') or fig_data.get('figure_ref', '')
             used_figures.add(matched_figure)
-            log.info(f"  ✓ Slide {i+1} '{title[:30]}' matched Figure {matched_figure} (explicit reference)")
+            para_snippet = ""
+            if isinstance(slide, dict):
+                para_snippet = (slide.get("paragraph") or "")[:80]
+            log.info(
+                f"  ✓ ASSIGNED | Slide {i+1} '{title[:40]}' "
+                f"← Figure {matched_figure} (page {fig_data.get('page','?')}) "
+                f"| caption: {(fig_data.get('caption') or '')[:50]} "
+                f"| para: \"{para_snippet}\""
+            )
             continue
         
         # PRIORITY 2: Semantic fallback (original logic) - only if no explicit reference
@@ -232,7 +244,9 @@ def assign_images_by_figure_reference(
         
         if best_match_id:
             render_images[i] = f"data:image/jpeg;base64,{pdf_images[best_match_id]}"
-            log.info(f"  ~ Slide {i+1} '{title[:30]}' semantic match: {best_match_id} (score: {best_score})")
+            log.info(f"  ~ FALLBACK  | Slide {i+1} '{title[:40]}' ← {best_match_id} (semantic score: {best_score})")
+        else:
+            log.info(f"  ✗ NO IMAGE  | Slide {i+1} '{title[:40]}'")
     
     return render_images, render_captions
 
@@ -319,14 +333,26 @@ def _build_image_registry(pages: list, chunks: list) -> tuple[dict, list, dict, 
     img_page_map = {}  # IMG_001 → page number
     for img_id, page in zip(list(pdf_images.keys()), pdf_img_pages):
         ref = getattr(page, 'figure_ref', '') or ''
+        source_file = Path(page.source.split(" (")[0]).name  # strip "(Full Page N Diagram)" suffix
         if ref:
             key = ref.lower().strip().rstrip('.:')
-            figure_ref_map[key] = img_id
-            num_match = re.search(r'[\d]+[-\.][\d]+', key)
+            num_match = re.search(r'\d+(?:[-\.]\d+)*', key)
             if num_match:
-                figure_ref_map[f"figure {num_match.group(0)}"] = img_id
-                figure_ref_map[f"fig. {num_match.group(0)}"] = img_id
+                num = num_match.group(0)
+                for alias in [f"figure {num}", f"fig. {num}", f"table {num}"]:
+                    if alias in figure_ref_map:
+                        existing_id = figure_ref_map[alias]
+                        existing_src = img_page_map.get(f"{existing_id}__src", "unknown")
+                        log.warning(
+                            f"Figure collision: '{alias}' already mapped to {existing_id} "
+                            f"(from {existing_src}) — overwritten by {img_id} (from {source_file})"
+                        )
+                    figure_ref_map[alias] = img_id
+                figure_ref_map[key] = img_id
+            else:
+                figure_ref_map[key] = img_id
         img_page_map[img_id] = getattr(page, 'page', 0)
+        img_page_map[f"{img_id}__src"] = source_file  # for collision logging only
 
     return pdf_images, list(pdf_images.keys()), image_contexts, image_captions, figure_ref_map, img_page_map
 
@@ -340,7 +366,7 @@ def _extract_figure_refs_from_chunks(chunks: list) -> list[str]:
         text = getattr(chunk, 'text', '')
         # Find patterns like "Figure 2-11", "Fig. 2-12", "Table 3-5"
         refs = re.findall(
-            r'(?:Figure|Fig\.|Table)\s+([\d]+[-\.][\d]+(?:[-\.][\d]+)*)',
+            r'(?:Figure|Fig\.|Table)\s+([\d]+(?:[-\.][\d]+)*)',
             text,
             re.IGNORECASE
         )
@@ -410,24 +436,29 @@ def _assign_fallback_images(slides: list, pdf_images: dict, image_contexts: dict
         # Priority match: ALL figure references mentioned in slide text
         fig_mentioned = False
         if figure_ref_map:
+            # Matches: Figure 2-8, Fig. 3.5, Table 1, Figure 3, etc.
             all_fig_matches = re.findall(
-                r'figure\s+([\d]+[-\.][\d]+(?:[-\.][\d]+)*)|fig\.\s*([\d]+[-\.][\d]+(?:[-\.][\d]+)*)',
+                r'(?:figure|fig\.|table)\s+([\d]+(?:[-\.][\d]+)*)',
                 slide_text, re.IGNORECASE
             )
             matched_imgs = []
-            for m in all_fig_matches:
-                fig_num = (m[0] or m[1] or "").strip()
-                ref_key = f"figure {fig_num}".lower()
-                if ref_key in figure_ref_map and figure_ref_map[ref_key] not in used_images:
-                    img_id = figure_ref_map[ref_key]
-                    matched_imgs.append(f"data:image/jpeg;base64,{pdf_images[img_id]}")
-                    used_images.add(img_id)
+            for fig_num in all_fig_matches:
+                fig_num = fig_num.strip()
+                # Try all prefix variants since the map has all three aliases
+                for ref_key in [f"figure {fig_num}", f"table {fig_num}", f"fig. {fig_num}"]:
+                    if ref_key in figure_ref_map and figure_ref_map[ref_key] not in used_images:
+                        img_id = figure_ref_map[ref_key]
+                        matched_imgs.append(f"data:image/jpeg;base64,{pdf_images[img_id]}")
+                        used_images.add(img_id)
+                        log.info(f"  ✓ FIG-REF | Slide {i+1} '{title[:40]}' ← {ref_key} → {img_id}")
+                        break
             if matched_imgs:
                 render_images[i] = matched_imgs if len(matched_imgs) > 1 else matched_imgs[0]
                 fig_mentioned = True
                 continue
             if all_fig_matches:
                 # Figures mentioned but none found in map — skip keyword fallback
+                log.info(f"  ~ FIG-MISS | Slide {i+1} '{title[:40]}' — refs {all_fig_matches} not in map")
                 fig_mentioned = True
                 continue
 

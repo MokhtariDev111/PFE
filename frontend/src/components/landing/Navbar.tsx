@@ -8,6 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Logo3D } from "@/components/Logo3D";
 
 const NAV_LINKS = [
+  { label: "Home",     href: "/" },
   { label: "About Us", href: "/about" },
   { label: "Contact",  href: "/contact" },
 ];
@@ -21,7 +22,7 @@ function getInitials(name: string): string {
 export const Navbar = () => {
   const [scrolled,    setScrolled]    = useState(false);
   const [mobileOpen,  setMobileOpen]  = useState(false);
-  const { user, logout }              = useAuth();
+  const { user, logout, isAdmin }     = useAuth();
   const navigate                      = useNavigate();
 
   useEffect(() => {
@@ -44,18 +45,18 @@ export const Navbar = () => {
         transition={{ duration: 0.5, ease: "easeOut" }}
         className="fixed inset-x-0 top-0 z-50 transition-all duration-300 border-b border-border/60 bg-background/95 backdrop-blur-xl shadow-sm"
       >
-        <div className="container flex h-16 items-center justify-between">
-          {/* Logo + nav links together on the left */}
-          <div className="flex items-center gap-1">
-            <Link to="/" className="flex items-center mr-3">
+        <div className="w-full px-4 sm:px-6 flex h-16 items-center justify-between">
+          {/* Logo + nav links hard-left */}
+          <div className="flex items-center gap-0">
+            <Link to="/" className="flex items-center mr-4">
               <Logo3D height={42} />
             </Link>
 
             {/* Desktop nav */}
-            <nav className="hidden items-center gap-1 md:flex">
+            <nav className="hidden items-center gap-0 md:flex">
               {NAV_LINKS.map((link) => (
                 <Link key={link.label} to={link.href}
-                  className="group relative rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+                  className="group relative rounded-full px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
                   {link.label}
                   <span className="absolute inset-x-3 bottom-1 h-px scale-x-0 bg-brand-violet/60 transition-transform group-hover:scale-x-100" />
                 </Link>
@@ -69,7 +70,7 @@ export const Navbar = () => {
             {user ? (
               /* ── Logged-in state ── */
               <div className="hidden items-center gap-2 sm:flex">
-                {user.is_admin && (
+                {isAdmin && (
                   <motion.button
                     onClick={() => navigate("/admin")}
                     whileHover={{ scale: 1.05 }}
@@ -112,10 +113,16 @@ export const Navbar = () => {
               </div>
             ) : (
               /* ── Guest state ── */
-              <Button asChild size="sm"
-                className="hidden h-9 rounded-full bg-gradient-aurora px-4 text-xs font-medium text-white shadow-md sm:flex">
-                <Link to="/login">Log in</Link>
-              </Button>
+              <div className="hidden items-center gap-2 sm:flex">
+                <Button asChild size="sm" variant="outline"
+                  className="h-9 rounded-full border-border/60 px-5 text-xs font-medium">
+                  <Link to="/login">Log in</Link>
+                </Button>
+                <Button asChild size="sm"
+                  className="h-9 rounded-full bg-gradient-aurora px-5 text-xs font-medium text-white shadow-md">
+                  <Link to="/login?tab=signup">Sign up</Link>
+                </Button>
+              </div>
             )}
 
             {/* Mobile menu button */}
@@ -160,7 +167,7 @@ export const Navbar = () => {
             <div className="mt-3 pt-3 border-t border-border/40 space-y-2">
               {user ? (
                 <>
-                  {user.is_admin && (
+                  {isAdmin && (
                     <Link to="/admin" onClick={() => setMobileOpen(false)}>
                       <Button size="sm" variant="outline"
                         className="w-full rounded-full border-amber-400/60 bg-amber-400/10 text-amber-600 dark:text-amber-400 hover:bg-amber-400/20">
@@ -178,9 +185,14 @@ export const Navbar = () => {
                   </button>
                 </>
               ) : (
-                <Link to="/login" onClick={() => setMobileOpen(false)}>
-                  <Button size="sm" className="w-full rounded-full bg-gradient-aurora text-white">Log in</Button>
-                </Link>
+                <div className="space-y-2">
+                  <Link to="/login" onClick={() => setMobileOpen(false)}>
+                    <Button size="sm" variant="outline" className="w-full rounded-full">Log in</Button>
+                  </Link>
+                  <Link to="/login?tab=signup" onClick={() => setMobileOpen(false)}>
+                    <Button size="sm" className="w-full rounded-full bg-gradient-aurora text-white">Sign up</Button>
+                  </Link>
+                </div>
               )}
             </div>
           </motion.div>

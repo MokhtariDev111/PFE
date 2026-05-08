@@ -26,10 +26,10 @@ def verify_password(plain: str, hashed: str) -> bool:
     return _pwd.verify(plain, hashed)
 
 
-def create_token(user_id: str, email: str) -> str:
+def create_token(user_id: str, email: str, role: str = "student") -> str:
     expire = datetime.now(timezone.utc) + timedelta(hours=TOKEN_EXPIRE_HOURS)
     return jwt.encode(
-        {"sub": user_id, "email": email, "exp": expire},
+        {"sub": user_id, "email": email, "role": role, "exp": expire},
         SECRET_KEY, algorithm=ALGORITHM,
     )
 

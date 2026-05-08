@@ -68,7 +68,25 @@ class SlideSchema(BaseModel):
         v = str(v).lower().strip()
         valid = {"title", "intro", "definition", "concept", "example",
                  "comparison", "process", "case_study", "summary", "content", "section"}
-        return v if v in valid else "concept"
+        if v in valid:
+            return v
+        # French/localized aliases → canonical English keys
+        aliases = {
+            "comparaison": "comparison",
+            "introduction": "intro",
+            "définition": "definition",
+            "definition": "definition",
+            "exemple": "example",
+            "processus": "process",
+            "résumé": "summary",
+            "resume": "summary",
+            "titre": "title",
+            "contenu": "content",
+            "etude_de_cas": "case_study",
+            "étude_de_cas": "case_study",
+            "case study": "case_study",
+        }
+        return aliases.get(v, "concept")
     
     @field_validator('visual_hint', mode='before')
     @classmethod

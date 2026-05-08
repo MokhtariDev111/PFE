@@ -112,9 +112,9 @@ def _find_list_block(paragraphs: list[str], start_idx: int) -> int:
 
 def semantic_chunk(
     text: str,
-    chunk_size: int = 512,
-    chunk_overlap: int = 64,
-    min_chunk_size: int = 100,
+    chunk_size: int = 1400,
+    chunk_overlap: int = 180,
+    min_chunk_size: int = 80,
 ) -> list[str]:
     """
     Split text into semantic chunks.
@@ -242,8 +242,8 @@ def process_pages(pages: list) -> list[TextChunk]:
     """
     log.info(f"Processing {len(pages)} pages (section-aware semantic chunking)...")
 
-    chunk_size    = CONFIG["text_processing"].get("chunk_size", 512)
-    chunk_overlap = CONFIG["text_processing"].get("chunk_overlap", 64)
+    chunk_size    = CONFIG["text_processing"].get("chunk_size", 1400)
+    chunk_overlap = CONFIG["text_processing"].get("chunk_overlap", 180)
 
     all_chunks: list[TextChunk] = []
     chunk_counter = 0

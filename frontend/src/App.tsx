@@ -1,14 +1,14 @@
 import { useState, lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import WelcomeSplash from "./components/WelcomeSplash";
-import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Navbar } from "./components/Navbar";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { AuthProvider } from "./context/AuthContext";
-import { ProtectedRoute, AdminRoute } from "./components/ProtectedRoute";
+import { ProtectedRoute, AdminRoute, TeacherRoute } from "./components/ProtectedRoute";
 import { LoginWelcome } from "./components/LoginWelcome";
 import LandingPage from "./pages/LandingPage";
 
@@ -22,8 +22,11 @@ const PresentationsHub   = lazy(() => import("./pages/PresentationsHub"));
 const HistoryPage        = lazy(() => import("./pages/HistoryPage"));
 const NotFound           = lazy(() => import("./pages/NotFound"));
 const QuizPage           = lazy(() => import("./pages/QuizPage"));
+const QuizLive           = lazy(() => import("./pages/QuizLive"));
+const QuizSession        = lazy(() => import("./pages/QuizSession"));
+const AttendancePage     = lazy(() => import("./pages/AttendancePage"));
+const FaceRegistration   = lazy(() => import("./pages/FaceRegistration"));
 const DebatePage         = lazy(() => import("./pages/DebatePage"));
-const ExamSimulatorPage  = lazy(() => import("./pages/ExamSimulatorPage"));
 const ExamPromptConfig   = lazy(() => import("./pages/ExamPromptConfig"));
 const AboutUs            = lazy(() => import("./pages/AboutUs"));
 const ContactUs          = lazy(() => import("./pages/ContactUs"));
@@ -55,10 +58,14 @@ function AppShell() {
           <Route path="/generate/presentations" element={<ProtectedRoute><PresentationsHub /></ProtectedRoute>} />
           <Route path="/generate_from_doc"      element={<ProtectedRoute><GeneratePage /></ProtectedRoute>} />
           <Route path="/generate/prompt"        element={<ProtectedRoute><PromptPage /></ProtectedRoute>} />
-          <Route path="/generate/quiz"          element={<ProtectedRoute><div className="dark"><QuizPage /></div></ProtectedRoute>} />
+          <Route path="/generate/quiz"          element={<TeacherRoute><div className="dark"><QuizPage /></div></TeacherRoute>} />
+          <Route path="/quiz/live"              element={<TeacherRoute><QuizLive /></TeacherRoute>} />
+          <Route path="/quiz/session"           element={<ProtectedRoute><QuizSession /></ProtectedRoute>} />
+          <Route path="/attendance"             element={<TeacherRoute><AttendancePage /></TeacherRoute>} />
+          <Route path="/face-registration"      element={<ProtectedRoute><FaceRegistration /></ProtectedRoute>} />
           <Route path="/aria"                   element={<ProtectedRoute><div className="dark"><DebatePage /></div></ProtectedRoute>} />
-          <Route path="/exam"                   element={<ProtectedRoute><ExamSimulatorPage /></ProtectedRoute>} />
-          <Route path="/exam/prompt"            element={<ProtectedRoute><ExamPromptConfig /></ProtectedRoute>} />
+          <Route path="/exam"                   element={<TeacherRoute><Navigate to="/exam/prompt" replace /></TeacherRoute>} />
+          <Route path="/exam/prompt"            element={<TeacherRoute><ExamPromptConfig /></TeacherRoute>} />
           <Route path="/history"                element={<ProtectedRoute><HistoryPage /></ProtectedRoute>} />
           <Route path="/admin"                  element={<AdminRoute><AdminDashboard /></AdminRoute>} />
           <Route path="/profile"               element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
